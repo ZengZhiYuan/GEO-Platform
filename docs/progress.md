@@ -2,29 +2,31 @@
 
 ## 当前阶段
 
-项目初始化阶段。
+项目初始化阶段（Phase 0）。TASK-0001 已完成，下一步 TASK-0002。
 
 ## 已完成
 
-- 已整理 docs/claude-code-dev.md
+- 已整理 docs 开发文档
 - 已创建 CLAUDE.md
-- 待创建前后端项目骨架
+- 技术栈确认：以 CLAUDE.md 为准（React + TS + Vite + Ant Design + Zustand/Redux；后端 FastAPI + Celery/Dramatiq）
+- TASK-0001：已创建项目基础目录 backend/ frontend/ docker/ scripts/（含 .gitkeep 占位），新增根 .gitignore；.env.example、README.md 已就绪
 
 ## 正在进行
 
-- 等待初始化项目目录
+- 等待执行 TASK-0002：初始化后端 FastAPI 应用
 
 ## 待完成
 
 ### 第一阶段：项目骨架
 
-- [ ] 创建 backend FastAPI 项目结构
-- [ ] 创建 frontend React + Vite 项目结构
-- [ ] 创建 docker-compose.yml
-- [ ] 创建 .env.example
-- [ ] 创建 README.md
-- [ ] 后端健康检查接口
-- [ ] 前端基础布局和路由
+- [x] 创建项目基础目录骨架（backend/ frontend/ docker/ scripts/）+ .gitignore（TASK-0001）
+- [x] 创建 .env.example
+- [x] 创建 README.md
+- [ ] 创建 backend FastAPI 项目结构（TASK-0002）
+- [ ] 创建 frontend React + Vite 项目结构（TASK-0003）
+- [ ] 创建 docker-compose.yml（TASK-0102）
+- [ ] 后端健康检查接口（TASK-0002）
+- [ ] 前端基础布局和路由（TASK-0003）
 
 ### 第二阶段：数据库基础
 
@@ -58,8 +60,11 @@
 
 ## 最近一次变更
 
-暂无。
+TASK-0001 完成：
+- 新增目录 backend/、frontend/、docker/、scripts/（各含 .gitkeep 占位，暂无业务代码）
+- 新增根目录 .gitignore（忽略 .venv/node_modules/__pycache__/.env/uploads/dist 等）
+- 更新 docs/progress.md
 
 ## 下一步建议
 
-请先完成项目骨架初始化。
+执行 TASK-0002：初始化后端 FastAPI（main.py、core/config.py、core/response.py、core/exceptions.py、健康检查接口 /api/health、requirements.txt），验收标准为后端可启动且 GET /api/health 返回统一 success 响应。
