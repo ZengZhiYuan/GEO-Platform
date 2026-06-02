@@ -1,0 +1,23 @@
+"""API 路由聚合。
+
+后续各业务域（keyword、title_inspiration ...）的 router 在此 include。
+当前仅提供健康检查接口。
+"""
+
+from fastapi import APIRouter
+
+from app.core.config import settings
+from app.core.response import success
+
+api_router = APIRouter()
+
+
+@api_router.get("/health", summary="健康检查")
+async def health() -> dict:
+    return success(
+        {
+            "status": "ok",
+            "app": settings.APP_NAME,
+            "env": settings.APP_ENV,
+        }
+    )
