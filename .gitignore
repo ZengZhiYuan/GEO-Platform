@@ -13,6 +13,10 @@ node_modules/
 dist/
 .vite/
 *.local
+*.tsbuildinfo
+# tsc -b 对 vite.config.ts 的编译产物
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
 # ---- Env & Secrets ----
 .env
