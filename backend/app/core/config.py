@@ -30,6 +30,16 @@ class Settings(BaseSettings):
     # 接口前缀
     API_PREFIX: str = "/api"
 
+    # 数据库（默认值与根目录 .env.example 保持一致）
+    DATABASE_URL: str = (
+        "postgresql+psycopg2://shipu_geo:shipu_geo_password@localhost:5432/shipu_geo"
+    )
+    # SQLAlchemy 引擎选项
+    DB_ECHO: bool = False
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_PRE_PING: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:
