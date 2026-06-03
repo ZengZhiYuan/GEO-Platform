@@ -2,7 +2,7 @@
  * 状态枚举字典统一管理。
  * 所有下拉/标签的状态选项集中在此，避免散落在页面或接口代码里。
  */
-import type { OptimizeStatus } from '@/types/material'
+import type { CollectStatus, OptimizeStatus } from '@/types/material'
 
 export interface SelectOption<T extends string = string> {
   label: string
@@ -26,4 +26,21 @@ export const OptimizeStatusColorMap: Record<OptimizeStatus, string> = {
 /** 根据枚举值取中文文案，未命中时回退原值。 */
 export function getOptimizeStatusLabel(value: string): string {
   return OptimizeStatusOptions.find((o) => o.value === value)?.label ?? value
+}
+
+/** 标题灵感收录状态选项。 */
+export const CollectStatusOptions: SelectOption<CollectStatus>[] = [
+  { label: '未收录', value: 'not_included' },
+  { label: '已收录', value: 'included' },
+]
+
+/** 收录状态对应的 antd Tag 颜色。 */
+export const CollectStatusColorMap: Record<CollectStatus, string> = {
+  not_included: 'default',
+  included: 'success',
+}
+
+/** 根据枚举值取中文文案，未命中时回退原值。 */
+export function getCollectStatusLabel(value: string): string {
+  return CollectStatusOptions.find((o) => o.value === value)?.label ?? value
 }

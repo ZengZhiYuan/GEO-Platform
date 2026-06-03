@@ -4,6 +4,7 @@ import MainLayout from '@/layout/MainLayout'
 import PlaceholderPage from '@/pages/PlaceholderPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import KeywordPage from '@/pages/material/keyword'
+import TitleInspirationPage from '@/pages/material/title-inspiration'
 
 export const router = createBrowserRouter([
   {
@@ -13,7 +14,7 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="/material/keywords" replace /> },
       // 素材中心
       { path: 'material/keywords', element: <KeywordPage /> },
-      { path: 'material/title-inspirations', element: <PlaceholderPage title="标题灵感" /> },
+      { path: 'material/title-inspirations', element: <TitleInspirationPage /> },
       { path: 'material/image-library', element: <PlaceholderPage title="画像图库" /> },
       { path: 'material/brand-knowledge', element: <PlaceholderPage title="品牌知识库" /> },
       // 写作工作台
