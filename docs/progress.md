@@ -2,11 +2,7 @@
 
 ## 当前阶段
 
-<<<<<<< HEAD
-Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase 1 中 TASK-0101（后端数据库基础）已完成；剩余 TASK-0102（Docker Compose）。Phase 2 中 TASK-0201（关键词库后端接口）、TASK-0202（关键词库前端页面）、TASK-0203（标题灵感后端接口）均已完成。
-=======
-Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase 1 中 TASK-0101（后端数据库基础）已完成；剩余 TASK-0102（Docker Compose）。Phase 2（素材中心）中 TASK-0201（关键词库后端接口）、TASK-0202（关键词库前端页面）、TASK-0204（标题灵感前端页面）已完成；TASK-0203（标题灵感后端接口）待开发。
->>>>>>> feat/fe-title-inspiration
+Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase 1 中 TASK-0101（后端数据库基础）已完成；剩余 TASK-0102（Docker Compose）。Phase 2（素材中心）中 TASK-0201（关键词库后端接口）、TASK-0202（关键词库前端页面）、TASK-0203（标题灵感后端接口）、TASK-0204（标题灵感前端页面）、TASK-0206（画像图库前端页面）已完成；剩余 TASK-0205（画像图库后端接口）、品牌知识库前后端。
 
 ## 决策记录
 
@@ -27,12 +23,10 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 
 ## 正在进行
 
-<<<<<<< HEAD
-- Phase 2：TASK-0201 / 0202 / 0203 已完成。下一步可执行 TASK-0204（标题灵感前端页面）。在引入真实 PostgreSQL（TASK-0102）之前，关键词库与标题灵感的在线迁移与真实库读写需待容器就绪后回归验证
-=======
-- Phase 2：TASK-0201 / 0202 / 0204 已完成。下一步建议执行 **TASK-0203（标题灵感后端接口）**，补齐标题灵感前后端闭环。标题灵感前端页面已按契约封装，待后端接口就绪后可直接联调
-- ⚠️ 契约提示：标题灵感收录状态字段名以 api-contract.md 为准为 `collect_status`（非 dev 文档的 `included_status`）；契约未列举枚举取值，前端暂用 dev 文档设计 `not_included` / `included`（未收录/已收录）。TASK-0203 后端 Schema 须与此保持一致，若后端最终取值不同需双向对齐
->>>>>>> feat/fe-title-inspiration
+- Phase 2：TASK-0201 / 0202 / 0203 / 0204 / 0206 已完成。下一步建议执行 **TASK-0205（画像图库后端接口）**，补齐画像图库前后端闭环。画像图库前端页面已按契约封装，待后端接口就绪后可直接联调
+- ⚠️ 契约提示：标题灵感收录状态字段名以 api-contract.md 为准为 `collect_status`（非 dev 文档的 `included_status`），枚举取值前端用 `not_included` / `included`（未收录/已收录），后端 Schema 须保持一致
+- ⚠️ 契约提示：画像图库接口为扁平资源 `/api/image-categories`（字段 category_name / image_count）+ `/api/image-assets`（字段 category_id / image_url / use_count），**非** dev 文档的嵌套路径 `/api/image-galleries/{id}/images`；图片"使用次数"字段名为 `use_count`（非 dev 文档 `usage_count`）。TASK-0205 后端须与此对齐
+- 在引入真实 PostgreSQL（TASK-0102）之前，素材中心各模块的在线迁移与真实库读写需待容器就绪后回归验证
 
 ## 待完成
 
@@ -58,12 +52,8 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 ### 第三阶段：素材中心
 
 - [x] 关键词库（后端接口 TASK-0201 + 前端页面 TASK-0202 均已完成）
-<<<<<<< HEAD
-- [x] 标题灵感（后端接口 TASK-0203 已完成；前端页面 TASK-0204 待开发）
-=======
-- [~] 标题灵感（前端页面 TASK-0204 已完成；后端接口 TASK-0203 待开发）
->>>>>>> feat/fe-title-inspiration
-- [ ] 画像图库
+- [x] 标题灵感（后端接口 TASK-0203 + 前端页面 TASK-0204 均已完成）
+- [~] 画像图库（前端页面 TASK-0206 已完成；后端接口 TASK-0205 待开发）
 - [ ] 品牌知识库
 
 ### 第四阶段：写作工作台
@@ -81,8 +71,24 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 - [ ] 大任务状态聚合
 - [ ] 失败重试
 
-<<<<<<< HEAD
-## 最近一次变更（TASK-0203 标题灵感后端接口，仅改动 backend/ + 本文件）
+## 最近一次变更（TASK-0206 画像图库前端页面，仅改动 frontend/ + 本文件）
+
+TASK-0206 完成（画像图库前端页面，路由 `/material/image-library` 列表页 + `/material/image-library/:categoryId` 图片详情页，左侧菜单「素材中心 / 画像图库」可访问）：
+- 修改 `frontend/src/types/material.ts`：新增 ImageCategoryItem / ImageCategoryListQuery / ImageCategoryCreatePayload / ImageCategoryUpdatePayload、ImageAssetItem / ImageAssetListQuery / ImageAssetCreatePayload，字段严格对齐 api-contract.md（分类 category_name / image_count；图片 category_id / image_url / use_count）
+- 新增 `frontend/src/api/imageCategory.ts`：listImageCategories / getImageCategory / createImageCategory / updateImageCategory / deleteImageCategory（GET|POST /api/image-categories、GET|PUT|DELETE /api/image-categories/{id}）
+- 新增 `frontend/src/api/imageAsset.ts`：listImageAssets（按 category_id 过滤）/ createImageAsset / deleteImageAsset（GET|POST /api/image-assets、DELETE /api/image-assets/{id}）
+- 新增 `frontend/src/pages/material/image-library/index.tsx`：分类列表页（页面标题、分类名搜索、新增按钮、表格、图片数量 Tag、分页、编辑、删除二次确认、loading、empty、错误 Alert+重试、成功/失败提示）；点击分类名/「查看图片」携带 category_name state 跳转图片详情
+- 新增 `frontend/src/pages/material/image-library/ImageCategoryFormModal.tsx`：分类新增/编辑弹窗（分类名必填 + 长度校验、提交 loading、取消返回）
+- 新增 `frontend/src/pages/material/image-library/detail.tsx`：图片详情页（返回按钮、标题展示分类名（state 优先，兜底拉取分类详情）、新增图片按钮、Image.PreviewGroup 卡片网格响应式布局、图片预览、复制 URL（clipboard API + execCommand 降级）、使用次数 Tag、删除二次确认、分页、loading（Spin）、empty、错误 Alert+重试、非法 categoryId 兜底提示）
+- 新增 `frontend/src/pages/material/image-library/ImageAssetFormModal.tsx`：新增图片 URL 弹窗（URL 必填 + http(s) 格式校验 + 长度校验、提交 loading、取消返回）
+- 修改 `frontend/src/router/index.tsx`：`/material/image-library` 由占位页替换为 ImageLibraryPage，并新增 `/material/image-library/:categoryId` → ImageLibraryDetailPage
+- 契约一致性：接口路径采用契约扁平资源 `/api/image-categories` + `/api/image-assets`（非 dev 文档嵌套 `/api/image-galleries/{id}/images`）；图片使用次数字段名采用契约 `use_count`（非 dev 文档 `usage_count`）；前端路由用 frontend-pages.md 的 `/material/image-library/:categoryId`
+- 实测：`npm install` 成功（165 包）；`npm run build`（tsc -b 类型检查 + vite 生产构建，3105 modules）通过
+- 范围限制：仅改动 frontend/ 与 docs/progress.md，未触碰 backend/，未开发其他页面，未改动既有接口字段名
+- 备注：后端 TASK-0205 画像图库接口尚未开发，页面按契约封装可在接口就绪后直接联调
+
+
+## 历史变更（TASK-0203 标题灵感后端接口，仅改动 backend/ + 本文件）
 
 TASK-0203 完成（标题灵感后端接口，仅改动 backend/ + docs/progress.md，代码风格完全对齐 TASK-0201 关键词库）：
 - 新增 `backend/app/models/title_inspiration.py`：`TitleInspiration`（`__tablename__="title_inspiration"`），字段 `main_word`(String255,非空) / `question`(Text,非空) / `collect_status`(String32,默认 not_included)，公共字段继承 BaseModel
@@ -103,9 +109,7 @@ TASK-0203 完成（标题灵感后端接口，仅改动 backend/ + docs/progress
 - 备注：引入真实 PostgreSQL（TASK-0102）后需回归验证 `alembic upgrade head`（在线）与真实库读写
 
 
-## 历史变更（TASK-0202 关键词库前端页面，仅改动 frontend/ + 本文件）
-=======
-## 最近一次变更（TASK-0204 标题灵感前端页面，仅改动 frontend/ + 本文件）
+## 历史变更（TASK-0204 标题灵感前端页面，仅改动 frontend/ + 本文件）
 
 TASK-0204 完成（标题灵感前端页面，路由 `/material/title-inspirations`，左侧菜单「素材中心 / 标题灵感」可访问）：
 - 修改 `frontend/src/types/material.ts`：新增 CollectStatus / TitleInspirationItem / TitleInspirationListQuery / TitleInspirationCreatePayload / TitleInspirationUpdatePayload，字段对齐 api-contract.md（main_word / question / collect_status / created_at / updated_at）
@@ -119,8 +123,7 @@ TASK-0204 完成（标题灵感前端页面，路由 `/material/title-inspiratio
 - 备注：后端 TASK-0203 标题灵感接口尚未开发，页面按契约封装可在接口就绪后直接联调；收录状态枚举取值需与后端对齐（见「正在进行」契约提示）
 
 
-## 最近一次变更（TASK-0202 关键词库前端页面，仅改动 frontend/ + 本文件）
->>>>>>> feat/fe-title-inspiration
+## 历史变更（TASK-0202 关键词库前端页面，仅改动 frontend/ + 本文件）
 
 TASK-0202 完成（关键词库前端页面，路由 `/material/keywords`，左侧菜单「素材中心 / 关键词库」可访问）：
 - 新增 `frontend/src/types/material.ts`：KeywordItem / KeywordListQuery / KeywordCreatePayload / KeywordUpdatePayload / OptimizeStatus，字段对齐 api-contract.md（main_word / question_count / optimize_status / created_at / updated_at）
@@ -183,13 +186,8 @@ TASK-0003 完成：
 
 ## 下一步建议
 
-<<<<<<< HEAD
-TASK-0203（标题灵感后端接口）已完成。下一步可选：
-- **TASK-0204：标题灵感前端页面**（列表 / 主词筛选 / 收录状态筛选 / 新增 / 编辑 / 删除，对接本次后端接口 `/api/title-inspirations`）——补齐标题灵感前后端闭环；
-- 或继续 **TASK-0205：画像图库后端接口**（image_category + image_asset）。
-=======
-TASK-0204（标题灵感前端页面）已完成。下一步建议：
-- **TASK-0203：标题灵感后端接口**（与关键词库共用 model/schema/service/router 代码风格）——补齐标题灵感前后端闭环，接口路径 `/api/title-inspirations`，字段对齐 api-contract.md（main_word / question / collect_status）；收录状态枚举取值须与前端一致（not_included / included），如需调整须双向对齐。
->>>>>>> feat/fe-title-inspiration
+TASK-0206（画像图库前端页面）已完成。标题灵感前后端（TASK-0203 / 0204）、关键词库前后端（TASK-0201 / 0202）均已完成。下一步建议：
+- **TASK-0205：画像图库后端接口**（image_category + image_asset，与关键词库/标题灵感共用 model/schema/service/router 代码风格）——补齐画像图库前后端闭环，接口路径 `/api/image-categories` + `/api/image-assets`，字段对齐 api-contract.md（分类 category_name / image_count；图片 category_id / image_url / use_count）；image-assets 列表须支持 `category_id` 过滤；image_count / use_count 计数维护策略须与前端展示一致。
+- 之后可继续品牌知识库前后端。
 
 另：**TASK-0102：Docker Compose**（PostgreSQL + Redis）仍未完成。容器内 PostgreSQL 起来后，需回归验证关键词库与标题灵感的 `alembic upgrade head`（在线）与真实数据库读写。
