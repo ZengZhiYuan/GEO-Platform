@@ -48,7 +48,7 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 
 ### 第三阶段：素材中心
 
-- [x] 关键词库（TASK-0201：后端接口）
+- [x] 关键词库（后端接口 TASK-0201 + 前端页面 TASK-0202 均已完成）
 - [ ] 标题灵感
 - [ ] 画像图库
 - [ ] 品牌知识库
@@ -68,7 +68,22 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 - [ ] 大任务状态聚合
 - [ ] 失败重试
 
-## 最近一次变更
+## 最近一次变更（TASK-0202 关键词库前端页面，仅改动 frontend/ + 本文件）
+
+TASK-0202 完成（关键词库前端页面，路由 `/material/keywords`，左侧菜单「素材中心 / 关键词库」可访问）：
+- 新增 `frontend/src/types/material.ts`：KeywordItem / KeywordListQuery / KeywordCreatePayload / KeywordUpdatePayload / OptimizeStatus，字段对齐 api-contract.md（main_word / question_count / optimize_status / created_at / updated_at）
+- 新增 `frontend/src/utils/enums.ts`：OptimizeStatusOptions（未优化/优化中/已优化）、颜色映射、label 取值
+- 新增 `frontend/src/utils/format.ts`：formatDateTime 时间格式化
+- 新增 `frontend/src/api/keyword.ts`：listKeywords / getKeyword / createKeyword / updateKeyword / deleteKeyword（GET|POST /api/keywords、GET|PUT|DELETE /api/keywords/{id}）
+- 新增 `frontend/src/pages/material/keyword/index.tsx`：列表页（页面标题、主词搜索、优化状态筛选、新增按钮、表格、分页、编辑、删除二次确认、loading、empty、错误 Alert+重试、成功/失败提示）
+- 新增 `frontend/src/pages/material/keyword/KeywordFormModal.tsx`：新增/编辑弹窗（必填 + 长度校验、提交 loading、取消返回）
+- 修改 `frontend/src/router/index.tsx`：`/material/keywords` 由占位页替换为 KeywordPage
+- 修改 `frontend/src/types/index.ts`：导出 material 类型
+- 实测：`npm install` 成功（165 包）；`npm run build`（tsc -b 类型检查 + vite 生产构建）通过；`npm run lint` 因项目未安装 eslint 依赖而不可用（lint 脚本存在但 eslint 未在 devDependencies，属既有项目状况，类型检查由 tsc 覆盖）
+- 范围限制：仅改动 frontend/ 与 docs/progress.md，未触碰 backend/，未开发其他素材页面，未改动接口字段名
+- 备注：后端 TASK-0201 关键词接口若尚未就绪，页面按契约封装可在接口可用后直接联调
+
+
 
 TASK-0201 完成（关键词库后端接口，仅改动 backend/ + docs/progress.md）：
 - 新增 `backend/app/models/keyword.py`：`Keyword`（`__tablename__="keyword_library"`），字段 `main_word`(String255,非空) / `question_count`(Integer,默认0,由标题灵感模块维护) / `optimize_status`(String32,默认 not_optimized)，公共字段继承 BaseModel
