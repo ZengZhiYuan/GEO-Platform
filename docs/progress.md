@@ -2,7 +2,11 @@
 
 ## 当前阶段
 
+<<<<<<< HEAD
 Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase 1 中 TASK-0101（后端数据库基础）已完成；剩余 TASK-0102（Docker Compose）。Phase 2 中 TASK-0201（关键词库后端接口）、TASK-0202（关键词库前端页面）、TASK-0203（标题灵感后端接口）均已完成。
+=======
+Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase 1 中 TASK-0101（后端数据库基础）已完成；剩余 TASK-0102（Docker Compose）。Phase 2（素材中心）中 TASK-0201（关键词库后端接口）、TASK-0202（关键词库前端页面）、TASK-0204（标题灵感前端页面）已完成；TASK-0203（标题灵感后端接口）待开发。
+>>>>>>> feat/fe-title-inspiration
 
 ## 决策记录
 
@@ -23,7 +27,12 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 
 ## 正在进行
 
+<<<<<<< HEAD
 - Phase 2：TASK-0201 / 0202 / 0203 已完成。下一步可执行 TASK-0204（标题灵感前端页面）。在引入真实 PostgreSQL（TASK-0102）之前，关键词库与标题灵感的在线迁移与真实库读写需待容器就绪后回归验证
+=======
+- Phase 2：TASK-0201 / 0202 / 0204 已完成。下一步建议执行 **TASK-0203（标题灵感后端接口）**，补齐标题灵感前后端闭环。标题灵感前端页面已按契约封装，待后端接口就绪后可直接联调
+- ⚠️ 契约提示：标题灵感收录状态字段名以 api-contract.md 为准为 `collect_status`（非 dev 文档的 `included_status`）；契约未列举枚举取值，前端暂用 dev 文档设计 `not_included` / `included`（未收录/已收录）。TASK-0203 后端 Schema 须与此保持一致，若后端最终取值不同需双向对齐
+>>>>>>> feat/fe-title-inspiration
 
 ## 待完成
 
@@ -49,7 +58,11 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 ### 第三阶段：素材中心
 
 - [x] 关键词库（后端接口 TASK-0201 + 前端页面 TASK-0202 均已完成）
+<<<<<<< HEAD
 - [x] 标题灵感（后端接口 TASK-0203 已完成；前端页面 TASK-0204 待开发）
+=======
+- [~] 标题灵感（前端页面 TASK-0204 已完成；后端接口 TASK-0203 待开发）
+>>>>>>> feat/fe-title-inspiration
 - [ ] 画像图库
 - [ ] 品牌知识库
 
@@ -68,6 +81,7 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 - [ ] 大任务状态聚合
 - [ ] 失败重试
 
+<<<<<<< HEAD
 ## 最近一次变更（TASK-0203 标题灵感后端接口，仅改动 backend/ + 本文件）
 
 TASK-0203 完成（标题灵感后端接口，仅改动 backend/ + docs/progress.md，代码风格完全对齐 TASK-0201 关键词库）：
@@ -90,6 +104,23 @@ TASK-0203 完成（标题灵感后端接口，仅改动 backend/ + docs/progress
 
 
 ## 历史变更（TASK-0202 关键词库前端页面，仅改动 frontend/ + 本文件）
+=======
+## 最近一次变更（TASK-0204 标题灵感前端页面，仅改动 frontend/ + 本文件）
+
+TASK-0204 完成（标题灵感前端页面，路由 `/material/title-inspirations`，左侧菜单「素材中心 / 标题灵感」可访问）：
+- 修改 `frontend/src/types/material.ts`：新增 CollectStatus / TitleInspirationItem / TitleInspirationListQuery / TitleInspirationCreatePayload / TitleInspirationUpdatePayload，字段对齐 api-contract.md（main_word / question / collect_status / created_at / updated_at）
+- 修改 `frontend/src/utils/enums.ts`：新增 CollectStatusOptions（未收录/已收录）、CollectStatusColorMap、getCollectStatusLabel
+- 新增 `frontend/src/api/titleInspiration.ts`：listTitleInspirations / getTitleInspiration / createTitleInspiration / updateTitleInspiration / deleteTitleInspiration（GET|POST /api/title-inspirations、GET|PUT|DELETE /api/title-inspirations/{id}）
+- 新增 `frontend/src/pages/material/title-inspiration/index.tsx`：列表页（页面标题、主词筛选、收录状态筛选、新增按钮、表格、分页、编辑、删除二次确认、loading、empty、错误 Alert+重试、成功/失败提示）；支持从关键词库「查看问题」跳转 `?keyword=xxx` 自动带入主词筛选
+- 新增 `frontend/src/pages/material/title-inspiration/TitleInspirationFormModal.tsx`：新增/编辑弹窗（主词/问题必填 + 长度校验、问题字数计数、收录状态必选、提交 loading、取消返回；新增时继承当前主词筛选作为默认值）
+- 修改 `frontend/src/router/index.tsx`：`/material/title-inspirations` 由占位页替换为 TitleInspirationPage
+- 实测：`npm install` 成功（165 包）；`npm run build`（tsc -b 类型检查 + vite 生产构建，3099 modules）通过
+- 范围限制：仅改动 frontend/ 与 docs/progress.md，未触碰 backend/，未开发其他页面，未改动既有接口字段名
+- 备注：后端 TASK-0203 标题灵感接口尚未开发，页面按契约封装可在接口就绪后直接联调；收录状态枚举取值需与后端对齐（见「正在进行」契约提示）
+
+
+## 最近一次变更（TASK-0202 关键词库前端页面，仅改动 frontend/ + 本文件）
+>>>>>>> feat/fe-title-inspiration
 
 TASK-0202 完成（关键词库前端页面，路由 `/material/keywords`，左侧菜单「素材中心 / 关键词库」可访问）：
 - 新增 `frontend/src/types/material.ts`：KeywordItem / KeywordListQuery / KeywordCreatePayload / KeywordUpdatePayload / OptimizeStatus，字段对齐 api-contract.md（main_word / question_count / optimize_status / created_at / updated_at）
@@ -152,8 +183,13 @@ TASK-0003 完成：
 
 ## 下一步建议
 
+<<<<<<< HEAD
 TASK-0203（标题灵感后端接口）已完成。下一步可选：
 - **TASK-0204：标题灵感前端页面**（列表 / 主词筛选 / 收录状态筛选 / 新增 / 编辑 / 删除，对接本次后端接口 `/api/title-inspirations`）——补齐标题灵感前后端闭环；
 - 或继续 **TASK-0205：画像图库后端接口**（image_category + image_asset）。
+=======
+TASK-0204（标题灵感前端页面）已完成。下一步建议：
+- **TASK-0203：标题灵感后端接口**（与关键词库共用 model/schema/service/router 代码风格）——补齐标题灵感前后端闭环，接口路径 `/api/title-inspirations`，字段对齐 api-contract.md（main_word / question / collect_status）；收录状态枚举取值须与前端一致（not_included / included），如需调整须双向对齐。
+>>>>>>> feat/fe-title-inspiration
 
 另：**TASK-0102：Docker Compose**（PostgreSQL + Redis）仍未完成。容器内 PostgreSQL 起来后，需回归验证关键词库与标题灵感的 `alembic upgrade head`（在线）与真实数据库读写。
