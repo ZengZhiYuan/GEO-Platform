@@ -4,6 +4,10 @@
 
 Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。下一阶段为 Phase 1（TASK-0101 后端数据库基础 / TASK-0102 Docker Compose）。
 
+## 决策记录
+
+- 2026-06-03：接口契约以 `docs/api-contract.md` 为**唯一权威源**，`docs/claude-code-dev.md` 仅作设计参考。当字段名/路径前缀/枚举值冲突时一律以契约为准（路径用 `/api/...` 而非 `/api/v1/...`；具体冲突字段见 api-contract.md）。后端 Schema、前端 types/api 全部按契约字段拼写。
+
 ## 已完成
 
 - 已整理 docs 开发文档
