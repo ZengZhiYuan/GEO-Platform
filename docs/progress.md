@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase 1 中 TASK-0101（后端数据库基础）已完成；剩余 TASK-0102（Docker Compose）。
+Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase 1 中 TASK-0101（后端数据库基础）已完成；剩余 TASK-0102（Docker Compose）。Phase 2 中 TASK-0201（关键词库后端接口）已完成。
 
 ## 决策记录
 
@@ -19,10 +19,11 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 - TASK-0002：已初始化后端 FastAPI 应用（app/main.py、core/config.py、core/response.py、core/exceptions.py、api/router.py、requirements.txt），健康检查接口 /api/health 已可用并实测返回统一 success 响应
 - TASK-0003：已初始化前端 React（Vite + React + TS + Ant Design + React Router + Axios + Zustand 依赖），含 MainLayout 左侧菜单（素材中心 / 写作工作台共 8 个子项）、占位页与空路由、统一 axios 客户端、基础 API 类型目录 `src/types/`；实测 `npm run build` 通过、dev 服务器可正常响应
 - TASK-0101：已接入数据库基础设施（同步 SQLAlchemy 2.0 + Alembic）。新增 `core/database.py`（engine / SessionLocal / Base / get_db 依赖）、`models/base.py`（通用 BaseModel：id、created_at、updated_at、deleted_at、is_deleted、tenant_id、created_by、updated_by）、`models/__init__.py`；新增 Alembic（`alembic.ini`、`alembic/env.py` 从 settings.DATABASE_URL 读取连接、`alembic/script.py.mako`、`alembic/versions/` 含 baseline 迁移）；`core/config.py` 增加 DATABASE_URL 及引擎参数；`requirements.txt` 增加 sqlalchemy/alembic/psycopg2-binary。实测：venv 安装依赖成功、应用与模型导入无误、`alembic history/heads` 正常、`alembic upgrade head --sql` 离线生成正确 PostgreSQL DDL
+- TASK-0201：已实现关键词库后端接口（仅改动 backend/）。新增 `models/keyword.py`（Keyword，表 `keyword_library`，字段 main_word/question_count/optimize_status + 公共字段）、`schemas/keyword.py`（OptimizeStatus 枚举 + KeywordCreate/Update/Out，main_word 非空校验）、`services/keyword.py`（list/get/create/update/delete，软删除 + 模糊搜索 + 状态筛选 + 分页）、`api/endpoints/keyword.py`（5 个 REST 接口，统一响应）；首条业务迁移 `alembic/versions/...add_keyword_library.py` 挂在 baseline 之后；接入 `models/__init__.py` 与 `api/router.py`。接口路径（API_PREFIX=/api）：GET/POST `/api/keywords`、GET/PUT/DELETE `/api/keywords/{id}`。实测见“最近一次变更”
 
 ## 正在进行
 
-- Phase 1：TASK-0101 已完成，剩余 TASK-0102（Docker Compose）。在引入真实 PostgreSQL 之前，DB 连接相关迁移（在线 upgrade / autogenerate）需待 TASK-0102 起容器后验证
+- Phase 2：TASK-0201 已完成。下一步可执行 TASK-0202（关键词库前端页面）或继续 TASK-0203（标题灵感后端接口）。在引入真实 PostgreSQL（TASK-0102）之前，关键词库的在线迁移与真实库读写需待容器就绪后回归验证
 
 ## 待完成
 
@@ -47,7 +48,7 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 
 ### 第三阶段：素材中心
 
-- [ ] 关键词库
+- [x] 关键词库（TASK-0201：后端接口）
 - [ ] 标题灵感
 - [ ] 画像图库
 - [ ] 品牌知识库
@@ -68,6 +69,21 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 - [ ] 失败重试
 
 ## 最近一次变更
+
+TASK-0201 完成（关键词库后端接口，仅改动 backend/ + docs/progress.md）：
+- 新增 `backend/app/models/keyword.py`：`Keyword`（`__tablename__="keyword_library"`），字段 `main_word`(String255,非空) / `question_count`(Integer,默认0,由标题灵感模块维护) / `optimize_status`(String32,默认 not_optimized)，公共字段继承 BaseModel
+- 新增 `backend/app/schemas/__init__.py`、`backend/app/schemas/keyword.py`：`OptimizeStatus` StrEnum（not_optimized/optimizing/optimized）、`KeywordCreate`（main_word 经 field_validator strip 后非空校验）、`KeywordUpdate`（字段可选，exclude_unset 局部更新）、`KeywordOut`（from_attributes，字段严格对齐 api-contract：id/main_word/question_count/optimize_status/created_at/updated_at）
+- 新增 `backend/app/services/__init__.py`、`backend/app/services/keyword.py`：同步 CRUD —— `list_keywords`（分页 + `main_word` ilike 模糊搜索 + `optimize_status` 精确筛选，全部过滤 is_deleted=False，按 id desc）、`get_keyword`、`create_keyword`、`update_keyword`、`delete_keyword`（软删除：is_deleted=True + deleted_at）；记录不存在抛 `BusinessException(code=40400)`
+- 新增 `backend/app/api/endpoints/__init__.py`、`backend/app/api/endpoints/keyword.py`：`router(prefix="/keywords")`，5 个接口全部统一响应（success/paginate），列表用 Query 接收 page/page_size/main_word/optimize_status
+- 新增迁移 `backend/alembic/versions/20260603_1400-a1b2c3d4e5f6_add_keyword_library.py`：手写 create_table（无在线 DB，autogenerate 不可用），down_revision=baseline(327ce9fdb8a5)，含 `ix_keyword_library_main_word` 索引
+- 修改 `backend/app/models/__init__.py`：导入并导出 `Keyword`，供 Alembic 收集元数据
+- 修改 `backend/app/api/router.py`：`include_router(keyword.router)`
+- 实测命令（backend/.venv，Python 3.14）：
+  - `pip install -r requirements.txt`（成功）
+  - 导入检查：`import app.main / app.models / schemas / services / endpoints`（OK，table=keyword_library，5 条 keyword 路由全部挂在 /api/keywords）
+  - `alembic history`：`<base> -> 327ce9fdb8a5(baseline) -> a1b2c3d4e5f6(head)` 单一线性头；`alembic upgrade head --sql` 离线生成正确 keyword_library DDL + 索引
+  - 业务逻辑功能测试（SQLite 内存，测试进程内将 BigInteger 主键临时降为 Integer 以适配 SQLite 自增；提交代码未改）：create/列表降序/模糊搜索/状态筛选/分页/详情/更新（仅改状态保留 main_word）/软删除/删后查 404(code=40400)/更新不存在 404/空 main_word 被 ValidationError 拒绝 —— 全部通过
+  - `uvicorn app.main:app`（127.0.0.1:8011）启动成功：`GET /api/health` → `{"code":0,"message":"success","data":{"status":"ok",...}}` HTTP 200；`/openapi.json` 含 GET/POST `/api/keywords` 与 GET/PUT/DELETE `/api/keywords/{keyword_id}`；`/docs` HTTP 200（Swagger 可测试）
 
 TASK-0101 完成（数据库基础，仅改动 backend/ + docs + README）：
 - 新增 `backend/app/core/database.py`：同步 SQLAlchemy 引擎、SessionLocal 会话工厂、声明式 Base、`get_db` FastAPI 依赖
@@ -100,6 +116,8 @@ TASK-0003 完成：
 
 ## 下一步建议
 
-建议进入 **TASK-0102：Docker Compose**（PostgreSQL + Redis + backend + frontend）。
-容器内 PostgreSQL 起来后即可验证 `alembic upgrade head`（在线）与真实数据库连接，
-随后进入 Phase 2（TASK-0201 关键词库后端接口）开始首个业务模型，并由其首条 autogenerate 迁移挂在 baseline 之后。
+TASK-0201（关键词库后端接口）已完成。下一步可选：
+- **TASK-0202：关键词库前端页面**（列表 / 搜索 / 分页 / 新增 / 编辑 / 删除，对接本次后端接口）——补齐关键词库前后端闭环；
+- 或继续 **TASK-0203：标题灵感后端接口**（与关键词库共用本次确立的 model/schema/service/router 代码风格）。
+
+另：**TASK-0102：Docker Compose**（PostgreSQL + Redis）仍未完成。容器内 PostgreSQL 起来后，需回归验证关键词库的 `alembic upgrade head`（在线）与真实数据库读写。
