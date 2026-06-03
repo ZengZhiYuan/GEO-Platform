@@ -119,3 +119,46 @@ export interface ImageAssetCreatePayload {
   category_id: number
   image_url: string
 }
+
+/* ------------------------------ 品牌知识库 ------------------------------ */
+
+/**
+ * 品牌知识库记录（对应 GET /api/brand-knowledges 返回项）。
+ * 字段严格对齐 docs/api-contract.md（唯一权威源）：创作方向字段名为
+ * `creation_direction`（非 dev 文档的 `writing_direction`）；契约未包含
+ * dev 文档的 target_users/brand_tone/forbidden_words/extra_info，故不引入。
+ */
+export interface BrandKnowledgeItem {
+  id: number
+  knowledge_name: string
+  company_name: string
+  company_short_name?: string | null
+  creation_direction?: string | null
+  copywriting_type?: string | null
+  product_service?: string | null
+  product_features?: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** 品牌知识库列表查询参数：分页 + 知识库名称 + 公司名称筛选。 */
+export interface BrandKnowledgeListQuery {
+  page?: number
+  page_size?: number
+  knowledge_name?: string
+  company_name?: string
+}
+
+/** 新增品牌知识库请求体（POST /api/brand-knowledges）。 */
+export interface BrandKnowledgeCreatePayload {
+  knowledge_name: string
+  company_name: string
+  company_short_name?: string
+  creation_direction?: string
+  copywriting_type?: string
+  product_service?: string
+  product_features?: string
+}
+
+/** 更新品牌知识库请求体（PUT /api/brand-knowledges/{id}），字段同新增。 */
+export type BrandKnowledgeUpdatePayload = BrandKnowledgeCreatePayload
