@@ -7,6 +7,8 @@ import KeywordPage from '@/pages/material/keyword'
 import TitleInspirationPage from '@/pages/material/title-inspiration'
 import ImageLibraryPage from '@/pages/material/image-library'
 import ImageLibraryDetailPage from '@/pages/material/image-library/detail'
+import BrandKnowledgePage from '@/pages/material/brand-knowledge'
+import BrandKnowledgeEditPage from '@/pages/material/brand-knowledge/edit'
 
 export const router = createBrowserRouter([
   {
@@ -19,7 +21,8 @@ export const router = createBrowserRouter([
       { path: 'material/title-inspirations', element: <TitleInspirationPage /> },
       { path: 'material/image-library', element: <ImageLibraryPage /> },
       { path: 'material/image-library/:categoryId', element: <ImageLibraryDetailPage /> },
-      { path: 'material/brand-knowledge', element: <PlaceholderPage title="品牌知识库" /> },
+      { path: 'material/brand-knowledge', element: <BrandKnowledgePage /> },
+      { path: 'material/brand-knowledge/:id/edit', element: <BrandKnowledgeEditPage /> },
       // 写作工作台
       { path: 'workspace/writing-rules', element: <PlaceholderPage title="写作规范" /> },
       { path: 'workspace/content-categories', element: <PlaceholderPage title="内容分类" /> },
