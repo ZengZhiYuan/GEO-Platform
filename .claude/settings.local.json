@@ -25,7 +25,8 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8011/api/health)",
       "Bash(taskkill //F //IM python.exe //FI \"WINDOWTITLE eq *\")",
       "Bash(netstat -ano)",
-      "Bash(taskkill //F //PID 256)"
+      "Bash(taskkill //F //PID 256)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
