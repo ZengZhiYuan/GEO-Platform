@@ -44,8 +44,16 @@ docker compose up -d
 
 ## 数据库迁移
 
+迁移使用 Alembic，连接地址从 `app.core.config.settings.DATABASE_URL` 读取
+（默认值与根目录 `.env.example` 一致，可通过 `.env` 覆盖）。
+执行 `upgrade` / `--autogenerate` 需要 PostgreSQL 已启动（见 Docker 启动）。
+
 ```bash
 cd backend
-alembic revision --autogenerate -m "init"
+# 生成迁移（需连接数据库以对比表结构）
+alembic revision --autogenerate -m "your message"
+# 应用迁移
 alembic upgrade head
+# 仅生成 SQL 而不连接数据库（离线预览）
+alembic upgrade head --sql
 ```

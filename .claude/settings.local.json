@@ -15,7 +15,17 @@
       "Bash(git commit -m 'TASK-0002: 初始化后端 FastAPI 应用' -m '- app/main.py: create_app 工厂，配置 CORS、注册全局异常处理、include /api 路由 *)",
       "Bash(npm --version)",
       "Bash(npm run *)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(python -m venv .venv)",
+      "Bash(./.venv/Scripts/python.exe -m pip install --upgrade pip -q)",
+      "Bash(./.venv/Scripts/python.exe -m pip install -r requirements.txt)",
+      "Bash(./.venv/Scripts/python.exe -c \"import app.main; import app.core.database as d; import app.models as m; print\\('IMPORT OK'\\); print\\('engine url ->', d.engine.url\\); print\\('tables in metadata ->', list\\(m.Base.metadata.tables.keys\\(\\)\\)\\)\")",
+      "Bash(./.venv/Scripts/python.exe *)",
+      "Bash(curl -s --retry 10 --retry-delay 1 --retry-connrefused http://127.0.0.1:8011/api/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8011/api/health)",
+      "Bash(taskkill //F //IM python.exe //FI \"WINDOWTITLE eq *\")",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //F //PID 256)"
     ]
   }
 }
