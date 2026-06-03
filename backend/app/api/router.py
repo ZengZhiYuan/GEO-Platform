@@ -6,7 +6,7 @@
 
 from fastapi import APIRouter
 
-from app.api.endpoints import keyword
+from app.api.endpoints import keyword, title_inspiration
 from app.core.config import settings
 from app.core.response import success
 
@@ -26,3 +26,4 @@ async def health() -> dict:
 
 # 业务路由聚合
 api_router.include_router(keyword.router)
+api_router.include_router(title_inspiration.router)

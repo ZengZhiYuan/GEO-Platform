@@ -26,7 +26,14 @@
       "Bash(taskkill //F //IM python.exe //FI \"WINDOWTITLE eq *\")",
       "Bash(netstat -ano)",
       "Bash(taskkill //F //PID 256)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(py --version)",
+      "Bash(.venv/Scripts/python.exe -m pip install --quiet --upgrade pip)",
+      "Bash(.venv/Scripts/python.exe -m pip install --quiet -r requirements.txt)",
+      "Bash(.venv/Scripts/python.exe *)",
+      "Bash(.venv/Scripts/alembic.exe history *)",
+      "Bash(.venv/Scripts/alembic.exe heads *)",
+      "Bash(.venv/Scripts/alembic.exe upgrade *)"
     ]
   }
 }

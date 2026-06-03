@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase 1 中 TASK-0101（后端数据库基础）已完成；剩余 TASK-0102（Docker Compose）。Phase 2 中 TASK-0201（关键词库后端接口）已完成。
+Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase 1 中 TASK-0101（后端数据库基础）已完成；剩余 TASK-0102（Docker Compose）。Phase 2 中 TASK-0201（关键词库后端接口）、TASK-0202（关键词库前端页面）、TASK-0203（标题灵感后端接口）均已完成。
 
 ## 决策记录
 
@@ -23,7 +23,7 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 
 ## 正在进行
 
-- Phase 2：TASK-0201 已完成。下一步可执行 TASK-0202（关键词库前端页面）或继续 TASK-0203（标题灵感后端接口）。在引入真实 PostgreSQL（TASK-0102）之前，关键词库的在线迁移与真实库读写需待容器就绪后回归验证
+- Phase 2：TASK-0201 / 0202 / 0203 已完成。下一步可执行 TASK-0204（标题灵感前端页面）。在引入真实 PostgreSQL（TASK-0102）之前，关键词库与标题灵感的在线迁移与真实库读写需待容器就绪后回归验证
 
 ## 待完成
 
@@ -49,7 +49,7 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 ### 第三阶段：素材中心
 
 - [x] 关键词库（后端接口 TASK-0201 + 前端页面 TASK-0202 均已完成）
-- [ ] 标题灵感
+- [x] 标题灵感（后端接口 TASK-0203 已完成；前端页面 TASK-0204 待开发）
 - [ ] 画像图库
 - [ ] 品牌知识库
 
@@ -68,7 +68,28 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 - [ ] 大任务状态聚合
 - [ ] 失败重试
 
-## 最近一次变更（TASK-0202 关键词库前端页面，仅改动 frontend/ + 本文件）
+## 最近一次变更（TASK-0203 标题灵感后端接口，仅改动 backend/ + 本文件）
+
+TASK-0203 完成（标题灵感后端接口，仅改动 backend/ + docs/progress.md，代码风格完全对齐 TASK-0201 关键词库）：
+- 新增 `backend/app/models/title_inspiration.py`：`TitleInspiration`（`__tablename__="title_inspiration"`），字段 `main_word`(String255,非空) / `question`(Text,非空) / `collect_status`(String32,默认 not_included)，公共字段继承 BaseModel
+- 新增 `backend/app/schemas/title_inspiration.py`：`CollectStatus` StrEnum（not_included/included）、`TitleInspirationCreate`（main_word + question 经 field_validator strip 后非空校验）、`TitleInspirationUpdate`（字段可选，exclude_unset 局部更新）、`TitleInspirationOut`（from_attributes，字段严格对齐 api-contract：id/main_word/question/collect_status/created_at/updated_at）
+- 新增 `backend/app/services/title_inspiration.py`：同步 CRUD —— `list_title_inspirations`（分页 + `main_word` ilike 模糊搜索 + `collect_status` 精确筛选，全部过滤 is_deleted=False，按 id desc）、`get_title_inspiration`、`create_title_inspiration`、`update_title_inspiration`、`delete_title_inspiration`（软删除：is_deleted=True + deleted_at）；记录不存在抛 `BusinessException(code=40400)`
+- 新增 `backend/app/api/endpoints/title_inspiration.py`：`router(prefix="/title-inspirations")`，5 个接口全部统一响应（success/paginate），列表用 Query 接收 page/page_size/main_word/collect_status
+- 新增迁移 `backend/alembic/versions/20260603_1401-b2c3d4e5f6a7_add_title_inspiration.py`：手写 create_table，down_revision=a1b2c3d4e5f6(keyword_library)，含 `ix_title_inspiration_main_word` 索引
+- 修改 `backend/app/models/__init__.py`：导入并导出 `TitleInspiration`，供 Alembic 收集元数据
+- 修改 `backend/app/api/router.py`：`include_router(title_inspiration.router)`
+- 契约一致性：api-contract.md（唯一权威源）标题灵感收录状态字段名为 `collect_status`，本任务严格采用；与 claude-code-dev.md 8.4 的 `included_status`/`keyword_id` 设计草案不一致时一律以契约为准，故未引入 keyword_id 字段
+- 实测命令（本 worktree 新建 backend/.venv，Python 3.14）：
+  - `python -m venv .venv` + `pip install -r requirements.txt`（成功）
+  - 导入检查：`import app.main / app.models / schemas / services`（OK，table=title_inspiration，columns 含 main_word/question/collect_status，5 条 title-inspiration 路由全部挂在 /api/title-inspirations）
+  - `alembic history`：`<base> -> 327ce9fdb8a5(baseline) -> a1b2c3d4e5f6(keyword) -> b2c3d4e5f6a7(head)` 单一线性头；`alembic upgrade a1b2c3d4e5f6:b2c3d4e5f6a7 --sql` 离线生成正确 title_inspiration DDL（main_word VARCHAR(255) NOT NULL、question TEXT NOT NULL、collect_status VARCHAR(32) DEFAULT 'not_included' NOT NULL）+ 索引
+  - 业务逻辑功能测试（SQLite 内存，测试进程内将 BigInteger 在 sqlite 上编译为 INTEGER 以适配自增；提交代码未改）：create×3/列表降序/total/main_word 模糊搜索/collect_status 筛选/分页/详情/局部更新（仅改 collect_status 保留 question 与 main_word）/软删除/删后查 404(code=40400)/更新不存在 404/空 main_word 与空 question 均被 ValidationError 拒绝 —— 全部通过
+  - `app.openapi()`：含 GET/POST `/api/title-inspirations` 与 GET/PUT/DELETE `/api/title-inspirations/{inspiration_id}`，components.schemas 含 CollectStatus / TitleInspirationCreate / TitleInspirationUpdate（Swagger 可测试）；`GET /api/health` 返回统一 success 响应
+- 范围限制：仅改动 backend/ 与 docs/progress.md，未触碰 frontend/，未接 MQ、未接 AI，未开发其他模块，未改动接口字段名
+- 备注：引入真实 PostgreSQL（TASK-0102）后需回归验证 `alembic upgrade head`（在线）与真实库读写
+
+
+## 历史变更（TASK-0202 关键词库前端页面，仅改动 frontend/ + 本文件）
 
 TASK-0202 完成（关键词库前端页面，路由 `/material/keywords`，左侧菜单「素材中心 / 关键词库」可访问）：
 - 新增 `frontend/src/types/material.ts`：KeywordItem / KeywordListQuery / KeywordCreatePayload / KeywordUpdatePayload / OptimizeStatus，字段对齐 api-contract.md（main_word / question_count / optimize_status / created_at / updated_at）
@@ -131,8 +152,8 @@ TASK-0003 完成：
 
 ## 下一步建议
 
-TASK-0201（关键词库后端接口）已完成。下一步可选：
-- **TASK-0202：关键词库前端页面**（列表 / 搜索 / 分页 / 新增 / 编辑 / 删除，对接本次后端接口）——补齐关键词库前后端闭环；
-- 或继续 **TASK-0203：标题灵感后端接口**（与关键词库共用本次确立的 model/schema/service/router 代码风格）。
+TASK-0203（标题灵感后端接口）已完成。下一步可选：
+- **TASK-0204：标题灵感前端页面**（列表 / 主词筛选 / 收录状态筛选 / 新增 / 编辑 / 删除，对接本次后端接口 `/api/title-inspirations`）——补齐标题灵感前后端闭环；
+- 或继续 **TASK-0205：画像图库后端接口**（image_category + image_asset）。
 
-另：**TASK-0102：Docker Compose**（PostgreSQL + Redis）仍未完成。容器内 PostgreSQL 起来后，需回归验证关键词库的 `alembic upgrade head`（在线）与真实数据库读写。
+另：**TASK-0102：Docker Compose**（PostgreSQL + Redis）仍未完成。容器内 PostgreSQL 起来后，需回归验证关键词库与标题灵感的 `alembic upgrade head`（在线）与真实数据库读写。
