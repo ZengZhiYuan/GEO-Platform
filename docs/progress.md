@@ -17,7 +17,7 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 - 技术栈确认：以 CLAUDE.md 为准（React + TS + Vite + Ant Design + Zustand/Redux；后端 FastAPI + Celery/Dramatiq）
 - TASK-0001：已创建项目基础目录 backend/ frontend/ docker/ scripts/，新增根 .gitignore；.env.example、README.md 已就绪
 - TASK-0002：已初始化后端 FastAPI 应用（app/main.py、core/config.py、core/response.py、core/exceptions.py、api/router.py、requirements.txt），健康检查接口 /api/health 已可用并实测返回统一 success 响应
-- TASK-0003：已初始化前端 React（Vite + React + TS + Ant Design + React Router + Axios + Zustand 依赖），含 MainLayout 左侧菜单（素材中心 / 写作工作台共 8 个子项）、占位页与空路由、统一 axios 客户端；实测 `npm run build` 通过、dev 服务器可正常响应
+- TASK-0003：已初始化前端 React（Vite + React + TS + Ant Design + React Router + Axios + Zustand 依赖），含 MainLayout 左侧菜单（素材中心 / 写作工作台共 8 个子项）、占位页与空路由、统一 axios 客户端、基础 API 类型目录 `src/types/`；实测 `npm run build` 通过、dev 服务器可正常响应
 - TASK-0101：已接入数据库基础设施（同步 SQLAlchemy 2.0 + Alembic）。新增 `core/database.py`（engine / SessionLocal / Base / get_db 依赖）、`models/base.py`（通用 BaseModel：id、created_at、updated_at、deleted_at、is_deleted、tenant_id、created_by、updated_by）、`models/__init__.py`；新增 Alembic（`alembic.ini`、`alembic/env.py` 从 settings.DATABASE_URL 读取连接、`alembic/script.py.mako`、`alembic/versions/` 含 baseline 迁移）；`core/config.py` 增加 DATABASE_URL 及引擎参数；`requirements.txt` 增加 sqlalchemy/alembic/psycopg2-binary。实测：venv 安装依赖成功、应用与模型导入无误、`alembic history/heads` 正常、`alembic upgrade head --sql` 离线生成正确 PostgreSQL DDL
 
 ## 正在进行
@@ -82,6 +82,21 @@ TASK-0101 完成（数据库基础，仅改动 backend/ + docs + README）：
 - 实测命令：`python -m venv .venv` + `pip install -r requirements.txt`（成功，psycopg2-binary 2.9.12 cp314 wheel）；`python -c "import app.main, app.core.database, app.models"`（OK，engine URL 正确）；`alembic history/heads`（OK）；`alembic upgrade head --sql`（离线生成 alembic_version 建表 DDL，OK）；uvicorn 启动 + `GET /api/health` 返回 `{"code":0,"message":"success","data":{"status":"ok",...}}`，HTTP 200
 
 > 备注：TASK-0002 在本轮开始前已由历史进度完成，本轮仅复核其健康检查接口仍可用，未重复创建文件。
+
+TASK-0003 补充（2026-06-03）：
+- 新增基础 API 类型目录 `frontend/src/types/`：`common.ts`（ApiResponse 转出 + PageParams / PageData / ListQuery，分页字段对齐 api-contract.md：items/total/page/page_size）、`index.ts`（类型统一出口）
+- 不包含任何业务实体类型，业务类型在后续对应任务补充
+- 未改动任何既有已提交文件；实测 `npm run build`（tsc -b 类型检查 + vite 生产构建）通过
+
+TASK-0003 完成：
+- 新增前端工程配置：package.json、tsconfig.json、tsconfig.node.json、vite.config.ts、index.html、.env.example
+- 新增 src/main.tsx（挂载 RouterProvider + antd ConfigProvider 中文 locale）
+- 新增 src/router/index.tsx（createBrowserRouter，素材中心 4 + 写作工作台 4 共 8 条路由，根路径重定向到 /material/keywords，通配 404）
+- 新增 src/layout/MainLayout.tsx（Sider 左侧菜单 + Header + Content Outlet，菜单点击导航、选中态随路由派生）
+- 新增 src/pages/PlaceholderPage.tsx、NotFoundPage.tsx（占位页与 404 页）
+- 新增 src/api/client.ts（axios 实例 + 响应拦截器，按统一响应解包 data、错误 message 提示）
+- 新增 src/vite-env.d.ts，移除占位 frontend/.gitkeep
+- 实测：npm install 成功；npm run build（tsc 类型检查 + vite 生产构建）通过；dev 服务器 / 与 /material/keywords 均返回 200
 
 ## 下一步建议
 
