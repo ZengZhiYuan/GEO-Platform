@@ -10,7 +10,8 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 - 2026-06-03：后端 ORM 采用**同步 SQLAlchemy 2.x**（同步 Session + `get_db` 依赖），不使用异步引擎。所有 CRUD、Worker 按同步写法实现。
 - 2026-06-03：异步任务 broker 采用 **Redis**（Celery broker + backend 均走 Redis），**不引入 RabbitMQ**。Phase 1 的 docker-compose 只编排 postgres + redis。
 - 2026-06-03（TASK-0205）：统计字段 `image_count` / `use_count` 与关键词 `question_count` 一致，定位为**只读输出字段**，不进入 Create/Update Schema。`image_count` 由 image_asset service 维护（新增 +1 / 软删除 -1 / 改 category_id 迁移计数）；`use_count` 仅暴露字段，后续写作模块累加。沿用代码库**无 DB 外键**约定，`image_asset.category_id` 仅建索引，引用完整性在 service 层校验（新增/改图片时校验目标分类存在）。
-- ⚠️ 2026-06-03：本文件下方（`## 当前阶段` 及 `## 最近一次变更` 等区段）存在**已提交的 git 合并冲突标记**（`<<<<<<< HEAD` / `=======` / `>>>>>>>`，源自 feat/fe-title-inspiration 合并），TASK-0205 未触碰这些标记，需另行人工解决。
+- 2026-06-03（协作约定）：自即日起各任务分支**不再直接编辑 `docs/progress.md`**，改为在 `docs/progress/` 下新增独立分片文件 `TASK-XXXX-<slug>.md` 记录本任务变更；由**主控终端在合并后**把分片内容汇总进本文件并归档分片。此举从根源消除多分支并发编辑同一文件导致的合并冲突，详见 `docs/progress/README.md`。
+  - 备注：feat/fe-title-inspiration 合并曾遗留的 git 冲突标记（`<<<<<<<` / `=======` / `>>>>>>>`）已在后续 image-library 合并中清除，本文件现已无残留标记（grep 校验为空）。
 
 ## 已完成（TASK-0205 画像图库后端接口，仅改动 backend/ + 本文件）
 
