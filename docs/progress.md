@@ -13,6 +13,32 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 - 2026-06-03：接口契约以 `docs/api-contract.md` 为**唯一权威源**，`docs/claude-code-dev.md` 仅作设计参考。当字段名/路径前缀/枚举值冲突时一律以契约为准（路径用 `/api/...` 而非 `/api/v1/...`；具体冲突字段见 api-contract.md）。后端 Schema、前端 types/api 全部按契约字段拼写。
 - 2026-06-03：后端 ORM 采用**同步 SQLAlchemy 2.x**（同步 Session + `get_db` 依赖），不使用异步引擎。所有 CRUD、Worker 按同步写法实现。
 - 2026-06-03：异步任务 broker 采用 **Redis**（Celery broker + backend 均走 Redis），**不引入 RabbitMQ**。Phase 1 的 docker-compose 只编排 postgres + redis。
+- 2026-06-03（TASK-0205）：统计字段 `image_count` / `use_count` 与关键词 `question_count` 一致，定位为**只读输出字段**，不进入 Create/Update Schema。`image_count` 由 image_asset service 维护（新增 +1 / 软删除 -1 / 改 category_id 迁移计数）；`use_count` 仅暴露字段，后续写作模块累加。沿用代码库**无 DB 外键**约定，`image_asset.category_id` 仅建索引，引用完整性在 service 层校验（新增/改图片时校验目标分类存在）。
+- ⚠️ 2026-06-03：本文件下方（`## 当前阶段` 及 `## 最近一次变更` 等区段）存在**已提交的 git 合并冲突标记**（`<<<<<<< HEAD` / `=======` / `>>>>>>>`，源自 feat/fe-title-inspiration 合并），TASK-0205 未触碰这些标记，需另行人工解决。
+
+## 已完成（TASK-0205 画像图库后端接口，仅改动 backend/ + 本文件）
+
+TASK-0205 完成（画像图库后端接口，仅改动 backend/ 与 docs/progress.md，代码风格完全对齐 TASK-0201/0203）：
+- 新增 `backend/app/models/image_category.py`：`ImageCategory`（表 `image_category`），字段 `category_name`(String255,非空) / `image_count`(Integer,默认0)，公共字段继承 BaseModel
+- 新增 `backend/app/models/image_asset.py`：`ImageAsset`（表 `image_asset`），字段 `category_id`(BigInteger,非空,索引) / `image_url`(Text,非空) / `use_count`(Integer,默认0)
+- 新增 `backend/app/schemas/image_category.py`：`ImageCategoryCreate`（category_name strip 非空）/ `ImageCategoryUpdate`（可选，局部更新）/ `ImageCategoryOut`（from_attributes，字段严格对齐契约：id/category_name/image_count/created_at/updated_at）
+- 新增 `backend/app/schemas/image_asset.py`：`ImageAssetCreate`（category_id ge=1 + image_url strip 非空）/ `ImageAssetUpdate`（可选）/ `ImageAssetOut`（字段：id/category_id/image_url/use_count/created_at/updated_at）
+- 新增 `backend/app/services/image_category.py`：同步 CRUD（分页 + category_name ilike 模糊搜索 + 软删除，按 id desc，404 抛 BusinessException code=40400）
+- 新增 `backend/app/services/image_asset.py`：同步 CRUD —— 分页 + **按 category_id 精确筛选** + 软删除；新增/改图片校验所属分类存在；维护分类 `image_count`（新增 +1 / 软删除 -1 / 改 category_id 在新旧分类间迁移，减法用 max(0, n-1) 兜底）
+- 新增 `backend/app/api/endpoints/image_category.py`：`router(prefix="/image-categories")`，5 接口统一响应
+- 新增 `backend/app/api/endpoints/image_asset.py`：`router(prefix="/image-assets")`，5 接口统一响应，列表用 Query 接收 page/page_size/category_id
+- 新增迁移 `backend/alembic/versions/20260603_1402-c3d4e5f6a7b8_add_image_library.py`：一次建两表（先 image_category 后 image_asset），down_revision=b2c3d4e5f6a7(title_inspiration)，含 `ix_image_asset_category_id` 索引
+- 修改 `backend/app/models/__init__.py`：导入导出 `ImageCategory` / `ImageAsset`
+- 修改 `backend/app/api/router.py`：include image_category / image_asset 两 router
+- 接口路径（API_PREFIX=/api）：GET/POST `/api/image-categories`、GET/PUT/DELETE `/api/image-categories/{category_id}`；GET/POST `/api/image-assets`、GET/PUT/DELETE `/api/image-assets/{asset_id}`
+- 实测（本 worktree 新建 backend/.venv，Python 3.14）：
+  - `python -m venv .venv` + `pip install -r requirements.txt`（成功）
+  - 导入检查：app.main / models / schemas / services OK；image_category cols 含 category_name/image_count，image_asset cols 含 category_id/image_url/use_count；10 条 image 路由全部挂载正确
+  - `alembic history/heads`：`<base> -> baseline -> keyword -> title_inspiration -> c3d4e5f6a7b8(head)` 单一线性头；`alembic upgrade b2c3d4e5f6a7:c3d4e5f6a7b8 --sql` 离线生成正确 DDL（category_name VARCHAR(255) NOT NULL、image_count INTEGER DEFAULT 0、category_id BIGINT NOT NULL、image_url TEXT NOT NULL、use_count INTEGER DEFAULT 0 + 索引）
+  - 业务功能测试（SQLite 内存，测试进程内将 BigInteger 编译为 INTEGER 以适配 sqlite 自增；提交代码未改）：分类 create×2/strip/列表降序/total/名称模糊搜索/更新；图片 create×2（image_count→2）/按 category_id 筛选/仅改 image_url/改分类迁移计数（旧-1 新+1）/软删除（image_count→0）/删后查 404；新增图片到不存在分类 404；删分类后查 404；空 category_name、空 image_url、category_id=0 均被 ValidationError 拒绝 —— 全部通过
+  - `app.openapi()`：components.schemas 含 ImageCategoryCreate/Update、ImageAssetCreate/Update（Swagger 可测试）
+- 范围限制：仅改动 backend/ 与 docs/progress.md，未触碰 frontend/，未接 MQ、未接 AI，未改动其他模块及既有接口字段名
+- 备注：引入真实 PostgreSQL（TASK-0102）后需回归验证 `alembic upgrade head`（在线）与真实库读写
 
 ## 已完成
 
