@@ -2,7 +2,20 @@
   "permissions": {
     "allow": [
       "WebSearch",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(ls -la docs)",
+      "Bash(git rev-parse *)",
+      "Bash(mkdir -p backend frontend docker scripts)",
+      "Bash(touch backend/.gitkeep frontend/.gitkeep docker/.gitkeep scripts/.gitkeep)",
+      "Bash(git add *)",
+      "Bash(git commit -m '@ *)",
+      "Bash(git commit --amend -m 'TASK-0001: 创建项目基础目录骨架' -m '- 新增 backend/ frontend/ docker/ scripts/ 目录\\(含 .gitkeep 占位\\) *)",
+      "Bash(git push *)",
+      "Bash(./.venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000)",
+      "Bash(git commit -m 'TASK-0002: 初始化后端 FastAPI 应用' -m '- app/main.py: create_app 工厂，配置 CORS、注册全局异常处理、include /api 路由 *)",
+      "Bash(npm --version)",
+      "Bash(npm run *)",
+      "Bash(npm install *)"
     ]
   }
 }
