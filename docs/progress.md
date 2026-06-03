@@ -7,6 +7,8 @@ Phase 0（项目初始化）已全部完成（TASK-0001 / 0002 / 0003）。Phase
 ## 决策记录
 
 - 2026-06-03：接口契约以 `docs/api-contract.md` 为**唯一权威源**，`docs/claude-code-dev.md` 仅作设计参考。当字段名/路径前缀/枚举值冲突时一律以契约为准（路径用 `/api/...` 而非 `/api/v1/...`；具体冲突字段见 api-contract.md）。后端 Schema、前端 types/api 全部按契约字段拼写。
+- 2026-06-03：后端 ORM 采用**同步 SQLAlchemy 2.x**（同步 Session + `get_db` 依赖），不使用异步引擎。所有 CRUD、Worker 按同步写法实现。
+- 2026-06-03：异步任务 broker 采用 **Redis**（Celery broker + backend 均走 Redis），**不引入 RabbitMQ**。Phase 1 的 docker-compose 只编排 postgres + redis。
 
 ## 已完成
 
