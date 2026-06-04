@@ -11,6 +11,7 @@ from app.api.endpoints import (
     image_category,
     keyword,
     title_inspiration,
+    writing_rule,
 )
 from app.core.config import settings
 from app.core.response import success
@@ -34,3 +35,4 @@ api_router.include_router(keyword.router)
 api_router.include_router(title_inspiration.router)
 api_router.include_router(image_category.router)
 api_router.include_router(image_asset.router)
+api_router.include_router(writing_rule.router)
