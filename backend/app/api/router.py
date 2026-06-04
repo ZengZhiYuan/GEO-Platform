@@ -13,6 +13,7 @@ from app.api.endpoints import (
     keyword,
     title_inspiration,
     writing_rule,
+    writing_task,
 )
 from app.core.config import settings
 from app.core.response import success
@@ -38,3 +39,4 @@ api_router.include_router(image_category.router)
 api_router.include_router(image_asset.router)
 api_router.include_router(writing_rule.router)
 api_router.include_router(content_category.router)
+api_router.include_router(writing_task.router)
