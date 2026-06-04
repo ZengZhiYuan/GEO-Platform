@@ -70,3 +70,59 @@ export interface ContentCategoryCreatePayload {
 
 /** 更新内容分类请求体（PUT /api/content-categories/{id}），字段同新增。 */
 export type ContentCategoryUpdatePayload = ContentCategoryCreatePayload
+
+/**
+ * 文章状态枚举值（对应 GET/PUT /api/articles 的 status 字段）。
+ * 取值以 docs/api-contract.md 为准：
+ * generating（生成中）/ pending_review（待审核）/ normal（正常）/
+ * disabled（禁用）/ failed（生成失败）。
+ * 其中 generating / failed 由生成流程产生（只读展示），
+ * 人工可切换的目标状态为 pending_review / normal / disabled。
+ */
+export type ArticleStatus =
+  | 'generating'
+  | 'pending_review'
+  | 'normal'
+  | 'disabled'
+  | 'failed'
+
+/** 人工可切换的文章状态（待审核 / 正常 / 禁用）。 */
+export type ArticleEditableStatus = 'pending_review' | 'normal' | 'disabled'
+
+/** 文章列表/详情记录（对应 GET /api/articles 返回项）。 */
+export interface ArticleItem {
+  id: number
+  writing_task_id: number
+  article_title: string
+  cover_image_url: string | null
+  status: ArticleStatus
+  content: string | null
+  error_message: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** 文章列表查询参数：分页 + 标题搜索 + 状态筛选 + 按写作任务筛选。 */
+export interface ArticleListQuery {
+  page?: number
+  page_size?: number
+  article_title?: string
+  status?: ArticleStatus
+  writing_task_id?: number
+}
+
+/**
+ * 更新文章请求体（PUT /api/articles/{id}）。
+ * 支持编辑标题、封面图、正文与状态。
+ */
+export interface ArticleUpdatePayload {
+  article_title: string
+  cover_image_url?: string | null
+  content?: string | null
+  status: ArticleEditableStatus
+}
+
+/** 文章状态切换请求体（POST /api/articles/{id}/status）。 */
+export interface ArticleStatusUpdatePayload {
+  status: ArticleEditableStatus
+}

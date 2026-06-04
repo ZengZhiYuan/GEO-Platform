@@ -3,7 +3,11 @@
  * 所有下拉/标签的状态选项集中在此，避免散落在页面或接口代码里。
  */
 import type { CollectStatus, OptimizeStatus } from '@/types/material'
-import type { CreationType } from '@/types/workspace'
+import type {
+  ArticleEditableStatus,
+  ArticleStatus,
+  CreationType,
+} from '@/types/workspace'
 
 export interface SelectOption<T extends string = string> {
   label: string
@@ -63,4 +67,38 @@ export const CreationTypeColorMap: Record<CreationType, string> = {
 /** 根据枚举值取中文文案，未命中时回退原值。 */
 export function getCreationTypeLabel(value: string): string {
   return CreationTypeOptions.find((o) => o.value === value)?.label ?? value
+}
+
+/** 文章状态全量选项（含系统态 generating / failed，用于列表筛选与展示）。 */
+export const ArticleStatusOptions: SelectOption<ArticleStatus>[] = [
+  { label: '生成中', value: 'generating' },
+  { label: '待审核', value: 'pending_review' },
+  { label: '正常', value: 'normal' },
+  { label: '禁用', value: 'disabled' },
+  { label: '生成失败', value: 'failed' },
+]
+
+/**
+ * 人工可切换的文章状态选项（待审核 / 正常 / 禁用）。
+ * 用于编辑页状态选择与列表行内状态切换，不含生成流程产生的系统态。
+ */
+export const ArticleEditableStatusOptions: SelectOption<ArticleEditableStatus>[] =
+  [
+    { label: '待审核', value: 'pending_review' },
+    { label: '正常', value: 'normal' },
+    { label: '禁用', value: 'disabled' },
+  ]
+
+/** 文章状态对应的 antd Tag 颜色。 */
+export const ArticleStatusColorMap: Record<ArticleStatus, string> = {
+  generating: 'processing',
+  pending_review: 'warning',
+  normal: 'success',
+  disabled: 'default',
+  failed: 'error',
+}
+
+/** 根据枚举值取中文文案，未命中时回退原值。 */
+export function getArticleStatusLabel(value: string): string {
+  return ArticleStatusOptions.find((o) => o.value === value)?.label ?? value
 }
