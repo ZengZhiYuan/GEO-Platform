@@ -10,6 +10,7 @@ from app.models.image_asset import ImageAsset
 from app.models.image_category import ImageCategory
 from app.models.keyword import Keyword
 from app.models.title_inspiration import TitleInspiration
+from app.models.writing_rule import WritingRule
 
 __all__ = [
     "Base",
@@ -18,4 +19,5 @@ __all__ = [
     "ImageCategory",
     "Keyword",
     "TitleInspiration",
+    "WritingRule",
 ]

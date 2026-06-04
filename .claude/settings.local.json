@@ -33,7 +33,13 @@
       "Bash(.venv/Scripts/python.exe *)",
       "Bash(.venv/Scripts/alembic.exe history *)",
       "Bash(.venv/Scripts/alembic.exe heads *)",
-      "Bash(.venv/Scripts/alembic.exe upgrade *)"
+      "Bash(.venv/Scripts/alembic.exe upgrade *)",
+      "Bash(python -c \"import fastapi, sqlalchemy, pydantic, alembic; print\\('deps already importable in global'\\)\")",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(./.venv/Scripts/alembic.exe history *)",
+      "Bash(./.venv/Scripts/alembic.exe heads *)",
+      "Bash(./.venv/Scripts/alembic.exe upgrade *)",
+      "Bash(PYTHONPATH=\"D:/zengzhiyuan/workspace/GEO-Platform-worktrees/be-writing-rule/backend\" ./.venv/Scripts/python.exe *)"
     ]
   }
 }
