@@ -36,36 +36,31 @@ npm install
 npm run dev
 ```
 
-## Docker启动
+## Docker启动（中间件）
+
+后端运行依赖两个中间件：**PostgreSQL**（数据库，5432）和 **Redis**（Dramatiq broker，6379）。
+两者已编排在根目录 `docker-compose.yml`，配置默认值与 `.env.example` 对齐，存在 `.env` 时自动覆盖。
 
 ```bash
-docker compose up -d
+docker compose up -d        # 一键启动（后台）
+docker compose ps           # 查看状态 / 健康检查（healthy 即就绪）
+docker compose logs -f      # 跟踪日志
+docker compose down         # 停止并删除容器（保留数据卷）
+docker compose down -v      # 连同数据卷一起删除（清空数据，慎用）
 ```
+
+> 无 Docker Compose 的环境，可用等价脚本 `bash scripts/start-middleware.sh`（支持 `stop` / `down` 子命令）。
+
+连接地址通过 `DATABASE_URL` / `REDIS_URL` 配置（默认见 `.env.example`），可在 `.env` 覆盖。
 
 ## 异步任务 Worker（Dramatiq + Redis）
 
 写作任务创建后，会按 `ai_generate_count` 拆分出多个文章小任务并投递到 Redis；
 由 Dramatiq Worker 异步消费、调用 AI（第一版为 Mock）生成标题与正文。
 
-### 1. 启动 Redis
+### 1. 启动中间件
 
-尚未提供 docker-compose（见 TASK-0102），可先用单容器启动：
-
-```bash
-docker run -d --name shipu_geo_redis -p 6379:6379 redis:7
-```
-
-或加入 `docker-compose.yml`（TASK-0102 会正式编排）：
-
-```yaml
-  redis:
-    image: redis:7
-    container_name: shipu_geo_redis
-    ports:
-      - "6379:6379"
-```
-
-连接地址通过 `REDIS_URL`（默认 `redis://localhost:6379/0`）配置，可在 `.env` 覆盖。
+见上方「Docker启动（中间件）」，确保 Redis 已就绪（`docker compose ps` 显示 `healthy`）。
 
 ### 2. 启动 Worker
 
