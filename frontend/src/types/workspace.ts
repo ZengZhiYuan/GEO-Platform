@@ -42,3 +42,31 @@ export interface WritingRuleCreatePayload {
 
 /** 更新写作规范请求体（PUT /api/writing-rules/{id}），字段同新增。 */
 export type WritingRuleUpdatePayload = WritingRuleCreatePayload
+
+/**
+ * 内容分类列表/详情记录（对应 GET /api/content-categories 返回项）。
+ * 字段对齐 docs/api-contract.md：group_name / article_count。
+ * article_count 为只读统计字段（分类下文章数量，由后端维护），不进入表单。
+ */
+export interface ContentCategoryItem {
+  id: number
+  group_name: string
+  article_count: number
+  created_at: string
+  updated_at: string
+}
+
+/** 内容分类列表查询参数：分页 + 分组名搜索。 */
+export interface ContentCategoryListQuery {
+  page?: number
+  page_size?: number
+  group_name?: string
+}
+
+/** 新增内容分类请求体（POST /api/content-categories）。 */
+export interface ContentCategoryCreatePayload {
+  group_name: string
+}
+
+/** 更新内容分类请求体（PUT /api/content-categories/{id}），字段同新增。 */
+export type ContentCategoryUpdatePayload = ContentCategoryCreatePayload
