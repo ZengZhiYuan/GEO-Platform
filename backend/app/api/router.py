@@ -7,6 +7,7 @@
 from fastapi import APIRouter
 
 from app.api.endpoints import (
+    content_category,
     image_asset,
     image_category,
     keyword,
@@ -36,3 +37,4 @@ api_router.include_router(title_inspiration.router)
 api_router.include_router(image_category.router)
 api_router.include_router(image_asset.router)
 api_router.include_router(writing_rule.router)
+api_router.include_router(content_category.router)
