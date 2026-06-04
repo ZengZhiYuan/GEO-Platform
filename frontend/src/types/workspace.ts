@@ -70,3 +70,113 @@ export interface ContentCategoryCreatePayload {
 
 /** 更新内容分类请求体（PUT /api/content-categories/{id}），字段同新增。 */
 export type ContentCategoryUpdatePayload = ContentCategoryCreatePayload
+
+/* ------------------------------- 写作任务 ------------------------------- */
+
+/**
+ * 写作大任务状态枚举值。
+ * 取值以 docs/api-contract.md 为准：draft / pending / running / completed /
+ * failed / cancelled（注意为 `pending`，非 dev 文档草案的 `queued`）。
+ */
+export type TaskStatus =
+  | 'draft'
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+/**
+ * 写作任务列表/详情记录（对应 GET /api/writing-tasks 返回项）。
+ * 字段严格对齐 docs/api-contract.md（唯一权威源）：
+ * content_category_id / distill_keywords / image_category_id / content_rule_id
+ * （与 dev 文档草案 category_id / distilled_keyword / image_gallery_id /
+ * article_rule_id 不一致时一律以契约为准）。
+ */
+export interface WritingTaskItem {
+  id: number
+  task_name: string
+  content_category_id: number
+  distill_keywords: string
+  image_category_id?: number | null
+  article_image_count: number
+  brand_knowledge_id?: number | null
+  content_rule_id: number
+  title_rule_id?: number | null
+  /** 文章结果状态（只读输出字段，由后端维护）。 */
+  article_result_status?: string | null
+  ai_generate_count: number
+  task_status: TaskStatus
+  created_at: string
+  updated_at: string
+}
+
+/** 写作任务列表查询参数：分页 + 任务名称搜索 + 状态筛选。 */
+export interface WritingTaskListQuery {
+  page?: number
+  page_size?: number
+  task_name?: string
+  task_status?: TaskStatus
+}
+
+/**
+ * 新增写作任务请求体（POST /api/writing-tasks）。
+ * 必填：task_name / content_category_id / distill_keywords /
+ * article_image_count / content_rule_id / ai_generate_count；
+ * 可选：image_category_id / brand_knowledge_id / title_rule_id。
+ */
+export interface WritingTaskCreatePayload {
+  task_name: string
+  content_category_id: number
+  distill_keywords: string
+  image_category_id?: number
+  article_image_count: number
+  brand_knowledge_id?: number
+  content_rule_id: number
+  title_rule_id?: number
+  ai_generate_count: number
+}
+
+/* ------------------------------- 文章清单 ------------------------------- */
+
+/**
+ * 文章（小任务）状态枚举值。
+ * 取值以 docs/api-contract.md 为准：generating / pending_review / normal /
+ * disabled / failed。
+ */
+export type ArticleStatus =
+  | 'generating'
+  | 'pending_review'
+  | 'normal'
+  | 'disabled'
+  | 'failed'
+
+/**
+ * 文章列表/详情记录（对应 GET /api/articles 返回项）。
+ * 字段严格对齐 docs/api-contract.md：writing_task_id / article_title /
+ * cover_image_url / status / content / error_message。
+ * 本任务仅用于写作任务详情页展示小任务列表，不开发文章编辑页。
+ */
+export interface ArticleItem {
+  id: number
+  writing_task_id: number
+  article_title?: string | null
+  cover_image_url?: string | null
+  status: ArticleStatus
+  content?: string | null
+  error_message?: string | null
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * 文章列表查询参数：分页 + 按所属写作任务过滤。
+ * 注：api-contract.md 未文档化 GET /api/articles 的查询参数，此处沿用前端
+ * 既有「按外键过滤」约定，假设后端支持 writing_task_id 过滤（待后端确认）。
+ */
+export interface ArticleListQuery {
+  page?: number
+  page_size?: number
+  writing_task_id?: number
+  status?: ArticleStatus
+}
