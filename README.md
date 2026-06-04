@@ -42,6 +42,46 @@ npm run dev
 docker compose up -d
 ```
 
+## 异步任务 Worker（Dramatiq + Redis）
+
+写作任务创建后，会按 `ai_generate_count` 拆分出多个文章小任务并投递到 Redis；
+由 Dramatiq Worker 异步消费、调用 AI（第一版为 Mock）生成标题与正文。
+
+### 1. 启动 Redis
+
+尚未提供 docker-compose（见 TASK-0102），可先用单容器启动：
+
+```bash
+docker run -d --name shipu_geo_redis -p 6379:6379 redis:7
+```
+
+或加入 `docker-compose.yml`（TASK-0102 会正式编排）：
+
+```yaml
+  redis:
+    image: redis:7
+    container_name: shipu_geo_redis
+    ports:
+      - "6379:6379"
+```
+
+连接地址通过 `REDIS_URL`（默认 `redis://localhost:6379/0`）配置，可在 `.env` 覆盖。
+
+### 2. 启动 Worker
+
+```bash
+cd backend
+# 已激活 .venv 且 Redis 已就绪
+dramatiq app.workers.worker
+# Windows 建议显式指定进程/线程数
+dramatiq app.workers.worker --processes 1 --threads 4
+```
+
+启动后，调用 `POST /api/writing-tasks` 创建写作任务即可看到 Worker 消费日志，
+文章状态由 `generating` 流转为 `pending_review`（成功）或 `failed`（失败）。
+
+> 无 Redis 的本地验证：设置环境变量 `DRAMATIQ_BROKER=stub` 使用内存 broker。
+
 ## 数据库迁移
 
 迁移使用 Alembic，连接地址从 `app.core.config.settings.DATABASE_URL` 读取
