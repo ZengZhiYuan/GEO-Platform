@@ -1,7 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 
 import MainLayout from '@/layout/MainLayout'
-import PlaceholderPage from '@/pages/PlaceholderPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import KeywordPage from '@/pages/material/keyword'
 import TitleInspirationPage from '@/pages/material/title-inspiration'
@@ -14,6 +13,8 @@ import ContentCategoryPage from '@/pages/workspace/content-category'
 import WritingTaskPage from '@/pages/workspace/writing-task'
 import WritingTaskCreatePage from '@/pages/workspace/writing-task/create'
 import WritingTaskDetailPage from '@/pages/workspace/writing-task/detail'
+import ArticleListPage from '@/pages/workspace/article'
+import ArticleEditPage from '@/pages/workspace/article/edit'
 
 export const router = createBrowserRouter([
   {
@@ -34,7 +35,8 @@ export const router = createBrowserRouter([
       { path: 'workspace/writing-tasks', element: <WritingTaskPage /> },
       { path: 'workspace/writing-tasks/create', element: <WritingTaskCreatePage /> },
       { path: 'workspace/writing-tasks/:id', element: <WritingTaskDetailPage /> },
-      { path: 'workspace/articles', element: <PlaceholderPage title="文章清单" /> },
+      { path: 'workspace/articles', element: <ArticleListPage /> },
+      { path: 'workspace/articles/:id/edit', element: <ArticleEditPage /> },
     ],
   },
   { path: '*', element: <NotFoundPage /> },

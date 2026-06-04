@@ -4,6 +4,7 @@
  */
 import type { CollectStatus, OptimizeStatus } from '@/types/material'
 import type {
+  ArticleEditableStatus,
   ArticleStatus,
   CreationType,
   TaskStatus,
@@ -94,7 +95,7 @@ export function getTaskStatusLabel(value: string): string {
   return TaskStatusOptions.find((o) => o.value === value)?.label ?? value
 }
 
-/** 文章（小任务）状态选项。 */
+/** 文章状态全量选项（含系统态 generating / failed，用于列表筛选与展示）。 */
 export const ArticleStatusOptions: SelectOption<ArticleStatus>[] = [
   { label: '生成中', value: 'generating' },
   { label: '待审核', value: 'pending_review' },
@@ -102,6 +103,17 @@ export const ArticleStatusOptions: SelectOption<ArticleStatus>[] = [
   { label: '禁用', value: 'disabled' },
   { label: '生成失败', value: 'failed' },
 ]
+
+/**
+ * 人工可切换的文章状态选项（待审核 / 正常 / 禁用）。
+ * 用于编辑页状态选择与列表行内状态切换，不含生成流程产生的系统态。
+ */
+export const ArticleEditableStatusOptions: SelectOption<ArticleEditableStatus>[] =
+  [
+    { label: '待审核', value: 'pending_review' },
+    { label: '正常', value: 'normal' },
+    { label: '禁用', value: 'disabled' },
+  ]
 
 /** 文章状态对应的 antd Tag 颜色。 */
 export const ArticleStatusColorMap: Record<ArticleStatus, string> = {

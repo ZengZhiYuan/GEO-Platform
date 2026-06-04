@@ -140,9 +140,12 @@ export interface WritingTaskCreatePayload {
 /* ------------------------------- 文章清单 ------------------------------- */
 
 /**
- * 文章（小任务）状态枚举值。
- * 取值以 docs/api-contract.md 为准：generating / pending_review / normal /
- * disabled / failed。
+ * 文章状态枚举值（对应 GET/PUT /api/articles 的 status 字段）。
+ * 取值以 docs/api-contract.md 为准：
+ * generating（生成中）/ pending_review（待审核）/ normal（正常）/
+ * disabled（禁用）/ failed（生成失败）。
+ * 其中 generating / failed 由生成流程产生（只读展示），
+ * 人工可切换的目标状态为 pending_review / normal / disabled。
  */
 export type ArticleStatus =
   | 'generating'
@@ -151,32 +154,43 @@ export type ArticleStatus =
   | 'disabled'
   | 'failed'
 
-/**
- * 文章列表/详情记录（对应 GET /api/articles 返回项）。
- * 字段严格对齐 docs/api-contract.md：writing_task_id / article_title /
- * cover_image_url / status / content / error_message。
- * 本任务仅用于写作任务详情页展示小任务列表，不开发文章编辑页。
- */
+/** 人工可切换的文章状态（待审核 / 正常 / 禁用）。 */
+export type ArticleEditableStatus = 'pending_review' | 'normal' | 'disabled'
+
+/** 文章列表/详情记录（对应 GET /api/articles 返回项）。 */
 export interface ArticleItem {
   id: number
   writing_task_id: number
-  article_title?: string | null
-  cover_image_url?: string | null
+  article_title: string
+  cover_image_url: string | null
   status: ArticleStatus
-  content?: string | null
-  error_message?: string | null
+  content: string | null
+  error_message: string | null
   created_at: string
   updated_at: string
 }
 
-/**
- * 文章列表查询参数：分页 + 按所属写作任务过滤。
- * 注：api-contract.md 未文档化 GET /api/articles 的查询参数，此处沿用前端
- * 既有「按外键过滤」约定，假设后端支持 writing_task_id 过滤（待后端确认）。
- */
+/** 文章列表查询参数：分页 + 标题搜索 + 状态筛选 + 按写作任务筛选。 */
 export interface ArticleListQuery {
   page?: number
   page_size?: number
-  writing_task_id?: number
+  article_title?: string
   status?: ArticleStatus
+  writing_task_id?: number
+}
+
+/**
+ * 更新文章请求体（PUT /api/articles/{id}）。
+ * 支持编辑标题、封面图、正文与状态。
+ */
+export interface ArticleUpdatePayload {
+  article_title: string
+  cover_image_url?: string | null
+  content?: string | null
+  status: ArticleEditableStatus
+}
+
+/** 文章状态切换请求体（POST /api/articles/{id}/status）。 */
+export interface ArticleStatusUpdatePayload {
+  status: ArticleEditableStatus
 }
