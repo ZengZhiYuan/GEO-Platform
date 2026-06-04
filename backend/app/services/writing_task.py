@@ -12,8 +12,15 @@
     content_rule_id / title_rule_id -> writing_rule（content_rule 必填）
     image_category_id -> image_category（可选）
     brand_knowledge_id -> 品牌知识库模块尚未实现，暂不校验存在性
+
+MQ 投递（TASK-0401/0402）：
+    创建大任务、重试失败小任务后，把对应 article 小任务投递到 MQ，由
+    Worker 异步生成（见 app.tasks.article_tasks）。投递在事务提交之后进行，
+    且对 broker 故障做容错（仅记录日志，不影响任务/文章落库），避免 Redis
+    未就绪时阻断接口主流程。
 """
 
+import logging
 from datetime import datetime
 
 from sqlalchemy import func, select
@@ -32,12 +39,34 @@ from app.schemas.writing_task import (
     WritingTaskCreate,
 )
 
+logger = logging.getLogger("app.services.writing_task")
+
 # 大任务进入终态后不可再取消
 _CANCELLABLE_STATUSES = {
     TaskStatus.DRAFT.value,
     TaskStatus.PENDING.value,
     TaskStatus.RUNNING.value,
 }
+
+
+def _enqueue_articles(article_ids: list[int]) -> None:
+    """把文章小任务投递到 MQ；broker 故障仅记录日志，不影响主流程。
+
+    懒导入 app.tasks 以避免在未配置 broker / 未安装 dramatiq 时影响接口导入。
+    """
+    if not article_ids:
+        return
+    try:
+        from app.tasks.article_tasks import enqueue_articles
+
+        enqueue_articles(article_ids)
+    except Exception as exc:  # noqa: BLE001 - MQ 不可用不应阻断业务
+        logger.warning(
+            "投递文章生成小任务失败（article_ids=%s）：%s。"
+            "任务/文章已落库，可在 Redis/Worker 就绪后重试。",
+            article_ids,
+            exc,
+        )
 
 
 def _get_active(db: Session, task_id: int) -> WritingTask:
@@ -135,16 +164,20 @@ def create_writing_task(db: Session, payload: WritingTaskCreate) -> WritingTask:
     db.add(task)
     db.flush()  # 取得 task.id 供小任务关联
 
+    articles: list[Article] = []
     for _ in range(payload.ai_generate_count):
-        db.add(
-            Article(
-                writing_task_id=task.id,
-                status=ArticleStatus.GENERATING.value,
-            )
+        article = Article(
+            writing_task_id=task.id,
+            status=ArticleStatus.GENERATING.value,
         )
+        db.add(article)
+        articles.append(article)
 
     db.commit()
     db.refresh(task)
+
+    # 事务提交后再投递 MQ（expire_on_commit=False，article.id 仍可读）
+    _enqueue_articles([article.id for article in articles])
     return task
 
 
@@ -178,9 +211,9 @@ def cancel_writing_task(db: Session, task_id: int) -> WritingTask:
 def retry_writing_task(db: Session, task_id: int) -> WritingTask:
     """重试写作任务（占位实现）。
 
-    MQ / AI 尚未接入（见 TASK-0401/0402），此处仅完成状态流转占位：
     将失败的小任务重置为 generating 并清空错误信息，大任务状态回到 pending、
-    article_result_status 回到 generating。后续接入 MQ 后在此补充消息投递。
+    article_result_status 回到 generating，并把被重置的小任务重新投递到 MQ，
+    由 Worker 再次异步生成。
     """
     task = _get_active(db, task_id)
 
@@ -189,13 +222,18 @@ def retry_writing_task(db: Session, task_id: int) -> WritingTask:
         Article.is_deleted.is_(False),
         Article.status == ArticleStatus.FAILED.value,
     )
+    retry_ids: list[int] = []
     for article in db.execute(stmt).scalars().all():
         article.status = ArticleStatus.GENERATING.value
         article.error_message = None
+        retry_ids.append(article.id)
 
     task.task_status = TaskStatus.PENDING.value
     task.article_result_status = ArticleResultStatus.GENERATING.value
 
     db.commit()
     db.refresh(task)
+
+    # 重新投递被重置的失败小任务
+    _enqueue_articles(retry_ids)
     return task

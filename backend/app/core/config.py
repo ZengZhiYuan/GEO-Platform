@@ -40,6 +40,19 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_PRE_PING: bool = True
 
+    # Redis / 异步任务（TASK-0401）
+    # Dramatiq broker 地址（Redis）；与 .env.example 的 REDIS_URL 对齐
+    REDIS_URL: str = "redis://localhost:6379/0"
+    # broker 类型：redis（默认）/ stub（内存，供测试或无 Redis 环境）
+    DRAMATIQ_BROKER: str = "redis"
+    # 文章生成失败的最大重试次数（Dramatiq actor max_retries）
+    ARTICLE_MAX_RETRIES: int = 3
+
+    # AI 生成（第一版 Mock，见 docs/decisions.md 004）
+    AI_PROVIDER: str = "mock"
+    # MockAIWriter 模拟生成耗时（秒），默认 0 不阻塞
+    AI_MOCK_DELAY_SECONDS: float = 0.0
+
 
 @lru_cache
 def get_settings() -> Settings:
