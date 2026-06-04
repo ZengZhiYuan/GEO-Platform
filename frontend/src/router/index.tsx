@@ -10,6 +10,7 @@ import ImageLibraryDetailPage from '@/pages/material/image-library/detail'
 import BrandKnowledgePage from '@/pages/material/brand-knowledge'
 import BrandKnowledgeEditPage from '@/pages/material/brand-knowledge/edit'
 import WritingRulePage from '@/pages/workspace/writing-rule'
+import ContentCategoryPage from '@/pages/workspace/content-category'
 
 export const router = createBrowserRouter([
   {
@@ -26,7 +27,7 @@ export const router = createBrowserRouter([
       { path: 'material/brand-knowledge/:id/edit', element: <BrandKnowledgeEditPage /> },
       // 写作工作台
       { path: 'workspace/writing-rules', element: <WritingRulePage /> },
-      { path: 'workspace/content-categories', element: <PlaceholderPage title="内容分类" /> },
+      { path: 'workspace/content-categories', element: <ContentCategoryPage /> },
       { path: 'workspace/writing-tasks', element: <PlaceholderPage title="写作任务" /> },
       { path: 'workspace/articles', element: <PlaceholderPage title="文章清单" /> },
     ],
