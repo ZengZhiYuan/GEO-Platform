@@ -33,7 +33,9 @@
       "Bash(.venv/Scripts/python.exe *)",
       "Bash(.venv/Scripts/alembic.exe history *)",
       "Bash(.venv/Scripts/alembic.exe heads *)",
-      "Bash(.venv/Scripts/alembic.exe upgrade *)"
+      "Bash(.venv/Scripts/alembic.exe upgrade *)",
+      "Read(//d/d/zengzhiyuan/workspace/GEO-Platform-worktrees/fe-writing-rule/docs/**)",
+      "Read(//d/d/zengzhiyuan/workspace/GEO-Platform-worktrees/fe-writing-rule/docs/progress/**)"
     ]
   }
 }

@@ -3,6 +3,7 @@
  * 所有下拉/标签的状态选项集中在此，避免散落在页面或接口代码里。
  */
 import type { CollectStatus, OptimizeStatus } from '@/types/material'
+import type { CreationType } from '@/types/workspace'
 
 export interface SelectOption<T extends string = string> {
   label: string
@@ -43,4 +44,23 @@ export const CollectStatusColorMap: Record<CollectStatus, string> = {
 /** 根据枚举值取中文文案，未命中时回退原值。 */
 export function getCollectStatusLabel(value: string): string {
   return CollectStatusOptions.find((o) => o.value === value)?.label ?? value
+}
+
+/** 写作规范创作类型选项。 */
+export const CreationTypeOptions: SelectOption<CreationType>[] = [
+  { label: '文章创作', value: 'article_creation' },
+  { label: '标题创作', value: 'title_creation' },
+  { label: '流量复刻', value: 'traffic_replication' },
+]
+
+/** 创作类型对应的 antd Tag 颜色。 */
+export const CreationTypeColorMap: Record<CreationType, string> = {
+  article_creation: 'blue',
+  title_creation: 'green',
+  traffic_replication: 'orange',
+}
+
+/** 根据枚举值取中文文案，未命中时回退原值。 */
+export function getCreationTypeLabel(value: string): string {
+  return CreationTypeOptions.find((o) => o.value === value)?.label ?? value
 }
