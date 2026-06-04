@@ -16,9 +16,9 @@ from app.models.writing_rule import WritingRule
 from app.models.writing_task import WritingTask
 
 __all__ = [
+    "Article",
     "Base",
     "BaseModel",
-    "Article",
     "ContentCategory",
     "ImageAsset",
     "ImageCategory",
