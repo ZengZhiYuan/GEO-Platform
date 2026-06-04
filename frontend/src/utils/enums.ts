@@ -3,7 +3,11 @@
  * 所有下拉/标签的状态选项集中在此，避免散落在页面或接口代码里。
  */
 import type { CollectStatus, OptimizeStatus } from '@/types/material'
-import type { CreationType } from '@/types/workspace'
+import type {
+  ArticleStatus,
+  CreationType,
+  TaskStatus,
+} from '@/types/workspace'
 
 export interface SelectOption<T extends string = string> {
   label: string
@@ -63,4 +67,52 @@ export const CreationTypeColorMap: Record<CreationType, string> = {
 /** 根据枚举值取中文文案，未命中时回退原值。 */
 export function getCreationTypeLabel(value: string): string {
   return CreationTypeOptions.find((o) => o.value === value)?.label ?? value
+}
+
+/** 写作大任务状态选项。 */
+export const TaskStatusOptions: SelectOption<TaskStatus>[] = [
+  { label: '草稿', value: 'draft' },
+  { label: '等待执行', value: 'pending' },
+  { label: '执行中', value: 'running' },
+  { label: '已完成', value: 'completed' },
+  { label: '执行失败', value: 'failed' },
+  { label: '已取消', value: 'cancelled' },
+]
+
+/** 任务状态对应的 antd Tag 颜色。 */
+export const TaskStatusColorMap: Record<TaskStatus, string> = {
+  draft: 'default',
+  pending: 'warning',
+  running: 'processing',
+  completed: 'success',
+  failed: 'error',
+  cancelled: 'default',
+}
+
+/** 根据枚举值取中文文案，未命中时回退原值。 */
+export function getTaskStatusLabel(value: string): string {
+  return TaskStatusOptions.find((o) => o.value === value)?.label ?? value
+}
+
+/** 文章（小任务）状态选项。 */
+export const ArticleStatusOptions: SelectOption<ArticleStatus>[] = [
+  { label: '生成中', value: 'generating' },
+  { label: '待审核', value: 'pending_review' },
+  { label: '正常', value: 'normal' },
+  { label: '禁用', value: 'disabled' },
+  { label: '生成失败', value: 'failed' },
+]
+
+/** 文章状态对应的 antd Tag 颜色。 */
+export const ArticleStatusColorMap: Record<ArticleStatus, string> = {
+  generating: 'processing',
+  pending_review: 'warning',
+  normal: 'success',
+  disabled: 'default',
+  failed: 'error',
+}
+
+/** 根据枚举值取中文文案，未命中时回退原值。 */
+export function getArticleStatusLabel(value: string): string {
+  return ArticleStatusOptions.find((o) => o.value === value)?.label ?? value
 }

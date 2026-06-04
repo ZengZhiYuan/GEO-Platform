@@ -11,6 +11,9 @@ import BrandKnowledgePage from '@/pages/material/brand-knowledge'
 import BrandKnowledgeEditPage from '@/pages/material/brand-knowledge/edit'
 import WritingRulePage from '@/pages/workspace/writing-rule'
 import ContentCategoryPage from '@/pages/workspace/content-category'
+import WritingTaskPage from '@/pages/workspace/writing-task'
+import WritingTaskCreatePage from '@/pages/workspace/writing-task/create'
+import WritingTaskDetailPage from '@/pages/workspace/writing-task/detail'
 
 export const router = createBrowserRouter([
   {
@@ -28,7 +31,9 @@ export const router = createBrowserRouter([
       // 写作工作台
       { path: 'workspace/writing-rules', element: <WritingRulePage /> },
       { path: 'workspace/content-categories', element: <ContentCategoryPage /> },
-      { path: 'workspace/writing-tasks', element: <PlaceholderPage title="写作任务" /> },
+      { path: 'workspace/writing-tasks', element: <WritingTaskPage /> },
+      { path: 'workspace/writing-tasks/create', element: <WritingTaskCreatePage /> },
+      { path: 'workspace/writing-tasks/:id', element: <WritingTaskDetailPage /> },
       { path: 'workspace/articles', element: <PlaceholderPage title="文章清单" /> },
     ],
   },
