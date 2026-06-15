@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
+from app.geo_monitoring import models  # noqa: F401
 from app.main import app
 
 
@@ -54,3 +55,23 @@ def client(session_factory) -> Generator[TestClient, None, None]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def project_id(client) -> int:
+    response = client.post(
+        "/api/geo-monitoring/projects",
+        json={"project_name": "测试监测项目", "industry": "文旅"},
+    )
+    assert response.json()["code"] == 0
+    return response.json()["data"]["id"]
+
+
+@pytest.fixture
+def target_brand_id(client, project_id) -> int:
+    response = client.post(
+        f"/api/geo-monitoring/projects/{project_id}/brands",
+        json={"brand_name": "目标品牌", "brand_type": "target"},
+    )
+    assert response.json()["code"] == 0
+    return response.json()["data"]["id"]
