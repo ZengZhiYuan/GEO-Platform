@@ -1,9 +1,4 @@
-"""应用配置。
-
-通过 pydantic-settings 读取环境变量 / .env 文件。
-TASK-0002 阶段只声明应用级基础配置；数据库、Redis、AI 等配置
-在后续任务（TASK-0101 等）按需补充。.env 中多余的键通过 extra="ignore" 忽略。
-"""
+"""AI 应用监测服务配置。"""
 
 from functools import lru_cache
 
@@ -19,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     # 应用
-    APP_NAME: str = "shipu-geo"
+    APP_NAME: str = "ai-application-monitoring"
     APP_ENV: str = "local"
     APP_DEBUG: bool = True
 
@@ -40,18 +35,9 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_PRE_PING: bool = True
 
-    # Redis / 异步任务（TASK-0401）
-    # Dramatiq broker 地址（Redis）；与 .env.example 的 REDIS_URL 对齐
+    # Redis / 异步任务基础设施，供后续采集 Worker 使用
     REDIS_URL: str = "redis://localhost:6379/0"
-    # broker 类型：redis（默认）/ stub（内存，供测试或无 Redis 环境）
     DRAMATIQ_BROKER: str = "redis"
-    # 文章生成失败的最大重试次数（Dramatiq actor max_retries）
-    ARTICLE_MAX_RETRIES: int = 3
-
-    # AI 生成（第一版 Mock，见 docs/decisions.md 004）
-    AI_PROVIDER: str = "mock"
-    # MockAIWriter 模拟生成耗时（秒），默认 0 不阻塞
-    AI_MOCK_DELAY_SECONDS: float = 0.0
 
 
 @lru_cache

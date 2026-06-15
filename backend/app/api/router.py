@@ -1,23 +1,10 @@
-"""API 路由聚合。
-
-后续各业务域（keyword、title_inspiration ...）的 router 在此 include。
-当前仅提供健康检查接口。
-"""
+"""应用 API 路由聚合。"""
 
 from fastapi import APIRouter
 
-from app.api.endpoints import (
-    article,
-    content_category,
-    image_asset,
-    image_category,
-    keyword,
-    title_inspiration,
-    writing_rule,
-    writing_task,
-)
 from app.core.config import settings
 from app.core.response import success
+from app.geo_monitoring.api import router as geo_monitoring_router
 
 api_router = APIRouter()
 
@@ -33,12 +20,4 @@ async def health() -> dict:
     )
 
 
-# 业务路由聚合
-api_router.include_router(keyword.router)
-api_router.include_router(title_inspiration.router)
-api_router.include_router(image_category.router)
-api_router.include_router(image_asset.router)
-api_router.include_router(writing_rule.router)
-api_router.include_router(content_category.router)
-api_router.include_router(writing_task.router)
-api_router.include_router(article.router)
+api_router.include_router(geo_monitoring_router)
