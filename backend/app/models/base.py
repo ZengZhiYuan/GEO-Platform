@@ -1,14 +1,4 @@
-"""通用模型基类。
-
-定义所有业务表共享的公共字段（见 docs/claude-code-dev.md 8.1）：
-主键、创建/更新时间、软删除标记、租户与操作人字段。
-
-业务模型示例::
-
-    class Keyword(BaseModel):
-        __tablename__ = "keyword_library"
-        main_word: Mapped[str] = mapped_column(String(255), nullable=False)
-"""
+"""监测领域模型共享的通用字段。"""
 
 from datetime import datetime
 

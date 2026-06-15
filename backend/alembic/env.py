@@ -1,9 +1,4 @@
-"""Alembic 迁移运行环境。
-
-- 数据库地址从 ``app.core.config.settings.DATABASE_URL`` 读取。
-- 目标元数据为 ``app.models.Base.metadata``；导入 ``app.models`` 包
-  以确保所有模型被注册，autogenerate 才能感知表结构。
-"""
+"""AI 应用监测 Alembic 运行环境。"""
 
 from logging.config import fileConfig
 
@@ -12,7 +7,6 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import settings
 
-# 导入公共基类与业务模型，填充 Base.metadata
 import app.geo_monitoring.models  # noqa: F401
 from app.models import Base
 
