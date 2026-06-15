@@ -12,8 +12,8 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import settings
 
-# 导入模型包，触发模型注册，填充 Base.metadata
-import app.models  # noqa: F401
+# 导入公共基类与业务模型，填充 Base.metadata
+import app.geo_monitoring.models  # noqa: F401
 from app.models import Base
 
 # Alembic 配置对象

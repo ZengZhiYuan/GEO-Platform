@@ -1,0 +1,438 @@
+"""AI 应用监测请求与响应 Schema。"""
+
+from datetime import datetime
+from decimal import Decimal
+from enum import StrEnum
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def _strip_required(value: str) -> str:
+    value = value.strip()
+    if not value:
+        raise ValueError("不能为空")
+    return value
+
+
+def _strip_optional(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+class ProjectStatus(StrEnum):
+    ACTIVE = "active"
+    DISABLED = "disabled"
+    ARCHIVED = "archived"
+
+
+class BrandType(StrEnum):
+    TARGET = "target"
+    COMPETITOR = "competitor"
+    CANDIDATE = "candidate"
+
+
+class EntityStatus(StrEnum):
+    ACTIVE = "active"
+    DISABLED = "disabled"
+
+
+class AliasMatchMode(StrEnum):
+    EXACT = "exact"
+    CONTAINS = "contains"
+    CONTEXT = "context"
+
+
+class PromptSetStatus(StrEnum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class RunStatus(StrEnum):
+    PENDING = "pending"
+    COLLECTING = "collecting"
+    ANALYZING = "analyzing"
+    REPORTING = "reporting"
+    COMPLETED = "completed"
+    PARTIAL_SUCCESS = "partial_success"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class QueryTaskStatus(StrEnum):
+    PENDING = "pending"
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class ProjectCreate(BaseModel):
+    project_name: str = Field(max_length=100)
+    industry: str = Field(default="文旅演艺", max_length=100)
+    description: str | None = None
+    timezone: str = Field(default="Asia/Shanghai", max_length=64)
+    official_domain: str | None = Field(default=None, max_length=255)
+    report_title: str | None = Field(default=None, max_length=255)
+    report_subtitle: str | None = Field(default=None, max_length=500)
+
+    @field_validator("project_name", "industry", "timezone")
+    @classmethod
+    def strip_required(cls, value: str) -> str:
+        return _strip_required(value)
+
+    @field_validator(
+        "description",
+        "official_domain",
+        "report_title",
+        "report_subtitle",
+    )
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class ProjectUpdate(BaseModel):
+    project_name: str | None = Field(default=None, max_length=100)
+    industry: str | None = Field(default=None, max_length=100)
+    description: str | None = None
+    timezone: str | None = Field(default=None, max_length=64)
+    status: ProjectStatus | None = None
+    official_domain: str | None = Field(default=None, max_length=255)
+    report_title: str | None = Field(default=None, max_length=255)
+    report_subtitle: str | None = Field(default=None, max_length=500)
+
+    @field_validator("project_name", "industry", "timezone")
+    @classmethod
+    def strip_required_when_present(cls, value: str | None) -> str | None:
+        return _strip_required(value) if value is not None else None
+
+    @field_validator(
+        "description",
+        "official_domain",
+        "report_title",
+        "report_subtitle",
+    )
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class ProjectOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_name: str
+    industry: str
+    description: str | None
+    timezone: str
+    status: str
+    official_domain: str | None
+    report_title: str | None
+    report_subtitle: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class BrandCreate(BaseModel):
+    brand_name: str = Field(max_length=255)
+    brand_type: BrandType = BrandType.COMPETITOR
+    official_domain: str | None = Field(default=None, max_length=255)
+    description: str | None = None
+    status: EntityStatus = EntityStatus.ACTIVE
+
+    @field_validator("brand_name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        return _strip_required(value)
+
+    @field_validator("official_domain", "description")
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class BrandUpdate(BaseModel):
+    brand_name: str | None = Field(default=None, max_length=255)
+    brand_type: BrandType | None = None
+    official_domain: str | None = Field(default=None, max_length=255)
+    description: str | None = None
+    status: EntityStatus | None = None
+
+    @field_validator("brand_name")
+    @classmethod
+    def strip_name(cls, value: str | None) -> str | None:
+        return _strip_required(value) if value is not None else None
+
+    @field_validator("official_domain", "description")
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class BrandOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    brand_name: str
+    brand_type: str
+    official_domain: str | None
+    description: str | None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class BrandAliasCreate(BaseModel):
+    alias_name: str = Field(max_length=255)
+    match_mode: AliasMatchMode = AliasMatchMode.CONTAINS
+    is_ambiguous: bool = False
+    context_keywords: list[str] = Field(default_factory=list)
+    enabled: bool = True
+
+    @field_validator("alias_name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        return _strip_required(value)
+
+    @field_validator("context_keywords")
+    @classmethod
+    def normalize_keywords(cls, value: list[str]) -> list[str]:
+        return list(dict.fromkeys(item.strip() for item in value if item.strip()))
+
+
+class BrandAliasUpdate(BaseModel):
+    alias_name: str | None = Field(default=None, max_length=255)
+    match_mode: AliasMatchMode | None = None
+    is_ambiguous: bool | None = None
+    context_keywords: list[str] | None = None
+    enabled: bool | None = None
+
+    @field_validator("alias_name")
+    @classmethod
+    def strip_name(cls, value: str | None) -> str | None:
+        return _strip_required(value) if value is not None else None
+
+    @field_validator("context_keywords")
+    @classmethod
+    def normalize_keywords(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        return list(dict.fromkeys(item.strip() for item in value if item.strip()))
+
+
+class BrandAliasOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    brand_id: int
+    alias_name: str
+    match_mode: str
+    is_ambiguous: bool
+    context_keywords: list[str]
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class PromptSetCreate(BaseModel):
+    set_name: str = Field(max_length=100)
+    version_no: str = Field(max_length=50)
+
+    @field_validator("set_name", "version_no")
+    @classmethod
+    def strip_required(cls, value: str) -> str:
+        return _strip_required(value)
+
+
+class PromptSetUpdate(BaseModel):
+    set_name: str | None = Field(default=None, max_length=100)
+
+    @field_validator("set_name")
+    @classmethod
+    def strip_name(cls, value: str | None) -> str | None:
+        return _strip_required(value) if value is not None else None
+
+
+class PromptSetOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    set_name: str
+    version_no: str
+    status: str
+    prompt_count: int
+    checksum: str | None
+    activated_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PromptCreate(BaseModel):
+    prompt_code: str = Field(max_length=64)
+    prompt_text: str
+    prompt_type: str = Field(default="generic", max_length=50)
+    scene_tag: str | None = Field(default=None, max_length=100)
+    contains_brand: bool = False
+    enabled: bool = True
+    sort_order: int = 0
+
+    @field_validator("prompt_code", "prompt_text", "prompt_type")
+    @classmethod
+    def strip_required(cls, value: str) -> str:
+        return _strip_required(value)
+
+    @field_validator("scene_tag")
+    @classmethod
+    def strip_scene(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class PromptUpdate(BaseModel):
+    prompt_code: str | None = Field(default=None, max_length=64)
+    prompt_text: str | None = None
+    prompt_type: str | None = Field(default=None, max_length=50)
+    scene_tag: str | None = Field(default=None, max_length=100)
+    contains_brand: bool | None = None
+    enabled: bool | None = None
+    sort_order: int | None = None
+
+    @field_validator("prompt_code", "prompt_text", "prompt_type")
+    @classmethod
+    def strip_required_when_present(cls, value: str | None) -> str | None:
+        return _strip_required(value) if value is not None else None
+
+    @field_validator("scene_tag")
+    @classmethod
+    def strip_scene(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class PromptOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    prompt_set_id: int
+    prompt_code: str
+    prompt_text: str
+    prompt_type: str
+    scene_tag: str | None
+    contains_brand: bool
+    enabled: bool
+    sort_order: int
+    content_hash: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AIPlatformUpdate(BaseModel):
+    platform_name: str | None = Field(default=None, max_length=100)
+    adapter_type: str | None = Field(default=None, max_length=50)
+    base_url: str | None = Field(default=None, max_length=500)
+    model_name: str | None = Field(default=None, max_length=255)
+    search_enabled: bool | None = None
+    citation_supported: bool | None = None
+    max_concurrency: int | None = Field(default=None, gt=0)
+    timeout_seconds: int | None = Field(default=None, gt=0)
+    enabled: bool | None = None
+    extra_config: dict[str, Any] | None = None
+
+    @field_validator("platform_name", "adapter_type")
+    @classmethod
+    def strip_required_when_present(cls, value: str | None) -> str | None:
+        return _strip_required(value) if value is not None else None
+
+    @field_validator("base_url", "model_name")
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class AIPlatformOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    platform_code: str
+    platform_name: str
+    adapter_type: str
+    base_url: str | None
+    model_name: str | None
+    search_enabled: bool
+    citation_supported: bool
+    max_concurrency: int
+    timeout_seconds: int
+    enabled: bool
+    extra_config: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+
+class RunCreate(BaseModel):
+    project_id: int = Field(ge=1)
+    prompt_set_id: int | None = Field(default=None, ge=1)
+    platform_codes: list[str] | None = None
+
+    @field_validator("platform_codes")
+    @classmethod
+    def normalize_platform_codes(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        normalized = list(dict.fromkeys(code.strip() for code in value if code.strip()))
+        if not normalized:
+            raise ValueError("platform_codes 不能为空")
+        return normalized
+
+
+class MonitorRunOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    run_no: str
+    project_id: int
+    prompt_set_id: int
+    prompt_set_version: str
+    trigger_type: str
+    status: str
+    collection_status: str
+    analysis_status: str
+    report_status: str
+    platform_codes: list[str]
+    expected_query_count: int
+    success_query_count: int
+    failed_query_count: int
+    valid_answer_count: int
+    data_completeness_rate: Decimal
+    result_json: dict | None
+    error_message: str | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class QueryTaskOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    run_id: int
+    prompt_id: int
+    platform_code: str
+    idempotency_key: str
+    status: str
+    key_slot: int | None
+    retry_count: int
+    request_json: dict | None
+    response_http_status: int | None
+    error_code: str | None
+    error_message: str | None
+    latency_ms: int | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
