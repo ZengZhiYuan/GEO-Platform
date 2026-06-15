@@ -4,10 +4,10 @@ pydantic
 pydantic-settings
 python-dotenv
 
-# 数据库 / ORM / 迁移（TASK-0101）
+# 数据库 / ORM / 迁移
 sqlalchemy>=2.0
 alembic>=1.13
 psycopg2-binary
 
-# 异步任务 / MQ（TASK-0401）：Dramatiq + Redis broker
+# 异步任务 / MQ 基础设施
 dramatiq[redis]>=1.16
