@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.response import paginate, success
 from app.geo_monitoring.schemas import (
+    AIPlatformOut,
+    AIPlatformUpdate,
     BrandAliasCreate,
     BrandAliasOut,
     BrandAliasUpdate,
@@ -18,17 +20,44 @@ from app.geo_monitoring.schemas import (
     ProjectOut,
     ProjectStatus,
     ProjectUpdate,
+    PromptCreate,
+    PromptOut,
+    PromptSetCreate,
+    PromptSetOut,
+    PromptSetStatus,
+    PromptSetUpdate,
+    PromptUpdate,
 )
 from app.geo_monitoring.services import brands as brand_service
+from app.geo_monitoring.services import platforms as platform_service
 from app.geo_monitoring.services import projects as project_service
+from app.geo_monitoring.services import prompts as prompt_service
 
 router = APIRouter(prefix="/geo-monitoring", tags=["AI 应用监测"])
 
 
 @router.get("/platforms", summary="分页查询 AI 平台")
-def list_platforms_placeholder() -> dict:
-    """临时边界端点，后续由平台 Service 替换。"""
-    return success({"items": [], "total": 0, "page": 1, "page_size": 10})
+def list_platforms(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    enabled: bool | None = Query(None),
+    db: Session = Depends(get_db),
+) -> dict:
+    items, total = platform_service.list_platforms(
+        db, page=page, page_size=page_size, enabled=enabled
+    )
+    data = [AIPlatformOut.model_validate(item).model_dump(mode="json") for item in items]
+    return paginate(data, total=total, page=page, page_size=page_size)
+
+
+@router.put("/platforms/{platform_code}", summary="更新 AI 平台配置")
+def update_platform(
+    payload: AIPlatformUpdate,
+    platform_code: str = Path(..., min_length=1, max_length=32),
+    db: Session = Depends(get_db),
+) -> dict:
+    platform = platform_service.update_platform(db, platform_code, payload)
+    return success(AIPlatformOut.model_validate(platform).model_dump(mode="json"))
 
 
 @router.get("/projects", summary="分页查询监测项目")
@@ -183,3 +212,108 @@ def delete_brand_alias(
 ) -> dict:
     brand_service.delete_alias(db, alias_id)
     return success({"id": alias_id})
+
+
+@router.get("/projects/{project_id}/prompt-sets", summary="分页查询提示词集")
+def list_prompt_sets(
+    project_id: int = Path(..., ge=1),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    status: PromptSetStatus | None = Query(None),
+    db: Session = Depends(get_db),
+) -> dict:
+    items, total = prompt_service.list_prompt_sets(
+        db,
+        project_id=project_id,
+        page=page,
+        page_size=page_size,
+        status=status.value if status else None,
+    )
+    data = [PromptSetOut.model_validate(item).model_dump(mode="json") for item in items]
+    return paginate(data, total=total, page=page, page_size=page_size)
+
+
+@router.post("/projects/{project_id}/prompt-sets", summary="创建提示词集")
+def create_prompt_set(
+    payload: PromptSetCreate,
+    project_id: int = Path(..., ge=1),
+    db: Session = Depends(get_db),
+) -> dict:
+    prompt_set = prompt_service.create_prompt_set(db, project_id, payload)
+    return success(PromptSetOut.model_validate(prompt_set).model_dump(mode="json"))
+
+
+@router.get("/prompt-sets/{prompt_set_id}", summary="获取提示词集")
+def get_prompt_set(
+    prompt_set_id: int = Path(..., ge=1), db: Session = Depends(get_db)
+) -> dict:
+    prompt_set = prompt_service.get_prompt_set(db, prompt_set_id)
+    return success(PromptSetOut.model_validate(prompt_set).model_dump(mode="json"))
+
+
+@router.put("/prompt-sets/{prompt_set_id}", summary="更新提示词集")
+def update_prompt_set(
+    payload: PromptSetUpdate,
+    prompt_set_id: int = Path(..., ge=1),
+    db: Session = Depends(get_db),
+) -> dict:
+    prompt_set = prompt_service.update_prompt_set(db, prompt_set_id, payload)
+    return success(PromptSetOut.model_validate(prompt_set).model_dump(mode="json"))
+
+
+@router.delete("/prompt-sets/{prompt_set_id}", summary="删除提示词集")
+def delete_prompt_set(
+    prompt_set_id: int = Path(..., ge=1), db: Session = Depends(get_db)
+) -> dict:
+    prompt_service.delete_prompt_set(db, prompt_set_id)
+    return success({"id": prompt_set_id})
+
+
+@router.post("/prompt-sets/{prompt_set_id}/activate", summary="激活提示词集")
+def activate_prompt_set(
+    prompt_set_id: int = Path(..., ge=1), db: Session = Depends(get_db)
+) -> dict:
+    prompt_set = prompt_service.activate_prompt_set(db, prompt_set_id)
+    return success(PromptSetOut.model_validate(prompt_set).model_dump(mode="json"))
+
+
+@router.get("/prompt-sets/{prompt_set_id}/prompts", summary="分页查询提示词")
+def list_prompts(
+    prompt_set_id: int = Path(..., ge=1),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> dict:
+    items, total = prompt_service.list_prompts(
+        db, prompt_set_id=prompt_set_id, page=page, page_size=page_size
+    )
+    data = [PromptOut.model_validate(item).model_dump(mode="json") for item in items]
+    return paginate(data, total=total, page=page, page_size=page_size)
+
+
+@router.post("/prompt-sets/{prompt_set_id}/prompts", summary="创建提示词")
+def create_prompt(
+    payload: PromptCreate,
+    prompt_set_id: int = Path(..., ge=1),
+    db: Session = Depends(get_db),
+) -> dict:
+    prompt = prompt_service.create_prompt(db, prompt_set_id, payload)
+    return success(PromptOut.model_validate(prompt).model_dump(mode="json"))
+
+
+@router.put("/prompts/{prompt_id}", summary="更新提示词")
+def update_prompt(
+    payload: PromptUpdate,
+    prompt_id: int = Path(..., ge=1),
+    db: Session = Depends(get_db),
+) -> dict:
+    prompt = prompt_service.update_prompt(db, prompt_id, payload)
+    return success(PromptOut.model_validate(prompt).model_dump(mode="json"))
+
+
+@router.delete("/prompts/{prompt_id}", summary="删除提示词")
+def delete_prompt(
+    prompt_id: int = Path(..., ge=1), db: Session = Depends(get_db)
+) -> dict:
+    prompt_service.delete_prompt(db, prompt_id)
+    return success({"id": prompt_id})
