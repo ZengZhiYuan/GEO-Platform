@@ -1,42 +1,16 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 
 import MainLayout from '@/layout/MainLayout'
+import MonitoringHomePage from '@/pages/MonitoringHomePage'
 import NotFoundPage from '@/pages/NotFoundPage'
-import KeywordPage from '@/pages/material/keyword'
-import TitleInspirationPage from '@/pages/material/title-inspiration'
-import ImageLibraryPage from '@/pages/material/image-library'
-import ImageLibraryDetailPage from '@/pages/material/image-library/detail'
-import BrandKnowledgePage from '@/pages/material/brand-knowledge'
-import BrandKnowledgeEditPage from '@/pages/material/brand-knowledge/edit'
-import WritingRulePage from '@/pages/workspace/writing-rule'
-import ContentCategoryPage from '@/pages/workspace/content-category'
-import WritingTaskPage from '@/pages/workspace/writing-task'
-import WritingTaskCreatePage from '@/pages/workspace/writing-task/create'
-import WritingTaskDetailPage from '@/pages/workspace/writing-task/detail'
-import ArticleListPage from '@/pages/workspace/article'
-import ArticleEditPage from '@/pages/workspace/article/edit'
 
 export const router = createBrowserRouter([
   {
     path: '/',
     element: <MainLayout />,
     children: [
-      { index: true, element: <Navigate to="/material/keywords" replace /> },
-      // 素材中心
-      { path: 'material/keywords', element: <KeywordPage /> },
-      { path: 'material/title-inspirations', element: <TitleInspirationPage /> },
-      { path: 'material/image-library', element: <ImageLibraryPage /> },
-      { path: 'material/image-library/:categoryId', element: <ImageLibraryDetailPage /> },
-      { path: 'material/brand-knowledge', element: <BrandKnowledgePage /> },
-      { path: 'material/brand-knowledge/:id/edit', element: <BrandKnowledgeEditPage /> },
-      // 写作工作台
-      { path: 'workspace/writing-rules', element: <WritingRulePage /> },
-      { path: 'workspace/content-categories', element: <ContentCategoryPage /> },
-      { path: 'workspace/writing-tasks', element: <WritingTaskPage /> },
-      { path: 'workspace/writing-tasks/create', element: <WritingTaskCreatePage /> },
-      { path: 'workspace/writing-tasks/:id', element: <WritingTaskDetailPage /> },
-      { path: 'workspace/articles', element: <ArticleListPage /> },
-      { path: 'workspace/articles/:id/edit', element: <ArticleEditPage /> },
+      { index: true, element: <Navigate to="/monitoring" replace /> },
+      { path: 'monitoring', element: <MonitoringHomePage /> },
     ],
   },
   { path: '*', element: <NotFoundPage /> },
