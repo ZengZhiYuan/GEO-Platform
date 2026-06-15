@@ -60,6 +60,15 @@ def update_platform(
     return success(AIPlatformOut.model_validate(platform).model_dump(mode="json"))
 
 
+@router.get("/platforms/{platform_code}", summary="获取 AI 平台配置")
+def get_platform(
+    platform_code: str = Path(..., min_length=1, max_length=32),
+    db: Session = Depends(get_db),
+) -> dict:
+    platform = platform_service.get_platform(db, platform_code)
+    return success(AIPlatformOut.model_validate(platform).model_dump(mode="json"))
+
+
 @router.get("/projects", summary="分页查询监测项目")
 def list_projects(
     page: int = Query(1, ge=1),

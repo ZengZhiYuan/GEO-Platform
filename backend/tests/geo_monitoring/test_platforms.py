@@ -1,21 +1,10 @@
 from app.geo_monitoring.models import AIPlatform
-
-
-PLATFORMS = (
-    ("deepseek", "DeepSeek"),
-    ("doubao", "豆包"),
-    ("qwen", "通义千问"),
-    ("kimi", "Kimi"),
-    ("wenxin", "文心一言"),
-)
+from app.geo_monitoring.services.platforms import DEFAULT_PLATFORMS
 
 
 def _seed_platforms(session_factory) -> None:
     with session_factory() as db:
-        db.add_all(
-            AIPlatform(platform_code=code, platform_name=name)
-            for code, name in PLATFORMS
-        )
+        db.add_all(AIPlatform(**platform) for platform in DEFAULT_PLATFORMS)
         db.commit()
 
 
@@ -35,11 +24,13 @@ def test_platform_list_and_update(client, session_factory):
 
     assert listed["total"] == 5
     assert {item["platform_code"] for item in listed["items"]} == {
-        code for code, _ in PLATFORMS
+        platform["platform_code"] for platform in DEFAULT_PLATFORMS
     }
     assert updated["model_name"] == "deepseek-chat"
     assert updated["max_concurrency"] == 4
     assert updated["citation_supported"] is True
+    detail = client.get("/api/geo-monitoring/platforms/deepseek").json()["data"]
+    assert detail["model_name"] == "deepseek-chat"
 
 
 def test_platform_update_validates_limits(client, session_factory):

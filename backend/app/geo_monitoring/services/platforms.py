@@ -7,6 +7,34 @@ from app.core.exceptions import BusinessException
 from app.geo_monitoring.models import AIPlatform
 from app.geo_monitoring.schemas import AIPlatformUpdate
 
+DEFAULT_PLATFORMS = (
+    {
+        "platform_code": "doubao",
+        "platform_name": "豆包",
+        "adapter_type": "openai_compatible",
+    },
+    {
+        "platform_code": "qwen",
+        "platform_name": "通义千问",
+        "adapter_type": "openai_compatible",
+    },
+    {
+        "platform_code": "yuanbao",
+        "platform_name": "腾讯元宝",
+        "adapter_type": "tencent",
+    },
+    {
+        "platform_code": "deepseek",
+        "platform_name": "DeepSeek",
+        "adapter_type": "openai_compatible",
+    },
+    {
+        "platform_code": "kimi",
+        "platform_name": "Kimi",
+        "adapter_type": "openai_compatible",
+    },
+)
+
 
 def get_platform(db: Session, platform_code: str) -> AIPlatform:
     platform = db.execute(
