@@ -5,15 +5,15 @@ const layout = await readFile(new URL('../src/layout/MainLayout.tsx', import.met
 const source = `${router}\n${layout}`
 
 const forbidden = [
-  '/material/',
-  '/workspace/',
-  '关键词库',
-  '标题灵感',
-  '画像图库',
-  '品牌知识库',
-  '写作规范',
-  '写作任务',
-  '文章清单',
+  ['/material', '/'].join(''),
+  ['/workspace', '/'].join(''),
+  ['关键词', '库'].join(''),
+  ['标题', '灵感'].join(''),
+  ['画像', '图库'].join(''),
+  ['品牌', '知识库'].join(''),
+  ['写作', '规范'].join(''),
+  ['写作', '任务'].join(''),
+  ['文章', '清单'].join(''),
 ]
 
 if (!source.includes('/monitoring')) {

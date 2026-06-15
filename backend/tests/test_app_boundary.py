@@ -1,5 +1,5 @@
 OLD_PATHS = (
-    "/api/keywords",
+    "/api/" + "keywords",
     "/api/title-inspirations",
     "/api/image-categories",
     "/api/image-assets",

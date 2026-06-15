@@ -1,4 +1,4 @@
-# 实朴GEO 中间件编排
+# AI 应用监测中间件编排
 #
 # 启动后端运行所需的两个中间件：
 #   - postgres : PostgreSQL 16，应用主数据库（连接见 DATABASE_URL）

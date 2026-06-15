@@ -1,180 +1,83 @@
 # CLAUDE.md
 
-## 项目名称
-
-实朴GEO
-
 ## 项目定位
 
-实朴GEO 是一个面向小红书、知乎、微信公众号等自媒体平台的内容生成 Web 应用。系统初始版本包含两个一级模块：
+本项目是 AI 应用监测平台，用于配置监测项目和 Prompt，采集多个 AI 平台回答，计算确定性指标，并通过 Agent 生成语义分析和改进建议。
 
-1. 素材中心
-2. 写作工作台
+## 权威文档
 
-核心业务闭环为：
+1. `AI应用监测_技术开发文档.md`
+2. 当前阶段 `docs/superpowers/specs/` 下已批准的设计
+3. 当前阶段 `docs/superpowers/plans/` 下的实施计划
 
-关键词库 → 标题灵感 → 画像图库 → 品牌知识库 → 写作规范 → 写作任务 → MQ异步生成 → 文章清单 → 人工审核/编辑
+## 当前阶段边界
 
-## 开发总原则
+- 已实现配置域和只落库的运行骨架。
+- 未实现真实采集、Agent 分析、指标快照、调度和报告。
+- 禁止恢复已移除的内容生产业务域。
 
-1. 严格阅读并遵守 `docs/claude-code-dev.md`。
-2. 不允许一次性实现全部功能。
-3. 每次开发只处理一个明确阶段。
-4. 前后端分离开发。
-5. 接口优先，前后端通过接口契约协作。
-6. 后端优先保证数据模型、接口、异步任务状态流转正确。
-7. 前端优先保证页面路由、列表页、表单页、详情页、状态展示和操作闭环正确。
-8. 所有新增功能必须包含必要的错误处理。
-9. 每完成一个阶段，必须在 `docs/progress/` 下新增本任务的进度分片 `TASK-XXXX-<slug>.md`（**不要直接编辑 `docs/progress.md`**，该文件仅由主控终端在合并后汇总）。约定详见 `docs/progress/README.md`。
-10. 每次修改代码前，先检查项目结构和已有实现，避免重复造文件、重复造模块。
+## 技术栈
 
-## 技术栈约定
+- 后端：Python、FastAPI、Pydantic、SQLAlchemy、Alembic、PostgreSQL、Redis、Dramatiq。
+- 前端：React、TypeScript、Vite、Ant Design、React Router、Axios。
 
-### 后端
+## 后端边界
 
-* Python
-* FastAPI
-* SQLAlchemy
-* Alembic
-* PostgreSQL
-* Redis
-* Celery 或 Dramatiq
-* Pydantic
-* Uvicorn
+- 通用基础设施位于 `backend/app/core/`、`backend/app/models/base.py` 和 `backend/app/workers/`。
+- 监测业务位于 `backend/app/geo_monitoring/`。
+- 对外接口统一使用 `/api/geo-monitoring`。
 
-### 前端
+## 当前领域模型
 
-* React
-* TypeScript
-* Vite
-* Ant Design
-* React Router
-* Axios
-* Zustand 或 Redux Toolkit
+- `MonitorProject`：监测项目。
+- `Brand`、`BrandAlias`：目标品牌、竞品和别名。
+- `PromptSet`、`Prompt`：版本化问题集。
+- `AIPlatform`：AI 平台配置。
+- `MonitorRun`、`QueryTask`：监测运行和查询子任务。
 
-## 后端模块边界
+## 核心工程规则
 
-后端按业务域拆分：
+- 采集、分析、报告分阶段解耦。
+- 外部 API 和 LLM 调用不得运行在数据库长事务内。
+- 数值指标必须由 SQL/Python 确定性计算；LLM 不得修改数值结果。
+- 平台失败相互隔离，未来运行允许 `partial_success`。
+- 趋势比较必须限定同一 Prompt 集版本。
+- 所有新增表结构必须有 Alembic 迁移。
+- 所有行为变更必须先写失败测试，再实现并验证。
+- 使用 UTF-8 读取和修改中文文档。
 
-1. keyword：关键词库
-2. title_inspiration：标题灵感
-3. image_library：画像图库
-4. brand_knowledge：品牌知识库
-5. writing_rule：写作规范
-6. content_category：内容分类
-7. writing_task：写作任务
-8. article：文章清单
-9. ai_generation：AI内容生成服务
-10. common：统一响应、分页、异常、权限、配置
+## 验证要求
 
-## 前端模块边界
+- 后端：`python -m pytest -v`
+- 迁移：`alembic heads`、`alembic upgrade head --sql`
+- 前端：`npm test`、`npm run build`
 
-前端按页面模块拆分：
+## 统一响应
 
-1. 素材中心 / 关键词库
-2. 素材中心 / 标题灵感
-3. 素材中心 / 画像图库
-4. 素材中心 / 品牌知识库
-5. 写作工作台 / 写作规范
-6. 写作工作台 / 内容分类
-7. 写作工作台 / 写作任务
-8. 写作工作台 / 文章清单
+普通接口返回 `{ "code": 0, "message": "success", "data": {} }`。分页接口的 `data` 包含 `items`、`total`、`page`、`page_size`。
 
-## 页面开发规则
+## 数据与状态规则
 
-每个管理页面至少包含：
-
-1. 列表页
-2. 新增弹窗或新增页
-3. 编辑弹窗或编辑页
-4. 删除确认
-5. 搜索筛选
-6. 分页
-7. 状态展示
-8. 空数据状态
-9. 加载状态
-10. 错误提示
-
-## 接口开发规则
-
-所有接口统一返回：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {}
-}
-```
-
-分页接口统一返回：
-
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "items": [],
-    "total": 0,
-    "page": 1,
-    "page_size": 10
-  }
-}
-```
-
-## 异步任务规则
-
-写作任务创建后，不直接同步生成所有文章，而是：
-
-1. 创建大任务 writing_task
-2. 根据 AI创作数量 创建多个 article 小任务
-3. 将小任务 ID 投递到 MQ
-4. Worker 消费小任务
-5. 调用 AI 生成标题、正文、封面图
-6. 更新小任务状态
-7. 所有小任务完成后，更新大任务状态
-
-## 状态流转
-
-### 大任务状态
-
-* draft：草稿
-* pending：等待执行
-* running：执行中
-* completed：已完成
-* failed：执行失败
-* cancelled：已取消
-
-### 小任务/文章状态
-
-* generating：生成中
-* pending_review：待审核
-* normal：正常
-* disabled：禁用
-* failed：生成失败
+- 所有业务表继承公共主键、时间、软删除、租户和操作人字段。
+- 项目状态：`active | disabled | archived`。
+- 品牌类型：`target | competitor | candidate`，每个项目最多一个有效目标品牌。
+- Prompt 集状态：`draft | active | archived`，每个项目最多一个 active 版本。
+- 运行状态预留：`pending | collecting | analyzing | reporting | completed | partial_success | failed | cancelled`。
+- 查询任务状态预留：`pending | queued | running | success | failed | cancelled`。
 
 ## 开发流程
 
-每次开始新任务时：
-
-1. 读取 `CLAUDE.md`
-2. 读取 `docs/claude-code-dev.md`
-3. 读取 `docs/progress.md`
-4. 检查当前代码结构
-5. 明确本次任务范围
-6. 制定执行计划
-7. 开始编码
-8. 运行测试或启动验证
-9. 更新 `docs/progress.md`
-10. 总结本次变更和下一步建议
+1. 阅读本文件、业务技术文档、当前批准的 spec 和 plan。
+2. 检查现有代码与迁移，明确单次任务边界。
+3. 先写失败测试并确认失败原因正确。
+4. 实现最小行为，运行相关测试。
+5. 运行完整后端测试、迁移验证和前端构建。
+6. 说明修改文件、验证命令和剩余限制。
 
 ## 禁止事项
 
-1. 不要删除已有业务代码，除非明确说明原因。
-2. 不要随意改变接口字段名称。
-3. 不要绕过接口契约直接临时写死数据。
-4. 不要一次性生成大量不可验证代码。
-5. 不要把前端、后端、数据库、MQ 全部混在一个任务里完成。
-6. 不要忽略启动命令、测试命令和错误日志。
-7. 不要只说完成，必须说明修改了哪些文件、如何验证。
-8. 不要直接编辑 `docs/progress.md`（开发分支只写 `docs/progress/TASK-XXXX-*.md` 分片，避免多分支并发改同一文件引发合并冲突；`docs/progress.md` 由主控终端串行汇总）。
+- 禁止恢复已移除的内容生产业务域。
+- 禁止在数据库事务中调用外部 AI 平台或 LLM。
+- 禁止让 LLM 生成或修改确定性统计指标。
+- 禁止提交没有测试、没有迁移或无法验证的业务变更。
+- 禁止在日志、数据库普通配置字段或仓库中保存明文平台密钥。
