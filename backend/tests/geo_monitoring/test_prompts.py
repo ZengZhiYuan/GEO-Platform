@@ -94,4 +94,3 @@ def test_empty_prompt_set_cannot_be_activated(client, project_id):
     ).json()
 
     assert response["code"] == 40022
-
