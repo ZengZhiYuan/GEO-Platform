@@ -13,18 +13,29 @@
 from collections.abc import Generator
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import settings
 
-engine = create_engine(
-    settings.DATABASE_URL,
-    echo=settings.DB_ECHO,
-    pool_pre_ping=settings.DB_POOL_PRE_PING,
-    pool_size=settings.DB_POOL_SIZE,
-    max_overflow=settings.DB_MAX_OVERFLOW,
-    future=True,
-)
+
+def _engine_options() -> dict:
+    options = {
+        "echo": settings.DB_ECHO,
+        "pool_pre_ping": settings.DB_POOL_PRE_PING,
+        "future": True,
+    }
+    if make_url(settings.DATABASE_URL).get_backend_name() != "sqlite":
+        options.update(
+            {
+                "pool_size": settings.DB_POOL_SIZE,
+                "max_overflow": settings.DB_MAX_OVERFLOW,
+            }
+        )
+    return options
+
+
+engine = create_engine(settings.DATABASE_URL, **_engine_options())
 
 SessionLocal = sessionmaker(
     bind=engine,

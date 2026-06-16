@@ -21,6 +21,14 @@
 - 后端：Python、FastAPI、Pydantic、SQLAlchemy、Alembic、PostgreSQL、Redis、Dramatiq。
 - 前端：React、TypeScript、Vite、Ant Design、React Router、Axios。
 
+## 后端虚拟环境
+
+- 后端唯一指定虚拟环境为 `backend/.venv`。
+- 执行任何后端 Python、pytest、alembic、uvicorn、dramatiq、pip 相关命令前，必须使用该虚拟环境。
+- Windows / PowerShell 中优先使用显式路径，例如 `backend\.venv\Scripts\python.exe -m pytest -v backend/tests`。
+- 如已切换到 `backend/` 目录，则使用 `.venv\Scripts\python.exe -m pytest -v`、`.venv\Scripts\alembic.exe heads`。
+- 不要使用系统 Python、其他项目虚拟环境、Conda 环境，或裸 `python` / `pip` / `pytest` / `alembic` 命令，除非已确认它们来自 `backend/.venv`。
+
 ## 后端边界
 
 - 通用基础设施位于 `backend/app/core/`、`backend/app/models/base.py` 和 `backend/app/workers/`。
@@ -48,8 +56,8 @@
 
 ## 验证要求
 
-- 后端：`python -m pytest -v`
-- 迁移：`alembic heads`、`alembic upgrade head --sql`
+- 后端：`backend\.venv\Scripts\python.exe -m pytest -v backend/tests`
+- 迁移：`backend\.venv\Scripts\alembic.exe -c backend\alembic.ini heads`、`backend\.venv\Scripts\alembic.exe -c backend\alembic.ini upgrade head --sql`
 - 前端：`npm test`、`npm run build`
 
 ## 统一响应

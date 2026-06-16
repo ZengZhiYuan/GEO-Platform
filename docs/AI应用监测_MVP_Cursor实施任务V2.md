@@ -116,8 +116,8 @@ git log -5 --oneline
 创建并进入集成 worktree：
 
 ```powershell
-git worktree add .worktrees/mvp-backend-integration -b feature/ai-monitoring-backend-mvp
-Set-Location .worktrees/mvp-backend-integration
+git worktree add .worktrees/mvp-integration -b feature/ai-monitoring-mvp
+Set-Location .worktrees/mvp-integration
 ```
 
 ### 验证

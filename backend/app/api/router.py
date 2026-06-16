@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.core.config import settings
+from app.core.readiness import check_readiness
 from app.core.response import success
 from app.geo_monitoring.api import router as geo_monitoring_router
 
@@ -18,6 +19,11 @@ async def health() -> dict:
             "env": settings.APP_ENV,
         }
     )
+
+
+@api_router.get("/ready", summary="就绪检查")
+async def ready() -> dict:
+    return success(check_readiness())
 
 
 api_router.include_router(geo_monitoring_router)
