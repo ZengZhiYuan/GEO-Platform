@@ -44,7 +44,7 @@
 
 ```powershell
 New-Item -ItemType Directory -Force .worktrees | Out-Null
-git worktree add .worktrees/mvp-backend-integration -b feature/ai-monitoring-backend-mvp
+git worktree add .worktrees/mvp-integration -b feature/ai-monitoring-mvp
 ```
 
 ### 1.4 总体依赖与并行窗口
