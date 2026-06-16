@@ -3,16 +3,17 @@ from pathlib import Path
 
 VERSIONS_DIR = Path(__file__).parents[1] / "alembic" / "versions"
 BASELINE_NAME = "20260615_0001-ai_monitoring_baseline.py"
+COLLECTION_NAME = "20260615_0002-geo_monitoring_0002_collection.py"
 
 
-def test_alembic_has_one_monitoring_baseline():
+def test_alembic_has_monitoring_migrations_in_order():
     versions = sorted(
         path.name
         for path in VERSIONS_DIR.glob("*.py")
         if path.name != "__init__.py"
     )
 
-    assert versions == [BASELINE_NAME]
+    assert versions == [BASELINE_NAME, COLLECTION_NAME]
 
 
 def test_baseline_contains_only_monitoring_business_tables():
