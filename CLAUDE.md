@@ -78,6 +78,15 @@
 - 运行状态预留：`pending | collecting | analyzing | reporting | completed | partial_success | failed | cancelled`。
 - 查询任务状态预留：`pending | queued | running | success | failed | cancelled`。
 
+## 后端部署边界
+
+- 后端发布使用同一个 `Dockerfile` 镜像启动 API、worker、scheduler 三类进程。
+- `docker-compose.yml` 只编排后端进程；PostgreSQL、Redis、Nacos 默认使用 `.env` 指向的服务器服务，不在 compose 中启动本地中间件。
+- 真实发布前必须由用户确认数据库和报告目录备份、服务器账号权限、网络连通性、真实密钥和迁移窗口。
+- 发布顺序为先执行 `alembic upgrade head`，再启动 worker/scheduler，最后切换 API。
+- 应用回滚优先回滚镜像，不自动 downgrade 数据库；平台异常优先设置对应 `*_ENABLED=false` 并重启 worker。
+- Nacos 不可用时按 `.env` 中 `NACOS_ENABLED` 决定策略：`false` 使用本地配置兜底，`true` 保持 ready fail fast。
+
 ## 文本编码（UTF-8）
 
 - 仓库内中文文档、配置示例与 Agent 可读日志 **默认 UTF-8**。

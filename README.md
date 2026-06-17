@@ -73,6 +73,37 @@ backend\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0
 
 结构化日志（JSON）统一包含 `request_id`、`run_id`、`task_id`、`platform_code`、`duration_ms` 等字段；API 响应头返回 `X-Request-ID` 与 `X-Response-Time-Ms`。Worker 启动时可调用 `app.core.logging.log_worker_startup`，调度进程可调用 `log_scheduler_startup`。
 
+### 后端部署、发布与回滚
+
+后端部署使用同一个镜像分别启动 API、worker、scheduler 三类进程。PostgreSQL、Redis、Nacos 由根目录 `.env` 指向服务器服务，`docker-compose.yml` 不默认启动本地中间件。报告目录通过 `reports_data` 持久卷挂载到容器内 `/app/backend/data/reports`，容器镜像已创建非 root 用户并授予该目录写权限。
+
+发布前由用户确认服务器 PostgreSQL、Redis、Nacos 的备份、账号、网络和权限，并备份数据库和报告目录。真实 API key、LLM key、报告存储目录和进程管理方式只写入 `.env`、Nacos 或服务器密钥管理系统，不写入仓库。
+
+推荐发布顺序：
+
+```powershell
+docker compose config --quiet
+docker compose build
+
+# 需要用户确认或授权后执行真实环境迁移。
+docker compose run --rm api python -m alembic -c backend/alembic.ini current
+docker compose run --rm api python -m alembic -c backend/alembic.ini upgrade head
+
+# 先启动 worker/scheduler，最后切换 API。
+docker compose up -d worker scheduler
+docker compose up -d api
+```
+
+启动后执行 smoke test：访问 health、ready、创建测试项目、mock 运行和报告下载。API 探针为 `/api/geo-monitoring/health` 与 `/api/geo-monitoring/ready`；报告下载使用 `/api/geo-monitoring/reports/{report_id}/download`。若部署窗口内需要我协助，只在用户授权后按上述命令操作真实环境。
+
+回滚规则：
+
+- 应用回滚优先回滚镜像，不自动 downgrade 数据库。
+- 只有确认新表无生产数据且旧应用无法兼容时，才人工执行逐版本 downgrade。
+- 报告目录回滚只恢复元数据一致的备份，不覆盖新生成文件。
+- 平台 API 异常时先设置对应 `*_ENABLED=false` 并重启 worker，不阻塞其他平台。
+- Nacos 不可用时，若发布策略允许本地 `.env` 兜底，则设置 `NACOS_ENABLED=false` 后重启 API/worker/scheduler；若必须依赖 Nacos，则保持 `NACOS_ENABLED=true`，ready 检查会返回 not_ready，发布应 fail fast。
+
 ## 前端
 
 `frontend` 目录当前仅保留已有管理端壳层。V2 后端 MVP 不开发、测试或验收前端；后续需要前端时再单独拆分任务。

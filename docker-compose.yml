@@ -1,58 +1,76 @@
-# AI 应用监测中间件编排
+# AI 应用监测后端进程编排
 #
-# 启动后端运行所需的两个中间件：
-#   - postgres : PostgreSQL 16，应用主数据库（连接见 DATABASE_URL）
-#   - redis    : Redis 7，Dramatiq broker（连接见 REDIS_URL）
-#
-# 配置默认值与根目录 .env.example 对齐；若存在 .env 文件会自动读取并覆盖。
-# 数据写入命名卷持久化，容器随 Docker 自启。
-#
-# 用法：
-#   docker compose up -d        # 启动（后台）
-#   docker compose ps           # 查看状态 / 健康检查
-#   docker compose logs -f      # 跟踪日志
-#   docker compose down         # 停止并删除容器（保留数据卷）
-#   docker compose down -v      # 连同数据卷一起删除（慎用，会清空数据）
+# 默认只编排后端 API、Dramatiq worker 和 APScheduler scheduler。
+# PostgreSQL、Redis、Nacos 均使用根目录 .env 指向的服务器服务，不在本地
+# compose 中默认启动。
+
+name: geo-platform-backend
+
+x-backend-common: &backend-common
+  env_file:
+    - .env
+  environment:
+    - APP_ENV=${APP_ENV:-prod}
+    - DEBUG=${DEBUG:-false}
+    - DRAMATIQ_BROKER=${DRAMATIQ_BROKER:-redis}
+    - REPORT_STORAGE_DIR=/app/backend/data/reports
+  volumes:
+    - reports_data:/app/backend/data/reports
+  restart: unless-stopped
+
+x-release-commands:
+  migrate: docker compose run --rm api python -m alembic -c backend/alembic.ini upgrade head
+  smoke: health, ready, create test project, mock run, report download
 
 services:
-  postgres:
-    image: postgres:16
-    container_name: shipu_geo_postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-shipu_geo}
-      POSTGRES_USER: ${POSTGRES_USER:-shipu_geo}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shipu_geo_password}
+  api:
+    <<: *backend-common
+    image: geo-platform-backend:${APP_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+      - "${BACKEND_PORT:-8000}:8000"
     healthcheck:
-      # pg_isready 校验库已可接受连接；用户/库名取上面的环境变量
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shipu_geo} -d ${POSTGRES_DB:-shipu_geo}"]
-      interval: 10s
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/geo-monitoring/health', timeout=3)\"",
+        ]
+      interval: 30s
       timeout: 5s
-      retries: 5
-      start_period: 10s
+      retries: 3
+      start_period: 20s
 
-  redis:
-    image: redis:7
-    container_name: shipu_geo_redis
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - redisdata:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
+  worker:
+    <<: *backend-common
+    image: geo-platform-backend:${APP_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      dramatiq app.worker.actors.collection app.worker.actors.analysis app.worker.actors.report
+      -Q collection -Q analysis -Q report
+      --processes ${WORKER_PROCESSES:-2}
+      --threads ${WORKER_THREADS:-1}
+
+  scheduler:
+    <<: *backend-common
+    image: geo-platform-backend:${APP_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - APP_ENV=${APP_ENV:-prod}
+      - DEBUG=${DEBUG:-false}
+      - DRAMATIQ_BROKER=${DRAMATIQ_BROKER:-redis}
+      - REPORT_STORAGE_DIR=/app/backend/data/reports
+      - SCHEDULER_ENABLED=true
+    command: >
+      python -m app.scheduler.main
 
 volumes:
-  pgdata:
-    name: shipu_geo_pgdata
-  redisdata:
-    name: shipu_geo_redisdata
+  reports_data:
+    name: geo_platform_reports_data
