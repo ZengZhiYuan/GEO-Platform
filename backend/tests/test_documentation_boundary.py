@@ -15,6 +15,7 @@ def test_docs_contains_only_approved_documents():
         "docs/AI应用监测_MVP_Cursor实施任务.md",
         "docs/AI应用监测_MVP_Cursor实施任务V2.md",
         "docs/AI应用监测_MVP_V2_Task索引.md",
+        "docs/采集任务生命周期说明.md",
         "docs/superpowers/specs/2026-06-15-ai-monitoring-domain-replacement-design.md",
         "docs/superpowers/plans/2026-06-15-ai-monitoring-domain-replacement-plan.md",
     }

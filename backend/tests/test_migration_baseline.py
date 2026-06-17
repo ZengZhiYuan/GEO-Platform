@@ -4,6 +4,8 @@ from pathlib import Path
 VERSIONS_DIR = Path(__file__).parents[1] / "alembic" / "versions"
 BASELINE_NAME = "20260615_0001-ai_monitoring_baseline.py"
 COLLECTION_NAME = "20260615_0002-geo_monitoring_0002_collection.py"
+ANALYSIS_NAME = "20260615_0003-geo_monitoring_0003_analysis_metrics.py"
+EXPECTED_MIGRATIONS = [BASELINE_NAME, COLLECTION_NAME, ANALYSIS_NAME]
 
 
 def test_alembic_has_monitoring_migrations_in_order():
@@ -13,7 +15,7 @@ def test_alembic_has_monitoring_migrations_in_order():
         if path.name != "__init__.py"
     )
 
-    assert versions == [BASELINE_NAME, COLLECTION_NAME]
+    assert versions == EXPECTED_MIGRATIONS
 
 
 def test_baseline_contains_only_monitoring_business_tables():

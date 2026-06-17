@@ -3,6 +3,7 @@ from pathlib import Path
 
 VERSIONS_DIR = Path(__file__).parents[1] / "alembic" / "versions"
 COLLECTION_NAME = "20260615_0002-geo_monitoring_0002_collection.py"
+ANALYSIS_NAME = "20260615_0003-geo_monitoring_0003_analysis_metrics.py"
 
 
 def _migration_text() -> str:
@@ -106,5 +107,152 @@ def test_collection_downgrade_drops_new_objects_in_reverse_order():
         "geo_answer_brand_result",
         "geo_answer_citation",
         "geo_answer",
+    }:
+        assert f'op.drop_table("{table}")' in migration
+
+
+def _analysis_migration_text() -> str:
+    return (VERSIONS_DIR / ANALYSIS_NAME).read_text(encoding="utf-8")
+
+
+def test_analysis_revision_extends_collection_revision():
+    migration = _analysis_migration_text()
+
+    assert 'revision = "geo_monitoring_0003"' in migration
+    assert 'down_revision = "geo_monitoring_0002"' in migration
+
+
+def test_analysis_revision_creates_analysis_tables():
+    migration = _analysis_migration_text()
+
+    for table in {
+        "geo_agent_execution",
+        "geo_platform_analysis",
+        "geo_metric_snapshot",
+        "geo_prompt_competitiveness",
+        "geo_source_stat",
+    }:
+        assert f'"{table}"' in migration
+
+    for column in {
+        "run_id",
+        "platform_code",
+        "agent_code",
+        "schema_version",
+        "input_snapshot",
+        "output_json",
+        "model_provider",
+        "model_name",
+        "prompt_version",
+        "prompt_tokens",
+        "completion_tokens",
+        "error_message",
+        "started_at",
+        "finished_at",
+        "valid_answer_count",
+        "data_completeness_rate",
+        "brand_mention_count",
+        "brand_mention_rate",
+        "brand_first_count",
+        "brand_first_rate",
+        "brand_first_among_mentions_rate",
+        "top_competitors",
+        "top_sources",
+        "prompt_competitiveness_summary",
+        "improvement_json",
+        "summary_json",
+        "project_id",
+        "prompt_id",
+        "metric_code",
+        "numerator",
+        "denominator",
+        "metric_value",
+        "metric_json",
+        "snapshot_at",
+        "prompt_set_version",
+        "is_comparable",
+        "completeness_rate",
+        "target_mentioned",
+        "target_rank",
+        "target_first",
+        "competitors_json",
+        "position_label",
+        "competitiveness_score",
+        "evidence_json",
+        "domain",
+        "source_name",
+        "source_type",
+        "citation_count",
+        "brand_related_count",
+        "share_rate",
+        "rank_no",
+    }:
+        assert f'"{column}"' in migration
+
+
+def test_analysis_revision_uses_jsonb_and_cascade_foreign_keys():
+    migration = _analysis_migration_text()
+
+    assert "JSONB" in migration
+    assert 'ondelete="CASCADE"' in migration
+    assert 'ForeignKey("geo_monitor_project.id", ondelete="CASCADE")' in migration
+    assert 'ForeignKey("geo_monitor_run.id", ondelete="CASCADE")' in migration
+
+
+def test_analysis_revision_uses_null_safe_unique_indexes():
+    migration = _analysis_migration_text()
+
+    assert 'coalesce(platform_code, \'\')' in migration
+    assert "coalesce(prompt_id, -1)" in migration
+    for name in {
+        "uq_geo_agent_execution_run_agent",
+        "uq_geo_metric_snapshot_dimension",
+        "uq_geo_source_stat_run_platform_domain",
+    }:
+        assert f'"{name}"' in migration
+        assert f'unique=True' in migration
+
+
+def test_analysis_revision_adds_required_indexes_and_uniques():
+    migration = _analysis_migration_text()
+
+    for name in {
+        "uq_geo_platform_analysis",
+        "uq_geo_prompt_competitiveness",
+        "uq_geo_agent_execution_run_agent",
+        "uq_geo_metric_snapshot_dimension",
+        "uq_geo_source_stat_run_platform_domain",
+        "ix_geo_agent_execution_run_platform_agent",
+        "ix_geo_metric_snapshot_trend",
+        "ix_geo_prompt_competitiveness_run_prompt",
+        "ix_geo_source_stat_run_platform_rank",
+        "ck_geo_agent_execution_status",
+        "ck_geo_platform_analysis_status",
+    }:
+        assert f'"{name}"' in migration
+
+
+def test_analysis_downgrade_drops_new_objects_in_reverse_order():
+    migration = _analysis_migration_text()
+
+    source_drop = migration.index('op.drop_table("geo_source_stat")')
+    prompt_comp_drop = migration.index('op.drop_table("geo_prompt_competitiveness")')
+    snapshot_drop = migration.index('op.drop_table("geo_metric_snapshot")')
+    platform_drop = migration.index('op.drop_table("geo_platform_analysis")')
+    agent_drop = migration.index('op.drop_table("geo_agent_execution")')
+
+    assert (
+        source_drop
+        < prompt_comp_drop
+        < snapshot_drop
+        < platform_drop
+        < agent_drop
+    )
+    for table in {
+        "geo_source_stat",
+        "geo_prompt_competitiveness",
+        "geo_metric_snapshot",
+        "geo_platform_analysis",
+        "geo_agent_execution",
     }:
         assert f'op.drop_table("{table}")' in migration
