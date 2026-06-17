@@ -1,5 +1,7 @@
 """监测运行 API。"""
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.orm import Session
 
@@ -44,6 +46,8 @@ def list_runs(
     page_size: int = Query(10, ge=1, le=100),
     project_id: int | None = Query(None, ge=1),
     status: RunStatus | None = Query(None),
+    created_after: datetime | None = Query(None),
+    created_before: datetime | None = Query(None),
     db: Session = Depends(get_db),
 ) -> dict:
     items, total = run_service.list_runs(
@@ -52,6 +56,8 @@ def list_runs(
         page_size=page_size,
         project_id=project_id,
         status=status.value if status else None,
+        created_after=created_after,
+        created_before=created_before,
     )
     data = [MonitorRunOut.model_validate(item).model_dump(mode="json") for item in items]
     return paginate(data, total=total, page=page, page_size=page_size)
@@ -67,6 +73,20 @@ def create_run(payload: RunCreate, db: Session = Depends(get_db)) -> dict:
 def get_run(run_id: int = Path(..., ge=1), db: Session = Depends(get_db)) -> dict:
     run = run_service.get_run_detail(db, run_id)
     return success(run.model_dump(mode="json"))
+
+
+@router.post("/runs/{run_id}/cancel", summary="取消监测运行")
+def cancel_run(run_id: int = Path(..., ge=1), db: Session = Depends(get_db)) -> dict:
+    run = run_service.cancel_run(db, run_id)
+    return success(MonitorRunOut.model_validate(run).model_dump(mode="json"))
+
+
+@router.post("/runs/{run_id}/retry-failed", summary="重试失败任务")
+def retry_failed(run_id: int = Path(..., ge=1), db: Session = Depends(get_db)) -> dict:
+    run, retried_count = run_service.retry_failed_tasks(db, run_id)
+    payload = MonitorRunOut.model_validate(run).model_dump(mode="json")
+    payload["retried_count"] = retried_count
+    return success(payload)
 
 
 @router.get("/runs/{run_id}/query-tasks", summary="分页查询运行任务")

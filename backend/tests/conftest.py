@@ -51,7 +51,12 @@ def db(session_factory) -> Generator[Session, None, None]:
 @pytest.fixture
 def client(session_factory) -> Generator[TestClient, None, None]:
     from app.core.database import get_db
+    from app.geo_monitoring.services import collection as collection_service
     from app.main import app
+
+    collection_service.configure_runtime(
+        collection_service.build_default_runtime(session_factory=session_factory)
+    )
 
     def override_get_db():
         session = session_factory()
@@ -61,9 +66,12 @@ def client(session_factory) -> Generator[TestClient, None, None]:
             session.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.clear()
+        collection_service.reset_runtime()
 
 
 @pytest.fixture

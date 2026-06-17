@@ -12,6 +12,29 @@
 
 **用户推荐指令格式：** `执行 V2 Task N：<简述>`
 
+## Superpowers 开发技能（代码任务必用）
+
+凡涉及**代码开发**的任务，Agent 必须启用 [Superpowers](https://github.com/obra/superpowers) 插件 skills，细则见 `.cursor/rules/superpowers-dev-workflow.mdc`。
+
+**最低要求（每次开发任务）：**
+
+1. **`using-superpowers`** — 会话开始或接到开发任务后，先 Read 该 skill，再决定后续 skills。
+2. **`test-driven-development`** — 写/改实现前，先写失败测试（与任务书「测试先行」一致）。
+3. **`verification-before-completion`** — 声称完成前，必须运行验收命令并用输出证明通过。
+
+**常见扩展：**
+
+| 场景 | Skill |
+|------|-------|
+| 新功能 / 行为变更 | `brainstorming` |
+| 多步骤实施 | `writing-plans` → `executing-plans` |
+| bug / 测试失败 | `systematic-debugging` |
+| 并行独立子任务 | `dispatching-parallel-agents` |
+| 大步骤完成 / 合并前 | `requesting-code-review` |
+| 分支收尾 | `finishing-a-development-branch` |
+
+优先级：用户当次指令 > 本文件 / `CLAUDE.md` / V2 任务书 > Superpowers skills。
+
 ## 文本编码规则（UTF-8 默认）
 
 **原则：** 本仓库文档、源码、配置与命令输出一律以 **UTF-8** 为默认编码。Agent 读取文档或查看运行日志时，必须显式按 UTF-8 处理，避免在中文 Windows 下出现乱码（如 `����`、`��ǡ` 等）。

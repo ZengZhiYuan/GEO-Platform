@@ -17,6 +17,7 @@
   backend/.venv/Scripts/alembic.exe -c backend/alembic.ini heads
   backend/.venv/Scripts/alembic.exe -c backend/alembic.ini upgrade head --sql
   ```
+- **Superpowers（代码 Task 必用）：** 见 `.cursor/rules/superpowers-dev-workflow.mdc`；至少 `using-superpowers` → `test-driven-development` → `verification-before-completion`。
 - **CodeGraph（任务收尾，有代码改动时）：**
   ```powershell
   codegraph status
@@ -69,6 +70,7 @@ Task 0 → 1 → 2 → 3 → 4 → 5 → 6A–6E → 7 → 8
 
 | 文档 | 何时读取 |
 |------|----------|
+| `.cursor/rules/superpowers-dev-workflow.mdc` | 任何代码开发 / V2 Task 执行 |
 | `CLAUDE.md` | 工程边界、验证命令、禁止事项 |
 | `AI应用监测_技术开发文档.md` | 架构/领域口径争议时 |
 | `docs/superpowers/specs/`、`plans/` | 当前阶段已批准设计与计划 |

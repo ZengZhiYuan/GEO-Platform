@@ -68,7 +68,7 @@ def test_create_run_builds_prompt_platform_cartesian_product(
     ).json()["data"]
     qwen_tasks = client.get(
         f"/api/geo-monitoring/runs/{run['id']}/query-tasks",
-        params={"platform_code": "qwen", "status": "pending"},
+        params={"platform_code": "qwen", "status": "queued"},
     ).json()["data"]
 
     assert response["code"] == 0

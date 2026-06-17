@@ -20,9 +20,10 @@ alwaysApply: true
 ## 执行顺序
 
 1. 从用户消息或索引定位 Task 编号与章节行号。
-2. 读取该 Task 的：目标、修改文件、人机边界、步骤、测试先行、验证命令、专用提示词、提交信息。
-3. 检查现有代码与迁移，严守 Task 允许/禁止修改范围。
-4. 测试先行 → 最小实现 → 运行 Task 验收命令 → **更新 CodeGraph 索引** → 汇报改动、结果、剩余限制与用户待办。
+2. **Superpowers：** Read `using-superpowers` skill；代码任务加载 `test-driven-development`，收尾前加载 `verification-before-completion`（详见 `.cursor/rules/superpowers-dev-workflow.mdc`）。
+3. 读取该 Task 的：目标、修改文件、人机边界、步骤、测试先行、验证命令、专用提示词、提交信息。
+4. 检查现有代码与迁移，严守 Task 允许/禁止修改范围。
+5. 测试先行 → 最小实现 → 运行 Task 验收命令 → **更新 CodeGraph 索引** → 汇报改动、结果、剩余限制与用户待办。
 
 ## 任务完成后：CodeGraph 索引更新
 

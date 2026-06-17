@@ -38,10 +38,25 @@ backend\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0
 
 本地运行统一从仓库根目录 `.env` 读取 PostgreSQL、Redis、Nacos 以及采集平台、Agent LLM、调度与报告相关配置；代码和文档示例不得硬编码服务器地址、用户名、密码或 token。`.env.example` 仅提供占位符，真实密钥只写入本地 `.env` 或 Nacos 配置中心。
 
+### 采集 Worker 生产部署
+
+创建监测运行（`POST /api/geo-monitoring/runs`）后，任务经 Dramatiq 异步入队，须由独立 Worker 进程消费。生产联调请注意：
+
+1. **API 与 Worker 共用同一份 `.env`**：两者必须使用相同的 `REDIS_URL`，且 `DRAMATIQ_BROKER=redis`（勿在生产环境使用 `stub`）。
+2. **独立启动 Worker 进程**：除 FastAPI 外，须另启 Worker 并监听 `collection` 队列，否则任务会长期停留在 `queued`：
+
+   ```powershell
+   cd backend
+   .venv\Scripts\dramatiq.exe app.worker.actors.collection -Q collection --processes 2 --threads 1
+   ```
+
+3. **测试环境与生产环境区分**：pytest 在 `backend/tests/conftest.py` 中固定 `DRAMATIQ_BROKER=stub`，仅用于单元测试；本地联调与生产部署必须设为 `redis` 并确保 Redis 可达。
+
 主要连接项：
 
 - `DATABASE_URL`：服务器 PostgreSQL
 - `REDIS_URL`：服务器 Redis（Dramatiq 与后续采集/分析任务共用）
+- `DRAMATIQ_BROKER`：异步任务 broker 类型；生产/联调为 `redis`，pytest 为 `stub`
 - `NACOS_SERVER_ADDRESSES`、`NACOS_NAMESPACE`、`NACOS_GROUP`、`NACOS_CONFIG_DATA_ID`：Nacos 配置中心；需要时在 `.env` 中设置 `NACOS_ENABLED=true`
 - `DOUBAO_*`、`QWEN_*`、`YUANBAO_*`、`DEEPSEEK_*`、`KIMI_*`：各平台官方 API 采集配置（默认关闭）
 - `AGENT_LLM_*`：Agent 语义分析 LLM

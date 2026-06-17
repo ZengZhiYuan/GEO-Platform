@@ -86,12 +86,13 @@
 ## 开发流程
 
 1. 若执行 MVP V2 Task：先读 `docs/AI应用监测_MVP_V2_Task索引.md`，再局部读取任务书对应该 Task 的章节；否则阅读本文件、业务技术文档、当前批准的 spec 和 plan。
-2. 检查现有代码与迁移，明确单次任务边界。
-3. 先写失败测试并确认失败原因正确。
-4. 实现最小行为，运行相关测试。
-5. 运行完整后端测试、迁移验证和前端构建。
-6. 若 Task 改动了源码：在仓库根目录执行 `codegraph sync` 更新项目地图（见 `AGENTS.md`）。
-7. 说明修改文件、验证命令、CodeGraph 同步结果和剩余限制。
+2. **代码开发任务：** 按 `.cursor/rules/superpowers-dev-workflow.mdc` 启用 Superpowers skills（至少 `using-superpowers`、`test-driven-development`、`verification-before-completion`）。
+3. 检查现有代码与迁移，明确单次任务边界。
+4. 先写失败测试并确认失败原因正确。
+5. 实现最小行为，运行相关测试。
+6. 运行完整后端测试、迁移验证和前端构建。
+7. 若 Task 改动了源码：在仓库根目录执行 `codegraph sync` 更新项目地图（见 `AGENTS.md`）。
+8. 说明修改文件、验证命令、CodeGraph 同步结果和剩余限制。
 
 ## 禁止事项
 
