@@ -63,7 +63,15 @@ backend\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0
 - `SCHEDULER_*`：独立调度进程开关与时区
 - `REPORT_STORAGE_DIR`：报告本地存储目录
 
-接口前缀为 `/api/geo-monitoring`，健康检查为 `/api/health`，就绪检查为 `/api/ready`。
+接口前缀为 `/api/geo-monitoring`。健康与就绪探针：
+
+- `/api/geo-monitoring/health`：进程存活检查
+- `/api/geo-monitoring/ready`：数据库与 Redis 连通性（启用 Nacos 时附带 Nacos 检查）
+- 兼容保留 `/api/health` 与 `/api/ready`
+
+跨域默认关闭；本地前后端联调时在 `.env` 设置 `CORS_ALLOWED_ORIGINS`（逗号分隔，例如 `http://localhost:5173`）。生产环境保持 `DEBUG=false`，异常响应不返回堆栈。
+
+结构化日志（JSON）统一包含 `request_id`、`run_id`、`task_id`、`platform_code`、`duration_ms` 等字段；API 响应头返回 `X-Request-ID` 与 `X-Response-Time-Ms`。Worker 启动时可调用 `app.core.logging.log_worker_startup`，调度进程可调用 `log_scheduler_startup`。
 
 ## 前端
 
@@ -95,8 +103,12 @@ python -m alembic upgrade head
 
 ```powershell
 cd backend
-python -m pytest -v
+.venv\Scripts\python.exe -m pytest -v
+.venv\Scripts\python.exe -m pytest -v tests/e2e
+.venv\Scripts\python.exe -m pytest -q --cov=app --cov-report=term-missing
 ```
+
+默认 e2e 测试使用 **mock 平台 HTTP（respx）与 Fake Agent LLM**，不连接真实官方 API 或 Agent LLM。可选 smoke test（需用户确认 `.env` 中 PostgreSQL/Redis/Nacos 可达，并显式启用真实平台/LLM 配置）不在 CI 默认 pytest 范围内。
 
 测试环境通过 `backend/tests/conftest.py` 注入独立配置并使用 SQLite/Stub broker 覆盖运行依赖，不直接连接共享服务器 PostgreSQL、Redis 或 Nacos。
 
