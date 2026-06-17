@@ -529,6 +529,53 @@ class AnswerCreate(BaseModel):
         return _strip_required(value)
 
 
+class MisfirePolicy(StrEnum):
+    FIRE_ONCE = "fire_once"
+    IGNORE = "ignore"
+
+
+class ScheduleCreate(BaseModel):
+    name: str = Field(max_length=100)
+    cron_expr: str = Field(max_length=100)
+    timezone: str = Field(default="Asia/Shanghai", max_length=64)
+    enabled: bool = True
+    misfire_policy: MisfirePolicy = MisfirePolicy.FIRE_ONCE
+
+    @field_validator("name", "cron_expr", "timezone")
+    @classmethod
+    def strip_required(cls, value: str) -> str:
+        return _strip_required(value)
+
+
+class ScheduleUpdate(BaseModel):
+    name: str | None = Field(default=None, max_length=100)
+    cron_expr: str | None = Field(default=None, max_length=100)
+    timezone: str | None = Field(default=None, max_length=64)
+    enabled: bool | None = None
+    misfire_policy: MisfirePolicy | None = None
+
+    @field_validator("name", "cron_expr", "timezone")
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        return _strip_required(value) if value is not None else None
+
+
+class ScheduleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    name: str
+    cron_expr: str
+    timezone: str
+    enabled: bool
+    misfire_policy: str
+    next_run_at: datetime | None
+    last_run_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class PaginatedResponse(BaseModel, Generic[T]):
     items: list[T]
     total: int

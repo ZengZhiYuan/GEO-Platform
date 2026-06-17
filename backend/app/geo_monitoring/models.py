@@ -523,3 +523,40 @@ class AnswerBrandResult(BaseModel):
         JSON_VALUE, default=dict, server_default=text("'{}'"), nullable=False
     )
     answer: Mapped[Answer] = relationship("Answer", back_populates="brand_results")
+
+
+class MonitorSchedule(BaseModel):
+    __tablename__ = "geo_monitor_schedule"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "name", name="uq_geo_monitor_schedule_project_name"
+        ),
+        CheckConstraint(
+            "misfire_policy IN ('fire_once', 'ignore')",
+            name="ck_geo_monitor_schedule_misfire_policy",
+        ),
+        Index("ix_geo_monitor_schedule_project_enabled", "project_id", "enabled"),
+    )
+
+    project_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_monitor_project.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    cron_expr: Mapped[str] = mapped_column(String(100), nullable=False)
+    timezone: Mapped[str] = mapped_column(
+        String(64), default="Asia/Shanghai", server_default="Asia/Shanghai", nullable=False
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true"), nullable=False
+    )
+    next_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    misfire_policy: Mapped[str] = mapped_column(
+        String(20), default="fire_once", server_default="fire_once", nullable=False
+    )
