@@ -264,7 +264,7 @@ backend/.venv/Scripts/python -m pytest backend/tests/test_api_contract.py -q
 
 ```dotenv
 APP_ENV=dev
-DEBUG=false
+APP_DEBUG=false
 DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/geo_platform
 REDIS_URL=redis://localhost:6379/0
 
@@ -913,7 +913,7 @@ npm --prefix frontend run build
 - [ ] API 参数、分页上限、报告路径和文件名均校验。
 - [ ] HTML 报告转义用户和模型内容。
 - [ ] CORS 只允许配置来源。
-- [ ] 生产环境 `DEBUG=false`，异常响应不返回堆栈。
+- [ ] 生产环境 `APP_DEBUG=false`，异常响应不返回堆栈。
 - [ ] 用测试扫描响应、日志 fixture 和数据库 raw response，不得出现测试密钥。
 
 ### 验证

@@ -38,6 +38,14 @@ def test_compose_starts_api_worker_and_scheduler_from_same_backend_image():
     assert "reports_data:/app/backend/data/reports" in compose
 
 
+def test_compose_uses_app_debug_instead_of_global_debug_variable():
+    compose = read_root_file("docker-compose.yml")
+
+    assert "APP_DEBUG=" in compose
+    assert " DEBUG=" not in compose
+    assert "- DEBUG=" not in compose
+
+
 def test_env_example_exposes_deployment_process_and_fallback_switches():
     env_example = read_root_file(".env.example")
 

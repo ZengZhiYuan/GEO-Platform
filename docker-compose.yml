@@ -11,7 +11,7 @@ x-backend-common: &backend-common
     - .env
   environment:
     - APP_ENV=${APP_ENV:-prod}
-    - DEBUG=${DEBUG:-false}
+    - APP_DEBUG=${APP_DEBUG:-false}
     - DRAMATIQ_BROKER=${DRAMATIQ_BROKER:-redis}
     - REPORT_STORAGE_DIR=/app/backend/data/reports
   volumes:
@@ -64,7 +64,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - APP_ENV=${APP_ENV:-prod}
-      - DEBUG=${DEBUG:-false}
+      - APP_DEBUG=${APP_DEBUG:-false}
       - DRAMATIQ_BROKER=${DRAMATIQ_BROKER:-redis}
       - REPORT_STORAGE_DIR=/app/backend/data/reports
       - SCHEDULER_ENABLED=true

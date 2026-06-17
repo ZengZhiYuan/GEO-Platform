@@ -464,7 +464,7 @@ pending | generating | completed | failed
 
 ```env
 APP_ENV=dev
-DEBUG=false
+APP_DEBUG=false
 DATABASE_URL=postgresql+psycopg2://<user>:<password>@<server-host>:5432/geo_platform
 REDIS_URL=redis://:<password>@<server-host>:6379/0
 

@@ -63,6 +63,17 @@ def test_nacos_can_be_disabled_without_server_addresses(tmp_path):
     assert settings.NACOS_SERVER_ADDRESSES is None
 
 
+def test_global_debug_environment_variable_does_not_override_app_debug(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("DEBUG", "release")
+    monkeypatch.setenv("APP_DEBUG", "false")
+
+    settings = make_settings(REPORT_STORAGE_DIR=str(tmp_path))
+
+    assert settings.DEBUG is False
+
+
 def test_nacos_enabled_requires_valid_server_addresses(tmp_path):
     with pytest.raises(ValidationError):
         make_settings(

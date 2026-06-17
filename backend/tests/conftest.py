@@ -8,6 +8,7 @@ from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+os.environ["APP_DEBUG"] = "false"
 os.environ["APP_ENV"] = "test"
 os.environ["DATABASE_URL"] = "sqlite+pysqlite:///:memory:"
 os.environ["REDIS_URL"] = "redis://test-redis.invalid:6379/15"

@@ -18,7 +18,7 @@ TEST_SECRET = "sk-e2e-test-secret-do-not-leak"
 
 @pytest.fixture
 def production_client(session_factory, monkeypatch):
-    monkeypatch.setenv("DEBUG", "false")
+    monkeypatch.setenv("APP_DEBUG", "false")
     monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "https://monitor.example.test")
     from app.core.config import get_settings
 

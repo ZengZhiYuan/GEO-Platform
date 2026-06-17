@@ -9,7 +9,7 @@ from typing import Any
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -139,7 +139,7 @@ class Settings(BaseSettings):
     # 应用
     APP_NAME: str = "ai-application-monitoring"
     APP_ENV: str = "dev"
-    DEBUG: bool = Field(default=False, validation_alias=AliasChoices("DEBUG", "APP_DEBUG"))
+    DEBUG: bool = Field(default=False, validation_alias="APP_DEBUG")
 
     # 后端服务
     BACKEND_HOST: str = "0.0.0.0"

@@ -69,7 +69,7 @@ backend\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0
 - `/api/geo-monitoring/ready`：数据库与 Redis 连通性（启用 Nacos 时附带 Nacos 检查）
 - 兼容保留 `/api/health` 与 `/api/ready`
 
-跨域默认关闭；本地前后端联调时在 `.env` 设置 `CORS_ALLOWED_ORIGINS`（逗号分隔，例如 `http://localhost:5173`）。生产环境保持 `DEBUG=false`，异常响应不返回堆栈。
+跨域默认关闭；本地前后端联调时在 `.env` 设置 `CORS_ALLOWED_ORIGINS`（逗号分隔，例如 `http://localhost:5173`）。生产环境保持 `APP_DEBUG=false`，异常响应不返回堆栈。
 
 结构化日志（JSON）统一包含 `request_id`、`run_id`、`task_id`、`platform_code`、`duration_ms` 等字段；API 响应头返回 `X-Request-ID` 与 `X-Response-Time-Ms`。Worker 启动时可调用 `app.core.logging.log_worker_startup`，调度进程可调用 `log_scheduler_startup`。
 
