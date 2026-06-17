@@ -16,10 +16,11 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
 
@@ -262,6 +263,7 @@ class MonitorRun(BaseModel):
         ),
         Index("ix_geo_monitor_run_project_created", "project_id", "created_at"),
         Index("ix_geo_monitor_run_status", "status", "created_at"),
+        Index("ix_geo_monitor_run_status_completed", "status", "completed_at"),
     )
 
     run_no: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
@@ -275,6 +277,7 @@ class MonitorRun(BaseModel):
     trigger_type: Mapped[str] = mapped_column(
         String(20), default="manual", server_default="manual", nullable=False
     )
+    triggered_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     status: Mapped[str] = mapped_column(
         String(30), default="pending", server_default="pending", nullable=False
     )
@@ -307,7 +310,23 @@ class MonitorRun(BaseModel):
     )
     result_json: Mapped[dict | None] = mapped_column(JSON_VALUE, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    total_tasks: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    succeeded_tasks: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    failed_tasks: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    cancelled_tasks: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     finished_at: Mapped[datetime | None] = mapped_column(
@@ -330,6 +349,7 @@ class QueryTask(BaseModel):
         Index(
             "ix_geo_query_task_platform_status", "platform_code", "status"
         ),
+        Index("ix_geo_query_task_status_queued", "status", "queued_at"),
     )
 
     run_id: Mapped[int] = mapped_column(
@@ -355,14 +375,151 @@ class QueryTask(BaseModel):
     retry_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False
     )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    max_attempts: Mapped[int] = mapped_column(
+        Integer, default=3, server_default="3", nullable=False
+    )
     request_json: Mapped[dict | None] = mapped_column(JSON_VALUE, nullable=True)
     response_http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    queued_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
     started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     finished_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    answer: Mapped["Answer | None"] = relationship(
+        "Answer",
+        back_populates="task",
+        uselist=False,
+    )
+
+
+class Answer(BaseModel):
+    __tablename__ = "geo_answer"
+    __table_args__ = (
+        UniqueConstraint("task_id", name="uq_geo_answer_task"),
+        Index("ix_geo_answer_platform_collected", "platform_code", "collected_at"),
+    )
+
+    task_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_query_task.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    platform_code: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("geo_ai_platform.platform_code"),
+        nullable=False,
+    )
+    prompt_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_prompt.id"),
+        nullable=False,
+    )
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    prompt_tokens: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    completion_tokens: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    total_tokens: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    collected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    raw_response_json: Mapped[dict | None] = mapped_column(JSON_VALUE, nullable=True)
+    task: Mapped[QueryTask] = relationship("QueryTask", back_populates="answer")
+    citations: Mapped[list["AnswerCitation"]] = relationship(
+        "AnswerCitation",
+        back_populates="answer",
+        order_by="AnswerCitation.citation_no",
+    )
+    brand_results: Mapped[list["AnswerBrandResult"]] = relationship(
+        "AnswerBrandResult",
+        back_populates="answer",
+    )
+
+
+class AnswerCitation(BaseModel):
+    __tablename__ = "geo_answer_citation"
+    __table_args__ = (
+        UniqueConstraint(
+            "answer_id", "citation_no", name="uq_geo_answer_citation_answer_no"
+        ),
+        Index("ix_geo_answer_citation_domain", "domain"),
+    )
+
+    answer_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_answer.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    citation_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    quoted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer: Mapped[Answer] = relationship("Answer", back_populates="citations")
+
+
+class AnswerBrandResult(BaseModel):
+    __tablename__ = "geo_answer_brand_result"
+    __table_args__ = (
+        UniqueConstraint(
+            "answer_id",
+            "brand_id",
+            name="uq_geo_answer_brand_result_answer_brand",
+        ),
+        Index(
+            "ix_geo_answer_brand_result_brand_mentioned",
+            "brand_id",
+            "is_mentioned",
+        ),
+    )
+
+    answer_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_answer.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    brand_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_brand.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    is_mentioned: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
+    mention_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    first_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sentiment: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    context_json: Mapped[dict] = mapped_column(
+        JSON_VALUE, default=dict, server_default=text("'{}'"), nullable=False
+    )
+    answer: Mapped[Answer] = relationship("Answer", back_populates="brand_results")

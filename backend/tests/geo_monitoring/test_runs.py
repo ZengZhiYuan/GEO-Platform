@@ -8,6 +8,7 @@ from app.geo_monitoring.models import (
     Prompt,
     PromptSet,
 )
+from app.geo_monitoring.repositories import runs as run_repo
 from app.geo_monitoring.schemas import RunCreate
 from app.geo_monitoring.services import runs as run_service
 from app.geo_monitoring.services.platforms import DEFAULT_PLATFORMS
@@ -75,6 +76,7 @@ def test_create_run_builds_prompt_platform_cartesian_product(
     assert run["prompt_set_version"] == "v1"
     assert run["platform_codes"] == ["qwen", "deepseek", "kimi"]
     assert run["expected_query_count"] == 6
+    assert run["total_tasks"] == 6
     assert run["analysis_status"] == "skipped"
     assert run["report_status"] == "skipped"
     assert tasks["total"] == 6
@@ -168,7 +170,7 @@ def test_run_rejects_inactive_project_and_empty_enabled_prompts(
     ).json()
 
     assert inactive["code"] == 40001
-    assert empty["code"] == 40032
+    assert empty["code"] == 40901
 
 
 def test_run_creation_rolls_back_when_task_insert_fails(db, monkeypatch):
@@ -199,7 +201,7 @@ def test_run_creation_rolls_back_when_task_insert_fails(db, monkeypatch):
     def fail_after_run_flush(*args, **kwargs):
         raise RuntimeError("forced fan-out failure")
 
-    monkeypatch.setattr(run_service, "_build_query_tasks", fail_after_run_flush)
+    monkeypatch.setattr(run_repo, "build_query_tasks", fail_after_run_flush)
     with pytest.raises(RuntimeError, match="forced fan-out failure"):
         run_service.create_run(db, RunCreate(project_id=project.id))
 

@@ -16,6 +16,9 @@ def test_monitoring_metadata_contains_only_expected_business_tables():
         "geo_ai_platform",
         "geo_monitor_run",
         "geo_query_task",
+        "geo_answer",
+        "geo_answer_citation",
+        "geo_answer_brand_result",
     }
     assert expected.issubset(Base.metadata.tables)
     assert "keyword_library" not in Base.metadata.tables
@@ -28,6 +31,9 @@ def test_model_table_names_are_stable():
 
     from app.geo_monitoring.models import (
         AIPlatform,
+        Answer,
+        AnswerBrandResult,
+        AnswerCitation,
         Brand,
         BrandAlias,
         MonitorProject,
@@ -45,6 +51,9 @@ def test_model_table_names_are_stable():
     assert AIPlatform.__tablename__ == "geo_ai_platform"
     assert MonitorRun.__tablename__ == "geo_monitor_run"
     assert QueryTask.__tablename__ == "geo_query_task"
+    assert Answer.__tablename__ == "geo_answer"
+    assert AnswerCitation.__tablename__ == "geo_answer_citation"
+    assert AnswerBrandResult.__tablename__ == "geo_answer_brand_result"
 
 
 def test_project_and_run_input_validation():

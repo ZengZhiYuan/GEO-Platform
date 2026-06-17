@@ -3,9 +3,11 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+T = TypeVar("T")
 
 
 def _strip_required(value: str) -> str:
@@ -398,22 +400,35 @@ class MonitorRunOut(BaseModel):
     prompt_set_id: int
     prompt_set_version: str
     trigger_type: str
+    triggered_by: int | None = None
     status: str
     collection_status: str
     analysis_status: str
     report_status: str
     platform_codes: list[str]
     expected_query_count: int
+    total_tasks: int = 0
+    succeeded_tasks: int = 0
+    failed_tasks: int = 0
+    cancelled_tasks: int = 0
     success_query_count: int
     failed_query_count: int
     valid_answer_count: int
     data_completeness_rate: Decimal
     result_json: dict | None
     error_message: str | None
+    error_summary: str | None = None
     started_at: datetime | None
+    completed_at: datetime | None = None
     finished_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class RunDetailRead(MonitorRunOut):
+    """运行详情，包含任务计数与进度摘要。"""
+
+    progress_rate: Decimal = Decimal("0")
 
 
 class QueryTaskOut(BaseModel):
@@ -427,12 +442,95 @@ class QueryTaskOut(BaseModel):
     status: str
     key_slot: int | None
     retry_count: int
+    attempt_count: int = 0
+    max_attempts: int = 3
     request_json: dict | None
     response_http_status: int | None
     error_code: str | None
     error_message: str | None
+    last_error_code: str | None = None
+    last_error_message: str | None = None
+    provider_request_id: str | None = None
     latency_ms: int | None
+    queued_at: datetime | None = None
     started_at: datetime | None
+    completed_at: datetime | None = None
     finished_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class CitationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    answer_id: int
+    citation_no: int
+    title: str | None
+    url: str | None
+    domain: str | None
+    source_type: str | None
+    quoted_text: str | None
+
+
+class BrandResultRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    answer_id: int
+    brand_id: int
+    is_mentioned: bool
+    mention_count: int
+    first_position: int | None
+    sentiment: str | None
+    context_json: dict[str, Any]
+
+
+class AnswerRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    task_id: int
+    platform_code: str
+    prompt_id: int
+    raw_text: str
+    normalized_text: str | None
+    model_name: str | None
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    latency_ms: int | None
+    collected_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+
+class AnswerDetailRead(AnswerRead):
+    citations: list[CitationRead] = Field(default_factory=list)
+    brand_results: list[BrandResultRead] = Field(default_factory=list)
+
+
+class AnswerCreate(BaseModel):
+    task_id: int = Field(ge=1)
+    platform_code: str = Field(min_length=1, max_length=32)
+    prompt_id: int = Field(ge=1)
+    raw_text: str
+    normalized_text: str | None = None
+    model_name: str | None = Field(default=None, max_length=255)
+    prompt_tokens: int = Field(default=0, ge=0)
+    completion_tokens: int = Field(default=0, ge=0)
+    total_tokens: int = Field(default=0, ge=0)
+    latency_ms: int | None = Field(default=None, ge=0)
+    raw_response_json: dict[str, Any] | None = None
+
+    @field_validator("raw_text")
+    @classmethod
+    def strip_raw_text(cls, value: str) -> str:
+        return _strip_required(value)
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    items: list[T]
+    total: int
+    page: int
+    page_size: int
