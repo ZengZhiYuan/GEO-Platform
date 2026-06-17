@@ -1,0 +1,83 @@
+# {{ project.report_title }}
+
+{% if project.report_subtitle %}{{ project.report_subtitle }}
+
+{% endif %}
+**运行编号:** {{ run.run_no }}  
+**Prompt 集版本:** {{ run.prompt_set_version }}  
+**目标品牌:** {{ target_brand_name }}  
+**有效回答数:** {{ run.valid_answer_count }}  
+**数据完整率:** {{ run.data_completeness_rate }}
+
+## 项目摘要
+
+- 行业: {{ project.industry }}
+- 官方域名: {{ project.official_domain or "—" }}
+- 分析状态: {{ run.analysis_status }}
+
+## 平台指标
+
+{% for platform in platforms %}
+### {{ platform.platform_code }}
+
+- 有效回答: {{ platform.valid_answer_count }}
+- 数据完整率: {{ platform.data_completeness_rate }}
+- 品牌提及率: {{ platform.brand_mention_rate }}
+- 品牌首位率: {{ platform.brand_first_rate }}
+
+{% if platform.summary_json %}
+**洞察摘要:** {{ platform.summary_json.get("platform_summary", "") }}
+{% endif %}
+
+{% endfor %}
+
+## 竞品差距
+
+{% for platform in platforms %}
+### {{ platform.platform_code }}
+
+{% for competitor in platform.top_competitors %}
+- {{ competitor.get("brand_name", competitor) }}: 提及 {{ competitor.get("mention_count", "—") }}
+{% else %}
+- 暂无竞品数据
+{% endfor %}
+
+{% endfor %}
+
+## Prompt 表现
+
+{% for platform in platforms %}
+### {{ platform.platform_code }}
+
+{% for item in platform.prompt_competitiveness_summary %}
+- Prompt {{ item.get("prompt_id", "—") }}: 竞争力 {{ item.get("competitiveness_score", "—") }}
+{% else %}
+- 暂无 Prompt 竞争力数据
+{% endfor %}
+
+{% endfor %}
+
+## 来源统计
+
+{% for source in sources %}
+- [{{ source.platform_code or "all" }}] {{ source.domain }}: 引用 {{ source.citation_count }}，占比 {{ source.share_rate }}
+{% else %}
+- 暂无来源统计
+{% endfor %}
+
+## Agent 洞察
+
+{% for insight in agent_insights %}
+- {{ insight.agent_code }} ({{ insight.platform_code or "global" }}): {{ insight.output_json }}
+{% else %}
+- 暂无 Agent 洞察
+{% endfor %}
+
+## 原始回答摘录
+
+{% for answer in answers %}
+### {{ answer.platform_code }} / Prompt {{ answer.prompt_id }}
+
+{{ answer.raw_text }}
+
+{% endfor %}

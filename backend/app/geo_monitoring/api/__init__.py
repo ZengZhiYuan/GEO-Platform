@@ -9,6 +9,7 @@ from app.geo_monitoring.api.dashboard import router as dashboard_router
 from app.geo_monitoring.api.platforms import router as platforms_router
 from app.geo_monitoring.api.projects import router as projects_router
 from app.geo_monitoring.api.prompts import router as prompts_router
+from app.geo_monitoring.api.reports import router as reports_router
 from app.geo_monitoring.api.runs import router as runs_router
 from app.geo_monitoring.api.schedules import router as schedules_router
 
@@ -22,6 +23,7 @@ _SUB_ROUTERS = (
     answers_router,
     analysis_router,
     dashboard_router,
+    reports_router,
 )
 
 

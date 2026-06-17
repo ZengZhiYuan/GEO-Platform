@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ html_escape(project.report_title) }}</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; color: #222; }
+    h1, h2, h3 { color: #111; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 1.5rem; }
+    th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+    pre { background: #f7f7f7; padding: 1rem; overflow-x: auto; white-space: pre-wrap; }
+    .meta { color: #555; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>{{ html_escape(project.report_title) }}</h1>
+  {% if project.report_subtitle %}
+  <p class="meta">{{ html_escape(project.report_subtitle) }}</p>
+  {% endif %}
+  <p class="meta">
+    运行编号: {{ html_escape(run.run_no) }} |
+    Prompt 集版本: {{ html_escape(run.prompt_set_version) }} |
+    目标品牌: {{ html_escape(target_brand_name) }}
+  </p>
+
+  <h2>项目摘要</h2>
+  <ul>
+    <li>行业: {{ html_escape(project.industry) }}</li>
+    <li>官方域名: {{ html_escape(project.official_domain or "—") }}</li>
+    <li>有效回答数: {{ run.valid_answer_count }}</li>
+    <li>数据完整率: {{ run.data_completeness_rate }}</li>
+  </ul>
+
+  <h2>平台指标</h2>
+  {% for platform in platforms %}
+  <h3>{{ html_escape(platform.platform_code) }}</h3>
+  <table>
+    <tr><th>指标</th><th>值</th></tr>
+    <tr><td>有效回答</td><td>{{ platform.valid_answer_count }}</td></tr>
+    <tr><td>数据完整率</td><td>{{ platform.data_completeness_rate }}</td></tr>
+    <tr><td>品牌提及率</td><td>{{ platform.brand_mention_rate }}</td></tr>
+    <tr><td>品牌首位率</td><td>{{ platform.brand_first_rate }}</td></tr>
+  </table>
+  {% if platform.summary_json %}
+  <p>{{ html_escape(platform.summary_json.get("platform_summary", "")) }}</p>
+  {% endif %}
+  {% endfor %}
+
+  <h2>竞品差距</h2>
+  {% for platform in platforms %}
+  <h3>{{ html_escape(platform.platform_code) }}</h3>
+  <ul>
+    {% for competitor in platform.top_competitors %}
+    <li>{{ html_escape(competitor.get("brand_name") or competitor|string) }}</li>
+    {% else %}
+    <li>暂无竞品数据</li>
+    {% endfor %}
+  </ul>
+  {% endfor %}
+
+  <h2>Prompt 表现</h2>
+  {% for platform in platforms %}
+  <h3>{{ html_escape(platform.platform_code) }}</h3>
+  <ul>
+    {% for item in platform.prompt_competitiveness_summary %}
+    <li>Prompt {{ item.get("prompt_id", "—") }}: 竞争力 {{ item.get("competitiveness_score", "—") }}</li>
+    {% else %}
+    <li>暂无 Prompt 竞争力数据</li>
+    {% endfor %}
+  </ul>
+  {% endfor %}
+
+  <h2>来源统计</h2>
+  <table>
+    <tr><th>平台</th><th>域名</th><th>引用数</th><th>占比</th></tr>
+    {% for source in sources %}
+    <tr>
+      <td>{{ html_escape(source.platform_code or "all") }}</td>
+      <td>{{ html_escape(source.domain) }}</td>
+      <td>{{ source.citation_count }}</td>
+      <td>{{ source.share_rate }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">暂无来源统计</td></tr>
+    {% endfor %}
+  </table>
+
+  <h2>Agent 洞察</h2>
+  <ul>
+    {% for insight in agent_insights %}
+    <li>{{ html_escape(insight.agent_code) }} ({{ html_escape(insight.platform_code or "global") }})</li>
+    {% else %}
+    <li>暂无 Agent 洞察</li>
+    {% endfor %}
+  </ul>
+
+  <h2>原始回答摘录</h2>
+  {% for answer in answers %}
+  <h3>{{ html_escape(answer.platform_code) }} / Prompt {{ answer.prompt_id }}</h3>
+  <pre>{{ answer.raw_text_html | safe }}</pre>
+  {% endfor %}
+</body>
+</html>

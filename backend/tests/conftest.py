@@ -31,6 +31,7 @@ def compile_big_integer_for_sqlite(type_, compiler, **kw):
 def session_factory():
     from app.core.database import Base
     from app.geo_monitoring import models  # noqa: F401
+    import app.geo_monitoring.reports.storage  # noqa: F401
 
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -40,11 +41,14 @@ def session_factory():
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     from app.worker.actors import analysis as analysis_actor
+    from app.worker.actors import report as report_actor
 
     analysis_actor.configure_session_factory(factory)
+    report_actor.configure_session_factory(factory)
     try:
         yield factory
     finally:
+        report_actor.reset_session_factory()
         analysis_actor.reset_session_factory()
         Base.metadata.drop_all(engine)
         engine.dispose()
