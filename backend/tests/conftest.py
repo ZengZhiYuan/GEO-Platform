@@ -15,6 +15,13 @@ os.environ["DRAMATIQ_BROKER"] = "stub"
 os.environ["NACOS_ENABLED"] = "false"
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "integration: requires reachable PostgreSQL (see MIGRATION_TEST_DATABASE_URL)",
+    )
+
+
 @compiles(BigInteger, "sqlite")
 def compile_big_integer_for_sqlite(type_, compiler, **kw):
     return compiler.visit_INTEGER(Integer(), **kw)
