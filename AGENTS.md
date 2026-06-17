@@ -1,15 +1,55 @@
 # AGENTS.md
 
-## Windows / PowerShell 编码规则
+## MVP V2 后端开发任务
 
-本机项目中大量文档为中文 Markdown，统一按 UTF-8 处理。
+后端 MVP 任务书：`docs/AI应用监测_MVP_Cursor实施任务V2.md`。用户下达 Task 开发指令时，**默认授权按任务书执行**，无需每次重复「先读任务文档」。
 
-在 Windows PowerShell / PowerShell 中读取中文文本、Markdown、需求文档时：
+**节约 token 的读法：**
 
-- 优先使用 `Get-Content -Encoding UTF8`
-- 或使用 `[System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)`
-- 不要使用未显式指定编码的 `type`、`cat`、`Get-Content` 读取中文文档
-- 如果使用 Python 读取文件，必须显式指定 `encoding="utf-8"`
+1. 先读 `docs/AI应用监测_MVP_V2_Task索引.md`（执行规则摘要 + Task 行号目录）。
+2. 再按索引行号局部读取任务书对应 Task 章节；禁止通读全文。
+3. 细则见 `.cursor/rules/mvp-v2-backend-tasks.mdc`。
+
+**用户推荐指令格式：** `执行 V2 Task N：<简述>`
+
+## 文本编码规则（UTF-8 默认）
+
+**原则：** 本仓库文档、源码、配置与命令输出一律以 **UTF-8** 为默认编码。Agent 读取文档或查看运行日志时，必须显式按 UTF-8 处理，避免在中文 Windows 下出现乱码（如 `����`、`��ǡ` 等）。
+
+### 读取文档与源码
+
+- **优先** 使用 Cursor `Read` 工具读取 Markdown / 源码（工具侧按 UTF-8 解码）。
+- 在 Shell 中读取文本时：
+  - `Get-Content -Encoding UTF8 <path>`
+  - 或 `[System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)`
+- **禁止** 使用未指定编码的 `type`、`cat`、`Get-Content`（会落到系统 ANSI/GBK）。
+- Python 读写文件必须 `encoding="utf-8"`；写入 Markdown / 配置 / 日志文件时同样使用 UTF-8。
+
+### 查看命令输出与运行日志
+
+在 **Windows PowerShell** 中执行可能输出中文的命令（pytest、git、alembic、应用日志等）前，先设置终端与 Python 为 UTF-8：
+
+```powershell
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+chcp 65001 | Out-Null
+$env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUTF8 = "1"
+```
+
+- 读取已有日志文件：`Get-Content -Encoding UTF8 -Path <log-file>`
+- 将命令输出落盘后再读：`... 2>&1 | Out-File -Encoding utf8 .\_run.log`（禁止 `-Encoding default` / `unicode` 以外的系统默认编码）
+- **禁止** 依赖 PowerShell 默认代码页解读中文输出；若仍见乱码，改用 `Read` 工具直接读日志文件，或用 Python `-X utf8` / 上述环境变量重跑命令。
+
+### Git 与其他 CLI
+
+- Git 日志/差异含中文时，在同一 UTF-8 终端会话中执行，或配合 `git -c core.quotepath=false` 查看路径。
+- 避免在旧版 PowerShell 中使用 `&&` 链接命令（语法错误消息本身也可能乱码）；改用 `;` 分步执行，或设置 `working_directory` 后单条命令运行。
+
+### 写入与提交
+
+- 新建或修改的中文 Markdown、`.env.example`、注释与测试夹具一律保存为 **UTF-8（无 BOM 优先）**。
+- 发现乱码时，先检查是否用了错误编码读取/输出，**不要** 将乱码文本写回仓库。
 
 ## Python / 后端虚拟环境
 
@@ -27,17 +67,30 @@
 
 ## CodeGraph
 
-This project has a CodeGraph MCP server (`codegraph_*` tools) configured. CodeGraph is a tree-sitter-parsed knowledge graph of every symbol, edge, and file. Reads are sub-millisecond and return structural information grep cannot.
+本项目已配置 CodeGraph MCP（`codegraph_*` 工具）。CodeGraph 是基于 tree-sitter 的符号/调用关系图谱，适合结构查询。
 
-### When to prefer codegraph over native search
+### 何时优先用 CodeGraph
 
-Use codegraph for structural questions: what calls what, what would break, where a symbol is defined, or what a signature/source is. Use native grep/read only for literal text queries or after a specific file is already identified.
+- 架构或「X 如何工作」：先 `codegraph_context`，至多一次 `codegraph_explore`
+- 特定调用链：用 `codegraph_trace`，不要用 grep 拼路径
+- 按符号名查找：用 `codegraph_search`，不要先 grep
+- 不要对多个符号循环 `codegraph_node`；用 `codegraph_explore`
 
-### Rules of thumb
+### MVP 任务收尾：更新项目地图与索引
 
-- For architecture or "how does X work" questions, call `codegraph_context` first, then at most one focused `codegraph_explore`.
-- For a specific flow, use `codegraph_trace` rather than rebuilding the path with grep.
-- Do not grep first when looking up a symbol by name; use `codegraph_search`.
-- Do not loop `codegraph_node` over many symbols; use `codegraph_explore`.
-- After editing files, allow for CodeGraph index debounce before re-querying.
+每个 V2 开发 Task **通过验收后**，若改动了源码，在**仓库根目录**执行：
+
+```powershell
+codegraph status
+codegraph sync
+codegraph status
+```
+
+- 无 `.codegraph/` 或 `status` 提示未初始化：先 `codegraph init`，再 `codegraph sync`
+- 日常收尾用 `sync`（增量）；仅在 `sync` 失败且索引明显异常时用 `codegraph index --force`
+- 锁文件阻塞时可 `codegraph unlock` 后重试
+- 索引失败不推翻已通过测试，但须在 Task 汇报中说明
+- Task 0 且无代码改动可跳过
+
+查询前若刚改过代码，应先 `sync`，再调用 MCP 工具（或 CLI：`codegraph query`、`codegraph explore`）。
 

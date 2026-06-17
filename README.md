@@ -33,10 +33,22 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 Copy-Item ..\.env.example ..\.env
 # 编辑 ..\.env，填入服务器 PostgreSQL、Redis、Nacos 的真实连接信息。
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+backend\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-本地运行只从仓库根目录 `.env` 读取真实 PostgreSQL、Redis、Nacos 连接信息；代码和文档示例不得硬编码服务器地址、用户名、密码或 token。接口前缀为 `/api/geo-monitoring`，健康检查为 `/api/health`，就绪检查为 `/api/ready`。
+本地运行统一从仓库根目录 `.env` 读取 PostgreSQL、Redis、Nacos 以及采集平台、Agent LLM、调度与报告相关配置；代码和文档示例不得硬编码服务器地址、用户名、密码或 token。`.env.example` 仅提供占位符，真实密钥只写入本地 `.env` 或 Nacos 配置中心。
+
+主要连接项：
+
+- `DATABASE_URL`：服务器 PostgreSQL
+- `REDIS_URL`：服务器 Redis（Dramatiq 与后续采集/分析任务共用）
+- `NACOS_SERVER_ADDRESSES`、`NACOS_NAMESPACE`、`NACOS_GROUP`、`NACOS_CONFIG_DATA_ID`：Nacos 配置中心；需要时在 `.env` 中设置 `NACOS_ENABLED=true`
+- `DOUBAO_*`、`QWEN_*`、`YUANBAO_*`、`DEEPSEEK_*`、`KIMI_*`：各平台官方 API 采集配置（默认关闭）
+- `AGENT_LLM_*`：Agent 语义分析 LLM
+- `SCHEDULER_*`：独立调度进程开关与时区
+- `REPORT_STORAGE_DIR`：报告本地存储目录
+
+接口前缀为 `/api/geo-monitoring`，健康检查为 `/api/health`，就绪检查为 `/api/ready`。
 
 ## 前端
 
@@ -73,4 +85,4 @@ python -m pytest -v
 
 测试环境通过 `backend/tests/conftest.py` 注入独立配置并使用 SQLite/Stub broker 覆盖运行依赖，不直接连接共享服务器 PostgreSQL、Redis 或 Nacos。
 
-平台密钥和适配器配置将在真实采集能力实现时引入。不要在仓库、日志或普通数据库字段中保存明文密钥。
+平台密钥、Agent LLM 密钥与 Nacos 账号只通过 `.env` 或 Nacos 配置中心注入；Settings 对外只暴露脱敏摘要，不要在仓库、日志或普通数据库字段中保存明文密钥。
