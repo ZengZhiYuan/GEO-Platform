@@ -213,8 +213,13 @@ def on_query_task_terminal(db: Session, run_id: int) -> None:
     run = run_repo.get_by_id(db, run_id)
     if run is None or run.is_deleted:
         return
+    previous_status = run.status
     refresh_run_aggregation(db, run)
     db.commit()
+    if run.status in RUN_TERMINAL_STATUSES and previous_status not in RUN_TERMINAL_STATUSES:
+        from app.worker.actors.analysis import maybe_enqueue_run_analysis
+
+        maybe_enqueue_run_analysis(run_id, db=db)
 
 
 def _start_collection(db: Session, run_id: int) -> None:

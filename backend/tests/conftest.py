@@ -32,9 +32,13 @@ def session_factory():
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
+    from app.worker.actors import analysis as analysis_actor
+
+    analysis_actor.configure_session_factory(factory)
     try:
         yield factory
     finally:
+        analysis_actor.reset_session_factory()
         Base.metadata.drop_all(engine)
         engine.dispose()
 
