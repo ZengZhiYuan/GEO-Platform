@@ -32,6 +32,7 @@ class ReportCreateRequest(BaseModel):
     formats: list[str] = Field(default_factory=lambda: ["md", "html"])
 
 
+# 将报告 ORM 行序列化为 API 响应字段
 def _report_payload(report: GeoReport) -> dict:
     return {
         "id": report.id,
@@ -50,11 +51,13 @@ def _report_payload(report: GeoReport) -> dict:
     }
 
 
+# 基于配置创建报告文件存储实例
 def _storage() -> ReportStorage:
     return ReportStorage(settings.REPORT_STORAGE_DIR)
 
 
 @router.post("/runs/{run_id}/reports", summary="创建并生成监测报告")
+# 为运行创建报告记录并同步生成文件内容
 def create_run_report(
     payload: ReportCreateRequest,
     run_id: int = Path(..., ge=1),
@@ -63,6 +66,7 @@ def create_run_report(
     reports = create_run_reports(db, run_id, formats=payload.formats)
     storage = _storage()
     completed: list[GeoReport] = []
+    # 逐份生成并写入存储
     for report in reports:
         row = generate_report_content(db, report.id, storage=storage)
         completed.append(row)
@@ -70,6 +74,7 @@ def create_run_report(
 
 
 @router.get("/runs/{run_id}/reports", summary="分页查询运行报告")
+# 分页查询指定运行下的报告列表
 def list_reports_for_run(
     run_id: int = Path(..., ge=1),
     page: int = Query(1, ge=1),
@@ -82,6 +87,7 @@ def list_reports_for_run(
 
 
 @router.get("/reports/{report_id}", summary="获取报告状态与元数据")
+# 按 ID 获取报告状态与元数据
 def get_report_detail(
     report_id: int = Path(..., ge=1),
     db: Session = Depends(get_db),
@@ -91,6 +97,7 @@ def get_report_detail(
 
 
 @router.get("/reports/{report_id}/download", summary="按报告 ID 下载文件")
+# 下载报告文件二进制内容
 def download_report(
     report_id: int = Path(..., ge=1),
     db: Session = Depends(get_db),
@@ -108,6 +115,7 @@ def download_report(
 
 
 @router.delete("/reports/{report_id}", summary="删除报告")
+# 删除报告记录及对应存储文件
 def remove_report(
     report_id: int = Path(..., ge=1),
     db: Session = Depends(get_db),

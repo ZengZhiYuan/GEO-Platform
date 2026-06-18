@@ -36,10 +36,12 @@ _SECRET_PATTERNS = (
 )
 
 
+# 生成新的请求追踪 ID（UUID hex）
 def new_request_id() -> str:
     return uuid4().hex
 
 
+# 脱敏日志中的 API Key、Bearer Token 等敏感信息
 def redact_sensitive_text(value: str) -> str:
     sanitized = value
     for pattern in _SECRET_PATTERNS:
@@ -47,6 +49,7 @@ def redact_sensitive_text(value: str) -> str:
     return sanitized
 
 
+# 将 request_id / run_id 等上下文绑定到当前协程
 def bind_log_context(
     *,
     request_id: str | None = None,
@@ -66,6 +69,7 @@ def bind_log_context(
     return tokens
 
 
+# 恢复日志上下文到绑定前的状态
 def reset_log_context(tokens: dict[str, Any]) -> None:
     if "request_id" in tokens:
         request_id_var.reset(tokens["request_id"])
@@ -77,6 +81,7 @@ def reset_log_context(tokens: dict[str, Any]) -> None:
         platform_code_var.reset(tokens["platform_code"])
 
 
+# 上下文管理器：临时设置日志上下文并在退出时自动恢复
 @contextmanager
 def log_context(**kwargs: Any) -> Iterator[None]:
     tokens = bind_log_context(**kwargs)
@@ -100,6 +105,7 @@ _STANDARD_LOGRECORD_ATTRS = frozenset(
 
 
 class StructuredJsonFormatter(logging.Formatter):
+    # 将 LogRecord 格式化为 JSON 行，自动注入上下文变量
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
             "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
@@ -121,6 +127,7 @@ class StructuredJsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False, default=str)
 
 
+# 初始化根日志器为结构化 JSON 输出
 def configure_logging(*, level: int | str = logging.INFO) -> None:
     root = logging.getLogger()
     root.handlers.clear()
@@ -131,6 +138,7 @@ def configure_logging(*, level: int | str = logging.INFO) -> None:
     logging.captureWarnings(True)
 
 
+# 记录实体状态迁移事件（如 run: pending -> collecting）
 def log_state_transition(
     logger: logging.Logger,
     *,
@@ -155,6 +163,7 @@ def log_state_transition(
     )
 
 
+# 记录外部 AI 平台 API 调用失败（含错误分类）
 def log_external_api_error(
     logger: logging.Logger,
     *,
@@ -179,6 +188,7 @@ def log_external_api_error(
     )
 
 
+# 记录 Worker 启动时已注册的 Dramatiq Actor 列表
 def log_worker_startup(registered_actors: list[str]) -> None:
     logger = logging.getLogger("app.worker")
     logger.info(
@@ -190,6 +200,7 @@ def log_worker_startup(registered_actors: list[str]) -> None:
     )
 
 
+# 记录调度器启动时的作业数量与轮询间隔
 def log_scheduler_startup(*, job_count: int, poll_seconds: int, timezone_name: str) -> None:
     logger = logging.getLogger("app.scheduler")
     logger.info(
@@ -203,6 +214,7 @@ def log_scheduler_startup(*, job_count: int, poll_seconds: int, timezone_name: s
     )
 
 
+# 上下文管理器：自动记录代码块执行耗时
 @contextmanager
 def timed_log(
     logger: logging.Logger,

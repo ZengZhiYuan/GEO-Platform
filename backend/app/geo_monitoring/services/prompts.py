@@ -18,10 +18,12 @@ from app.geo_monitoring.schemas import (
 from app.geo_monitoring.services.projects import require_active_project
 
 
+# 计算提示词文本的 SHA256 内容哈希
 def _content_hash(prompt_text: str) -> str:
     return sha256(prompt_text.encode("utf-8")).hexdigest()
 
 
+# 提交数据库变更，唯一约束冲突时转为业务异常
 def _commit_unique(db: Session, *, code: int, message: str) -> None:
     try:
         db.commit()
@@ -30,6 +32,7 @@ def _commit_unique(db: Session, *, code: int, message: str) -> None:
         raise BusinessException(message=message, code=code) from exc
 
 
+# 按 ID 查询提示词集，不存在则抛业务异常
 def get_prompt_set(db: Session, prompt_set_id: int) -> PromptSet:
     prompt_set = prompt_repo.get_prompt_set_by_id(db, prompt_set_id)
     if prompt_set is None:
@@ -37,11 +40,13 @@ def get_prompt_set(db: Session, prompt_set_id: int) -> PromptSet:
     return prompt_set
 
 
+# 校验提示词集处于 draft 状态才允许修改
 def _require_draft(prompt_set: PromptSet) -> None:
     if prompt_set.status != "draft":
         raise BusinessException(message="只有草稿提示词集允许修改", code=40020)
 
 
+# 分页列出项目下的提示词集
 def list_prompt_sets(
     db: Session,
     *,
@@ -60,6 +65,7 @@ def list_prompt_sets(
     )
 
 
+# 创建草稿提示词集并校验版本号唯一
 def create_prompt_set(
     db: Session, project_id: int, payload: PromptSetCreate
 ) -> PromptSet:
@@ -76,6 +82,7 @@ def create_prompt_set(
     return prompt_set
 
 
+# 更新草稿提示词集字段
 def update_prompt_set(
     db: Session, prompt_set_id: int, payload: PromptSetUpdate
 ) -> PromptSet:
@@ -88,6 +95,7 @@ def update_prompt_set(
     return prompt_set
 
 
+# 软删除草稿提示词集，已被运行引用则拒绝
 def delete_prompt_set(db: Session, prompt_set_id: int) -> None:
     prompt_set = get_prompt_set(db, prompt_set_id)
     if prompt_repo.has_runs(db, prompt_set_id):
@@ -102,6 +110,7 @@ def delete_prompt_set(db: Session, prompt_set_id: int) -> None:
     db.commit()
 
 
+# 按 ID 查询提示词，不存在则抛业务异常
 def get_prompt(db: Session, prompt_id: int) -> Prompt:
     prompt = prompt_repo.get_prompt_by_id(db, prompt_id)
     if prompt is None:
@@ -109,6 +118,7 @@ def get_prompt(db: Session, prompt_id: int) -> Prompt:
     return prompt
 
 
+# 分页列出提示词集下的提示词
 def list_prompts(
     db: Session,
     *,
@@ -122,6 +132,7 @@ def list_prompts(
     )
 
 
+# 在草稿提示词集中创建提示词并更新计数
 def create_prompt(
     db: Session, prompt_set_id: int, payload: PromptCreate
 ) -> Prompt:
@@ -147,6 +158,7 @@ def create_prompt(
     return prompt
 
 
+# 更新草稿提示词集内的提示词，文本变更时重算哈希
 def update_prompt(db: Session, prompt_id: int, payload: PromptUpdate) -> Prompt:
     prompt = get_prompt(db, prompt_id)
     prompt_set = get_prompt_set(db, prompt.prompt_set_id)
@@ -160,6 +172,7 @@ def update_prompt(db: Session, prompt_id: int, payload: PromptUpdate) -> Prompt:
     return prompt
 
 
+# 软删除提示词并递减提示词集计数
 def delete_prompt(db: Session, prompt_id: int) -> None:
     prompt = get_prompt(db, prompt_id)
     prompt_set = get_prompt_set(db, prompt.prompt_set_id)
@@ -176,6 +189,7 @@ def delete_prompt(db: Session, prompt_id: int) -> None:
     db.commit()
 
 
+# 激活草稿提示词集：归档旧 active 版本并写入校验和
 def activate_prompt_set(db: Session, prompt_set_id: int) -> PromptSet:
     prompt_set = get_prompt_set(db, prompt_set_id)
     _require_draft(prompt_set)
@@ -183,12 +197,14 @@ def activate_prompt_set(db: Session, prompt_set_id: int) -> PromptSet:
     if not prompts:
         raise BusinessException(message="空提示词集不能激活", code=40022)
 
+    # 将项目内原 active 版本归档
     previous = prompt_repo.find_active_prompt_set(
         db, prompt_set.project_id, exclude_id=prompt_set.id
     )
     if previous is not None:
         previous.status = "archived"
 
+    # 根据全部提示词内容生成校验和并激活
     checksum_source = "\n".join(
         f"{item.prompt_code}:{item.content_hash}:{item.enabled}:{item.sort_order}"
         for item in prompts

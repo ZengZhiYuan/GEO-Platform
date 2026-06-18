@@ -18,6 +18,7 @@ from app.geo_monitoring.schemas import ScheduleCreate, ScheduleUpdate
 from app.geo_monitoring.services.projects import require_active_project
 
 
+# 解析时区名称，无效则抛业务异常
 def get_zoneinfo(tz_name: str) -> ZoneInfo:
     try:
         return ZoneInfo(tz_name)
@@ -25,6 +26,7 @@ def get_zoneinfo(tz_name: str) -> ZoneInfo:
         raise BusinessException(message=f"无效时区: {tz_name}", code=40051) from exc
 
 
+# 校验 cron 表达式语法是否合法
 def validate_cron_expr(cron_expr: str) -> str:
     try:
         CronTrigger.from_crontab(cron_expr, timezone=timezone.utc)
@@ -33,23 +35,27 @@ def validate_cron_expr(cron_expr: str) -> str:
     return cron_expr
 
 
+# 根据调度 ID 与计划触发时间生成幂等键
 def build_idempotency_key(schedule_id: int, planned_fire_time: datetime) -> str:
     utc_time = planned_fire_time.astimezone(timezone.utc)
     return f"schedule:{schedule_id}:{utc_time.isoformat()}"
 
 
+# 将 naive 或带时区时间统一转为 UTC
 def _ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
 
 
+# 可选 datetime 转 UTC，None 原样返回
 def as_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     return _ensure_utc(value)
 
 
+# 计算 cron 在指定时区下的下一次触发时间（UTC）
 def compute_next_fire_time(
     cron_expr: str,
     tz_name: str,
@@ -68,6 +74,7 @@ def compute_next_fire_time(
     return _ensure_utc(next_fire)
 
 
+# 枚举时间窗口内所有 cron 触发时刻（UTC）
 def _iter_cron_fire_times(
     cron_expr: str,
     tz_name: str,
@@ -95,6 +102,7 @@ def _iter_cron_fire_times(
     return fire_times
 
 
+# 将任意时刻对齐到不晚于该时刻的最近 cron 触发点
 def align_planned_fire_time(
     schedule: MonitorSchedule, moment: datetime
 ) -> datetime:
@@ -118,6 +126,7 @@ def align_planned_fire_time(
     return _ensure_utc(aligned)
 
 
+# 按 misfire 策略解析应补跑的最近一次计划触发时间
 def resolve_missed_fire_time(
     schedule: MonitorSchedule,
     last_run_at: datetime | None,
@@ -128,6 +137,7 @@ def resolve_missed_fire_time(
     upper_bound = align_planned_fire_time(
         schedule, now - timedelta(seconds=1)
     )
+    # 上次运行已覆盖该窗口则无需补跑
     if last_run_at is not None and last_run_at.astimezone(timezone.utc) >= upper_bound:
         return None
     start = (
@@ -146,6 +156,7 @@ def resolve_missed_fire_time(
     return fire_times[-1]
 
 
+# 按幂等键查找已创建的调度运行
 def _find_run_by_idempotency_key(db: Session, key: str) -> MonitorRun | None:
     return db.execute(
         select(MonitorRun).where(
@@ -155,6 +166,7 @@ def _find_run_by_idempotency_key(db: Session, key: str) -> MonitorRun | None:
     ).scalar_one_or_none()
 
 
+# 尝试获取 PostgreSQL 事务级 advisory 锁，非 PG 环境恒为 True
 def _try_acquire_schedule_lock(db: Session, idempotency_key: str) -> bool:
     bind = db.get_bind()
     if bind is not None and bind.dialect.name == "postgresql":
@@ -171,6 +183,7 @@ def _try_acquire_schedule_lock(db: Session, idempotency_key: str) -> bool:
     return True
 
 
+# 按 ID 查询监测调度，不存在则抛业务异常
 def get_schedule(db: Session, schedule_id: int) -> MonitorSchedule:
     schedule = db.execute(
         select(MonitorSchedule).where(
@@ -183,6 +196,7 @@ def get_schedule(db: Session, schedule_id: int) -> MonitorSchedule:
     return schedule
 
 
+# 分页列出项目下的监测调度
 def list_schedules(
     db: Session,
     *,
@@ -212,6 +226,7 @@ def list_schedules(
     return items, total
 
 
+# 创建监测调度并计算首次 next_run_at
 def create_schedule(
     db: Session, project_id: int, payload: ScheduleCreate
 ) -> MonitorSchedule:
@@ -243,6 +258,7 @@ def create_schedule(
     return schedule
 
 
+# 更新调度配置，cron/时区变更时重算 next_run_at
 def update_schedule(
     db: Session, schedule_id: int, payload: ScheduleUpdate
 ) -> MonitorSchedule:
@@ -271,6 +287,7 @@ def update_schedule(
     return schedule
 
 
+# 软删除调度并禁用
 def delete_schedule(db: Session, schedule_id: int) -> None:
     schedule = get_schedule(db, schedule_id)
     now = datetime.now(timezone.utc)
@@ -280,6 +297,7 @@ def delete_schedule(db: Session, schedule_id: int) -> None:
     db.commit()
 
 
+# 启用或禁用调度，启用时重算 next_run_at
 def set_schedule_enabled(
     db: Session, schedule_id: int, enabled: bool
 ) -> MonitorSchedule:
@@ -294,6 +312,7 @@ def set_schedule_enabled(
     return schedule
 
 
+# 创建 schedule 触发的 MonitorRun 并启动采集
 def _create_scheduled_run(
     db: Session,
     schedule: MonitorSchedule,
@@ -338,6 +357,7 @@ def _create_scheduled_run(
     db.flush()
     run_repo.build_query_tasks(db, run, prompts, platforms)
     now = datetime.now(timezone.utc)
+    # 更新调度上次/下次运行时间
     schedule.last_run_at = now
     schedule.next_run_at = compute_next_fire_time(
         schedule.cron_expr, schedule.timezone, after=now
@@ -349,6 +369,7 @@ def _create_scheduled_run(
     return run
 
 
+# 按计划触发时间幂等触发调度运行
 def fire_schedule(
     db: Session,
     schedule_id: int,
@@ -360,6 +381,7 @@ def fire_schedule(
     require_active_project(db, schedule.project_id)
     normalized = align_planned_fire_time(schedule, planned_fire_time)
     idempotency_key = build_idempotency_key(schedule.id, normalized)
+    # 已存在同幂等键运行则直接返回
     existing = _find_run_by_idempotency_key(db, idempotency_key)
     if existing is not None:
         return existing
@@ -379,6 +401,7 @@ def fire_schedule(
     )
 
 
+# 立即手动触发一次调度运行（独立幂等键）
 def trigger_schedule_now(db: Session, schedule_id: int) -> MonitorRun:
     schedule = get_schedule(db, schedule_id)
     require_active_project(db, schedule.project_id)

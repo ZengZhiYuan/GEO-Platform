@@ -27,6 +27,7 @@ _SUB_ROUTERS = (
 )
 
 
+# 组装监测域子路由并挂载到指定前缀
 def build_router(*, prefix: str, tags: list[str]) -> APIRouter:
     router = APIRouter(prefix=prefix, tags=tags)
     for sub_router in _SUB_ROUTERS:

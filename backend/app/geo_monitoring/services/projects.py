@@ -11,6 +11,7 @@ from app.geo_monitoring.repositories import projects as project_repo
 from app.geo_monitoring.schemas import ProjectCreate, ProjectUpdate
 
 
+# 按 ID 查询监测项目，不存在则抛业务异常
 def get_project(db: Session, project_id: int) -> MonitorProject:
     project = project_repo.get_by_id(db, project_id)
     if project is None:
@@ -18,6 +19,7 @@ def get_project(db: Session, project_id: int) -> MonitorProject:
     return project
 
 
+# 校验项目存在且处于 active 状态
 def require_active_project(db: Session, project_id: int) -> MonitorProject:
     project = get_project(db, project_id)
     if project.status != "active":
@@ -25,6 +27,7 @@ def require_active_project(db: Session, project_id: int) -> MonitorProject:
     return project
 
 
+# 分页列出监测项目
 def list_projects(
     db: Session,
     *,
@@ -42,6 +45,7 @@ def list_projects(
     )
 
 
+# 创建新的监测项目并设为 active
 def create_project(db: Session, payload: ProjectCreate) -> MonitorProject:
     project = MonitorProject(**payload.model_dump(), status="active")
     project_repo.add(db, project)
@@ -50,6 +54,7 @@ def create_project(db: Session, payload: ProjectCreate) -> MonitorProject:
     return project
 
 
+# 更新监测项目字段
 def update_project(
     db: Session, project_id: int, payload: ProjectUpdate
 ) -> MonitorProject:
@@ -61,6 +66,7 @@ def update_project(
     return project
 
 
+# 软删除项目，已被运行引用则拒绝
 def delete_project(db: Session, project_id: int) -> None:
     project = get_project(db, project_id)
     if project_repo.has_runs(db, project_id):

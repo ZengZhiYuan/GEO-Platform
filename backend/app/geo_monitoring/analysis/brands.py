@@ -23,6 +23,7 @@ class BrandProfile:
     category: str
 
 
+# 从单条回答中查找指定品牌的提及记录
 def _mention_for_brand(
     answer: AnswerInput,
     brand_id: int,
@@ -33,11 +34,13 @@ def _mention_for_brand(
     return None
 
 
+# 判断指定品牌是否在该回答中被提及
 def _brand_mentioned_in_answer(answer: AnswerInput, brand_id: int) -> bool:
     mention = _mention_for_brand(answer, brand_id)
     return mention is not None and mention.is_mentioned
 
 
+# 计算指定品牌在该回答中的相对提及排名
 def _rank_in_answer(answer: AnswerInput, brand_id: int) -> int | None:
     mentioned = [
         mention
@@ -53,6 +56,7 @@ def _rank_in_answer(answer: AnswerInput, brand_id: int) -> int | None:
     return rank_by_brand.get(brand_id)
 
 
+# 统计指定品牌在有效回答中的总提及次数
 def compute_brand_mention_count(
     answers: list[AnswerInput],
     brand_id: int,
@@ -66,6 +70,7 @@ def compute_brand_mention_count(
     return total
 
 
+# 计算指定品牌的提及率（被提及回答数 / 有效回答数）
 def compute_brand_mention_rate(
     answers: list[AnswerInput],
     brand_id: int,
@@ -82,6 +87,7 @@ def compute_brand_mention_rate(
     )
 
 
+# 计算指定品牌在有效回答中的平均提及排名
 def compute_average_mention_rank(
     answers: list[AnswerInput],
     brand_id: int,
@@ -97,6 +103,7 @@ def compute_average_mention_rank(
     return value.quantize(_SCORE_QUANT, rounding=ROUND_HALF_UP)
 
 
+# 计算各品牌在对话中的声量份额（SOV）
 def compute_share_of_voice(
     answers: list[AnswerInput],
     *,
@@ -115,6 +122,7 @@ def compute_share_of_voice(
     }
 
 
+# 判断情感标签是否为正面或中性
 def _is_positive_or_neutral(sentiment: str | None) -> bool:
     if sentiment is None:
         return False
@@ -122,6 +130,7 @@ def _is_positive_or_neutral(sentiment: str | None) -> bool:
     return normalized in _POSITIVE_SENTIMENTS or normalized in _NEUTRAL_SENTIMENTS
 
 
+# 计算指定品牌提及对话中正面/中性情感占比
 def compute_positive_neutral_sentiment(
     answers: list[AnswerInput],
     brand_id: int,
@@ -143,6 +152,7 @@ def compute_positive_neutral_sentiment(
     )
 
 
+# 按加权公式计算品牌综合得分
 def compute_brand_score(
     *,
     mention_rate_percent: Decimal | None,
@@ -167,12 +177,14 @@ def compute_brand_score(
     return score.quantize(_SCORE_QUANT, rounding=ROUND_HALF_UP)
 
 
+# 将比率（0-1）转换为百分比并四舍五入
 def _to_percent(rate: Decimal | None) -> Decimal | None:
     if rate is None:
         return None
     return (rate * Decimal("100")).quantize(_SCORE_QUANT, rounding=ROUND_HALF_UP)
 
 
+# 汇总各品牌的完整指标行并按得分排序
 def compute_brand_metrics_rows(
     answers: list[AnswerInput],
     *,
@@ -193,6 +205,7 @@ def compute_brand_metrics_rows(
         )
         for brand in brands
     ]
+    # 按提及率确定展示平均排名的 Top N 品牌
     rate_rows.sort(
         key=lambda item: (
             -(item[1].rate or Decimal("0")),

@@ -22,11 +22,13 @@ RUN_TERMINAL_STATUSES = frozenset(
 CANCELLABLE_TASK_STATUSES = frozenset({"pending", "queued", "running"})
 
 
+# 生成带时间戳与随机后缀的运行编号
 def _new_run_no() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
     return f"RUN-{timestamp}-{uuid4().hex[:8].upper()}"
 
 
+# 解析指定或项目内 active 提示词集
 def _resolve_prompt_set(db: Session, project_id: int, prompt_set_id: int | None):
     prompt_set = prompt_repo.resolve_active_prompt_set(
         db, project_id, prompt_set_id
@@ -36,6 +38,7 @@ def _resolve_prompt_set(db: Session, project_id: int, prompt_set_id: int | None)
     return prompt_set
 
 
+# 加载提示词集中已启用的提示词，空集则拒绝
 def _enabled_prompts(db: Session, prompt_set_id: int):
     prompts = prompt_repo.list_enabled_prompts(db, prompt_set_id)
     if not prompts:
@@ -47,16 +50,19 @@ def _enabled_prompts(db: Session, prompt_set_id: int):
     return prompts
 
 
+# 解析并校验可用的 AI 平台列表
 def _resolve_platforms(db: Session, platform_codes: list[str] | None):
     rows = platform_repo.list_candidates(db, platform_codes)
     by_code = {platform.platform_code: platform for platform in rows}
 
     if platform_codes is None:
+        # 未指定时取全部已启用平台
         platforms = sorted(
             (platform for platform in rows if platform.enabled),
             key=lambda item: item.id,
         )
     else:
+        # 按请求顺序校验每个平台可用
         platforms = []
         for code in platform_codes:
             platform = by_code.get(code)
@@ -72,6 +78,7 @@ def _resolve_platforms(db: Session, platform_codes: list[str] | None):
     return platforms
 
 
+# 将 MonitorRun 转为含进度率的详情 DTO
 def _to_run_detail(run: MonitorRun) -> RunDetailRead:
     total_tasks = run.total_tasks or run.expected_query_count
     finished = run.succeeded_tasks + run.failed_tasks + run.cancelled_tasks
@@ -85,6 +92,7 @@ def _to_run_detail(run: MonitorRun) -> RunDetailRead:
     )
 
 
+# 按状态统计某次运行下的 QueryTask 数量
 def _count_tasks_by_status(db: Session, run_id: int) -> Counter[str]:
     rows = db.execute(
         select(QueryTask.status, func.count())
@@ -97,6 +105,7 @@ def _count_tasks_by_status(db: Session, run_id: int) -> Counter[str]:
     return Counter({status: count for status, count in rows})
 
 
+# 统计某次运行下非空有效答案数量
 def _count_valid_answers(db: Session, run_id: int) -> int:
     return (
         db.scalar(
@@ -115,6 +124,7 @@ def _count_valid_answers(db: Session, run_id: int) -> int:
     )
 
 
+# 汇总失败任务的错误码与消息为单行摘要
 def _build_error_summary(db: Session, run_id: int) -> str | None:
     rows = db.execute(
         select(QueryTask.error_code, QueryTask.error_message)
@@ -135,6 +145,7 @@ def _build_error_summary(db: Session, run_id: int) -> str | None:
     return "; ".join(parts)
 
 
+# 将运行终态映射为采集阶段状态
 def _map_collection_status(run_status: str) -> str:
     if run_status == "completed":
         return "completed"
@@ -147,6 +158,7 @@ def _map_collection_status(run_status: str) -> str:
     return "running"
 
 
+# 根据各终态任务数量推断运行自然终态
 def _resolve_natural_terminal_status(counts: Counter[str]) -> str:
     success = counts.get("success", 0)
     failed = counts.get("failed", 0)
@@ -177,6 +189,7 @@ def refresh_run_aggregation(db: Session, run: MonitorRun) -> MonitorRun:
     )
     total_tasks = run.total_tasks or run.expected_query_count
 
+    # 同步任务计数与有效答案完整率
     run.succeeded_tasks = success
     run.failed_tasks = failed
     run.cancelled_tasks = cancelled
@@ -191,6 +204,7 @@ def refresh_run_aggregation(db: Session, run: MonitorRun) -> MonitorRun:
     )
     run.error_summary = _build_error_summary(db, run.id)
 
+    # 非终态运行：采集中或全部任务完成后写入终态
     if run.status not in RUN_TERMINAL_STATUSES:
         if in_progress > 0:
             if run.status == "pending":
@@ -216,12 +230,14 @@ def on_query_task_terminal(db: Session, run_id: int) -> None:
     previous_status = run.status
     refresh_run_aggregation(db, run)
     db.commit()
+    # 运行首次进入终态时尝试入队分析任务
     if run.status in RUN_TERMINAL_STATUSES and previous_status not in RUN_TERMINAL_STATUSES:
         from app.worker.actors.analysis import maybe_enqueue_run_analysis
 
         maybe_enqueue_run_analysis(run_id, db=db)
 
 
+# 将运行标记为采集中并入队全部 QueryTask
 def _start_collection(db: Session, run_id: int) -> None:
     from app.geo_monitoring.services import collection as collection_service
 
@@ -234,6 +250,7 @@ def _start_collection(db: Session, run_id: int) -> None:
     collection_service.enqueue_run_query_tasks(run_id, db=db)
 
 
+# 创建监测运行、扇出 QueryTask 并启动采集
 def create_run(db: Session, payload: RunCreate) -> MonitorRun:
     project = require_active_project(db, payload.project_id)
     prompt_set = _resolve_prompt_set(db, project.id, payload.prompt_set_id)
@@ -258,6 +275,7 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
     try:
         run_repo.add_run(db, run)
         db.flush()
+        # 按提示词 × 平台组合生成查询子任务
         run_repo.build_query_tasks(db, run, prompts, platforms)
         db.commit()
     except Exception:
@@ -269,6 +287,7 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
     return run
 
 
+# 按 ID 查询监测运行，不存在则抛业务异常
 def get_run(db: Session, run_id: int) -> MonitorRun:
     run = run_repo.get_by_id(db, run_id)
     if run is None:
@@ -276,6 +295,7 @@ def get_run(db: Session, run_id: int) -> MonitorRun:
     return run
 
 
+# 获取运行详情并刷新最新聚合状态
 def get_run_detail(db: Session, run_id: int) -> RunDetailRead:
     run = get_run(db, run_id)
     refresh_run_aggregation(db, run)
@@ -284,6 +304,7 @@ def get_run_detail(db: Session, run_id: int) -> RunDetailRead:
     return _to_run_detail(run)
 
 
+# 分页列出监测运行，支持项目与状态筛选
 def list_runs(
     db: Session,
     *,
@@ -320,6 +341,7 @@ def list_runs(
     return items, total
 
 
+# 分页列出某次运行下的 QueryTask
 def list_query_tasks(
     db: Session,
     *,
@@ -340,6 +362,7 @@ def list_query_tasks(
     )
 
 
+# 取消运行并将可取消任务标记为 cancelled
 def cancel_run(db: Session, run_id: int) -> MonitorRun:
     run = get_run(db, run_id)
     if run.status in RUN_TERMINAL_STATUSES:
@@ -349,6 +372,7 @@ def cancel_run(db: Session, run_id: int) -> MonitorRun:
         return run
 
     now = datetime.now(timezone.utc)
+    # 锁定并取消所有 pending/queued/running 任务
     tasks = list(
         db.execute(
             select(QueryTask)
@@ -377,6 +401,7 @@ def cancel_run(db: Session, run_id: int) -> MonitorRun:
     return run
 
 
+# 重置失败任务为 pending 并重新入队采集
 def retry_failed_tasks(db: Session, run_id: int) -> tuple[MonitorRun, int]:
     run = get_run(db, run_id)
     if run.status == "cancelled":
@@ -402,6 +427,7 @@ def retry_failed_tasks(db: Session, run_id: int) -> tuple[MonitorRun, int]:
         return run, 0
 
     now = datetime.now(timezone.utc)
+    # 清空错误信息并将失败任务重置为 pending
     for task in failed_tasks:
         task.attempt_count += 1
         task.status = "pending"

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.geo_monitoring.models import AIPlatform, MonitorRun, Prompt, QueryTask
 
 
+# 按 ID 查询未删除的监测运行
 def get_by_id(db: Session, run_id: int) -> MonitorRun | None:
     return db.execute(
         select(MonitorRun).where(
@@ -17,6 +18,7 @@ def get_by_id(db: Session, run_id: int) -> MonitorRun | None:
     ).scalar_one_or_none()
 
 
+# 分页查询监测运行，支持按项目与状态筛选
 def list_runs(
     db: Session,
     *,
@@ -47,10 +49,12 @@ def list_runs(
     return items, total
 
 
+# 将监测运行实体加入当前会话
 def add_run(db: Session, run: MonitorRun) -> None:
     db.add(run)
 
 
+# 为运行批量生成提示词×平台的查询子任务
 def build_query_tasks(
     db: Session,
     run: MonitorRun,
@@ -59,6 +63,7 @@ def build_query_tasks(
 ) -> None:
     for prompt in prompts:
         for platform in platforms:
+            # 基于运行号、提示词与平台生成幂等键
             key_source = f"{run.run_no}:{prompt.id}:{platform.platform_code}"
             db.add(
                 QueryTask(
@@ -80,6 +85,7 @@ def build_query_tasks(
             )
 
 
+# 分页查询运行下的查询子任务，支持按状态与平台筛选
 def list_query_tasks(
     db: Session,
     *,
@@ -111,5 +117,6 @@ def list_query_tasks(
     return items, total
 
 
+# 统计监测运行总数量
 def count_runs(db: Session) -> int:
     return db.scalar(select(func.count()).select_from(MonitorRun)) or 0

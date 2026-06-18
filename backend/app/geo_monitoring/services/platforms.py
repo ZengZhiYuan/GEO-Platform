@@ -36,6 +36,7 @@ DEFAULT_PLATFORMS = (
 )
 
 
+# 按平台编码查询 AI 平台，不存在则抛业务异常
 def get_platform(db: Session, platform_code: str) -> AIPlatform:
     platform = platform_repo.get_by_code(db, platform_code)
     if platform is None:
@@ -43,6 +44,7 @@ def get_platform(db: Session, platform_code: str) -> AIPlatform:
     return platform
 
 
+# 分页列出 AI 平台配置
 def list_platforms(
     db: Session,
     *,
@@ -55,6 +57,7 @@ def list_platforms(
     )
 
 
+# 更新 AI 平台配置字段
 def update_platform(
     db: Session, platform_code: str, payload: AIPlatformUpdate
 ) -> AIPlatform:

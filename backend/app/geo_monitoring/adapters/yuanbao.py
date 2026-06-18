@@ -30,6 +30,7 @@ class YuanbaoAdapter:
 
     code = "yuanbao"
 
+    # 初始化元宝/混元适配器的 API 地址、超时与区域配置
     def __init__(
         self,
         *,
@@ -43,6 +44,7 @@ class YuanbaoAdapter:
         self._raw_response_enabled = raw_response_enabled
         self._region = region
 
+    # 调用腾讯混元 ChatCompletions API 并返回统一答案结构
     async def query(
         self,
         request: PlatformQuery,
@@ -52,6 +54,7 @@ class YuanbaoAdapter:
         secret_id, secret_key = _require_tencent_credentials(credential)
         payload = _hunyuan_payload(request)
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        # 生成 TC3-HMAC-SHA256 签名请求头
         headers = _tc3_headers(
             self._base_url,
             body,
@@ -88,6 +91,7 @@ class YuanbaoAdapter:
         )
 
 
+# 校验并提取腾讯 secret_id 与 secret_key
 def _require_tencent_credentials(credential: PlatformCredential) -> tuple[str, str]:
     if not credential.secret_id or not credential.secret_key:
         raise AdapterError(
@@ -98,6 +102,7 @@ def _require_tencent_credentials(credential: PlatformCredential) -> tuple[str, s
     return credential.secret_id, credential.secret_key
 
 
+# 构建混元 ChatCompletions 请求体（PascalCase 字段）
 def _hunyuan_payload(request: PlatformQuery) -> dict[str, Any]:
     messages: list[dict[str, str]] = []
     if request.system_prompt:
@@ -113,6 +118,7 @@ def _hunyuan_payload(request: PlatformQuery) -> dict[str, Any]:
     return payload
 
 
+# 生成腾讯云 TC3-HMAC-SHA256 鉴权请求头
 def _tc3_headers(
     url: str,
     body: str,
@@ -131,6 +137,7 @@ def _tc3_headers(
     algorithm = "TC3-HMAC-SHA256"
     signed_headers = "content-type;host"
     hashed_payload = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    # 构造规范请求串
     canonical_request = "\n".join(
         [
             "POST",
@@ -150,6 +157,7 @@ def _tc3_headers(
             hashlib.sha256(canonical_request.encode("utf-8")).hexdigest(),
         ]
     )
+    # 派生签名密钥并计算最终签名
     secret_date = _hmac_sha256(f"TC3{secret_key}".encode("utf-8"), request_date)
     secret_service = _hmac_sha256(secret_date, service)
     secret_signing = _hmac_sha256(secret_service, "tc3_request")
@@ -174,10 +182,12 @@ def _tc3_headers(
     }
 
 
+# 计算 HMAC-SHA256 摘要
 def _hmac_sha256(key: bytes, message: str) -> bytes:
     return hmac.new(key, message.encode("utf-8"), hashlib.sha256).digest()
 
 
+# 异步 POST 调用混元 API
 async def _post_hunyuan(
     url: str,
     body: str,
@@ -203,6 +213,7 @@ async def _post_hunyuan(
         ) from exc
 
 
+# 将 HTTP 错误响应转换为 AdapterError
 def _raise_for_error(response: httpx.Response, *, secrets: tuple[str, str]) -> None:
     if response.status_code < 400:
         return
@@ -216,6 +227,7 @@ def _raise_for_error(response: httpx.Response, *, secrets: tuple[str, str]) -> N
     )
 
 
+# 从错误响应体中提取可读错误消息（兼容 Response 包装格式）
 def _error_message(response: httpx.Response) -> str:
     try:
         payload = response.json()
@@ -234,6 +246,7 @@ def _error_message(response: httpx.Response) -> str:
     return str(payload)
 
 
+# 解析 Retry-After 响应头为秒数
 def _retry_after_seconds(response: httpx.Response) -> float | None:
     value = response.headers.get("retry-after")
     if value is None:
@@ -244,11 +257,13 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
         return None
 
 
+# 解包混元 Response 包装层，获取实际业务载荷
 def _response_payload(data: dict[str, Any]) -> dict[str, Any]:
     wrapped = data.get("Response")
     return wrapped if isinstance(wrapped, dict) else data
 
 
+# 从混元响应中提取首条回答文本
 def _extract_text(data: dict[str, Any]) -> str:
     payload = _response_payload(data)
     choices = payload.get("Choices") or payload.get("choices")
@@ -264,6 +279,7 @@ def _extract_text(data: dict[str, Any]) -> str:
     return content if isinstance(content, str) else ""
 
 
+# 从混元响应中提取 Token 用量并统一字段名
 def _extract_usage(data: dict[str, Any]) -> dict[str, Any]:
     usage = _response_payload(data).get("Usage") or _response_payload(data).get("usage") or {}
     if not isinstance(usage, dict):
@@ -275,6 +291,7 @@ def _extract_usage(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# 从混元响应中提取引用列表
 def _extract_citations(data: dict[str, Any]) -> list[dict[str, Any]]:
     payload = _response_payload(data)
     citations = payload.get("Citations") or payload.get("citations") or []
@@ -283,6 +300,7 @@ def _extract_citations(data: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in citations if isinstance(item, dict)]
 
 
+# 提取混元请求 ID 或 HTTP 响应头中的追踪 ID
 def _provider_request_id(data: dict[str, Any], response: httpx.Response) -> str | None:
     payload = _response_payload(data)
     return payload.get("RequestId") or payload.get("id") or response.headers.get("x-request-id")

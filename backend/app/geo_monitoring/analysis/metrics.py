@@ -32,16 +32,19 @@ def normalize_metric_text(text: str) -> str:
     return re.sub(r"\s+", " ", normalized).strip()
 
 
+# 判断单条回答是否为可用于指标计算的有效回答
 def is_valid_answer(answer: AnswerInput) -> bool:
     if answer.task_status != "success":
         return False
     return bool(normalize_metric_text(answer.normalized_text))
 
 
+# 过滤出所有有效回答
 def filter_valid_answers(answers: list[AnswerInput]) -> list[AnswerInput]:
     return [answer for answer in answers if is_valid_answer(answer)]
 
 
+# 计算比率（分子/分母），分母为零时返回 None
 def compute_rate(numerator: int, denominator: int) -> Decimal | None:
     if denominator == 0:
         return None
@@ -49,6 +52,7 @@ def compute_rate(numerator: int, denominator: int) -> Decimal | None:
     return value.quantize(_RATE_QUANT, rounding=ROUND_HALF_UP)
 
 
+# 判断指定品牌是否在该回答中被提及
 def _brand_mentioned(answer: AnswerInput, brand_id: int) -> bool:
     for mention in answer.brand_mentions:
         if mention.brand_id == brand_id:
@@ -56,6 +60,7 @@ def _brand_mentioned(answer: AnswerInput, brand_id: int) -> bool:
     return False
 
 
+# 计算目标品牌在有效回答中的可见度（提及率）
 def compute_brand_visibility(
     answers: list[AnswerInput],
     *,
@@ -73,6 +78,7 @@ def compute_brand_visibility(
     )
 
 
+# 计算含有效引用的回答占比（引用率）
 def compute_citation_rate(answers: list[AnswerInput]) -> RateMetric:
     from app.geo_monitoring.analysis.sources import is_valid_citation
 
@@ -90,6 +96,7 @@ def compute_citation_rate(answers: list[AnswerInput]) -> RateMetric:
     )
 
 
+# 收集目标品牌名与别名，去重并规范化
 def _recommendation_terms(
     target_brand_name: str,
     target_aliases: tuple[str, ...],
@@ -109,6 +116,7 @@ def _recommendation_terms(
     return tuple(ordered)
 
 
+# 用正则规则检测文本是否推荐目标品牌
 def detect_rule_recommendation(
     text: str,
     *,
@@ -127,6 +135,7 @@ def detect_rule_recommendation(
     return False
 
 
+# 计算推荐率（规则、Agent 与合并三种口径）
 def compute_recommendation_rate(
     answers: list[AnswerInput],
     *,
@@ -169,6 +178,7 @@ def compute_recommendation_rate(
     )
 
 
+# 汇总单平台全部确定性指标为 PlatformMetricsOutput
 def compute_platform_metrics(
     answers: list[AnswerInput],
     *,
@@ -195,6 +205,7 @@ def compute_platform_metrics(
 
     scoped = [answer for answer in answers if answer.platform_code == platform_code]
     valid_answers = filter_valid_answers(scoped)
+    # 逐项计算平台级核心指标
     brand_visibility = compute_brand_visibility(
         scoped,
         target_brand_id=target_brand_id,

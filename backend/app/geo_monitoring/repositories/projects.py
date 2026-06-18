@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.geo_monitoring.models import MonitorProject, MonitorRun
 
 
+# 按 ID 查询未删除的监测项目
 def get_by_id(db: Session, project_id: int) -> MonitorProject | None:
     return db.execute(
         select(MonitorProject).where(
@@ -15,6 +16,7 @@ def get_by_id(db: Session, project_id: int) -> MonitorProject | None:
     ).scalar_one_or_none()
 
 
+# 分页查询监测项目，支持按名称与状态筛选
 def list_projects(
     db: Session,
     *,
@@ -45,10 +47,12 @@ def list_projects(
     return items, total
 
 
+# 将监测项目实体加入当前会话
 def add(db: Session, project: MonitorProject) -> None:
     db.add(project)
 
 
+# 判断项目是否已有监测运行记录
 def has_runs(db: Session, project_id: int) -> bool:
     return (
         db.execute(

@@ -19,6 +19,7 @@ _RANK_SCORES = {
 }
 
 
+# 计算目标品牌与竞品之间的可见度差距
 def compute_competitor_advantage_gap(
     target_visibility: Decimal | None,
     competitor_visibility: Decimal | None,
@@ -28,6 +29,7 @@ def compute_competitor_advantage_gap(
     return (target_visibility - competitor_visibility).quantize(Decimal("0.000001"))
 
 
+# 计算指定品牌在有效回答中的可见度比率
 def compute_brand_visibility_for_brand(
     answers: list[AnswerInput],
     brand_id: int,
@@ -49,6 +51,7 @@ def compute_brand_visibility_for_brand(
     )
 
 
+# 汇总竞品可见度并返回 Top N 排行
 def compute_top_competitors(
     answers: list[AnswerInput],
     *,
@@ -71,6 +74,7 @@ def compute_top_competitors(
     return rows[:limit]
 
 
+# 根据提及排名映射竞争力得分
 def _score_for_rank(rank: int | None) -> Decimal | None:
     if rank is None:
         return None
@@ -81,6 +85,7 @@ def _score_for_rank(rank: int | None) -> Decimal | None:
     return None
 
 
+# 根据提及排名生成竞争力位置标签
 def _position_label(rank: int | None) -> str | None:
     if rank is None:
         return "not_mentioned"
@@ -93,6 +98,7 @@ def _position_label(rank: int | None) -> str | None:
     return "trailing"
 
 
+# 按 Prompt 与平台维度计算目标品牌的竞争力行
 def compute_prompt_competitiveness_rows(
     answers: list[AnswerInput],
     *,
@@ -108,6 +114,7 @@ def compute_prompt_competitiveness_rows(
     rows: list[PromptCompetitivenessRow] = []
     for (prompt_id, platform_code), prompt_answers in sorted(grouped.items()):
         answer = prompt_answers[0]
+        # 按首次出现位置排序并计算各品牌排名
         mentioned = [
             mention
             for mention in answer.brand_mentions

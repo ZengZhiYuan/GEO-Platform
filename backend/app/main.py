@@ -23,6 +23,7 @@ from app.core.readiness import check_nacos_ready, check_readiness
 from app.core.response import success
 
 
+# 从环境变量解析 CORS 允许的源列表（逗号分隔）
 def _parse_cors_origins() -> list[str]:
     raw = os.getenv("CORS_ALLOWED_ORIGINS", "").strip()
     if not raw:
@@ -30,8 +31,10 @@ def _parse_cors_origins() -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+# 为每个 HTTP 请求注入 request_id 并记录响应耗时
 class RequestContextMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # 复用客户端传入的 X-Request-ID，否则生成新 ID
         request_id = request.headers.get("X-Request-ID") or new_request_id()
         token = request_id_var.set(request_id)
         started = time.perf_counter()
@@ -45,6 +48,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# 创建并配置 FastAPI 应用实例（中间件、路由、探针）
 def create_app() -> FastAPI:
     configure_logging()
     app = FastAPI(
@@ -71,9 +75,11 @@ def create_app() -> FastAPI:
     return app
 
 
+# 注册监测域专用的 health / ready 探针端点
 def _register_geo_monitoring_probes(app: FastAPI) -> None:
     prefix = f"{settings.API_PREFIX}/geo-monitoring"
 
+    # 轻量健康检查：仅返回应用名与环境，不探测依赖
     @app.get(f"{prefix}/health", summary="监测服务健康检查", tags=["AI 应用监测"])
     async def geo_monitoring_health() -> dict:
         return success(
@@ -84,9 +90,11 @@ def _register_geo_monitoring_probes(app: FastAPI) -> None:
             }
         )
 
+    # 就绪检查：探测数据库、Redis，可选探测 Nacos
     @app.get(f"{prefix}/ready", summary="监测服务就绪检查", tags=["AI 应用监测"])
     async def geo_monitoring_ready() -> dict:
         payload = check_readiness()
+        # Nacos 启用时追加配置中心连通性探测
         if settings.NACOS_ENABLED:
             try:
                 payload["nacos"] = check_nacos_ready(
@@ -106,6 +114,7 @@ def _register_geo_monitoring_probes(app: FastAPI) -> None:
         return JSONResponse(status_code=status_code, content=success(payload))
 
 
+# Nacos 就绪探针占位实现（实际部署可替换为真实客户端）
 class _NacosReadyProbe:
     def is_ready(self) -> bool:
         return True

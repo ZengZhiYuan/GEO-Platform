@@ -17,6 +17,7 @@ from app.geo_monitoring.services.projects import require_active_project
 router = APIRouter()
 
 
+# 将监测运行 ORM 行序列化为看板摘要字段
 def _run_summary(run: MonitorRun) -> dict:
     return {
         "run_id": run.id,
@@ -30,6 +31,7 @@ def _run_summary(run: MonitorRun) -> dict:
     }
 
 
+# 将平台分析 ORM 行序列化为看板展示字段
 def _platform_analysis_payload(row: PlatformAnalysis) -> dict:
     return {
         "platform_code": row.platform_code,
@@ -45,11 +47,13 @@ def _platform_analysis_payload(row: PlatformAnalysis) -> dict:
 
 
 @router.get("/projects/{project_id}/dashboard", summary="获取项目最新分析汇总")
+# 获取项目最近一次运行的分析汇总看板
 def get_project_dashboard(
     project_id: int = Path(..., ge=1),
     db: Session = Depends(get_db),
 ) -> dict:
     require_active_project(db, project_id)
+    # 取最近一条已进入分析阶段的运行
     latest_run = db.execute(
         select(MonitorRun)
         .where(
@@ -87,6 +91,7 @@ def get_project_dashboard(
 
 
 @router.get("/projects/{project_id}/trends", summary="按指标、平台和时间范围查询趋势")
+# 分页查询项目指标快照趋势数据
 def list_project_trends(
     project_id: int = Path(..., ge=1),
     metric_code: str = Query(..., min_length=1, max_length=100),

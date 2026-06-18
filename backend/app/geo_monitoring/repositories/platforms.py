@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.geo_monitoring.models import AIPlatform
 
 
+# 按平台编码查询未删除的 AI 平台
 def get_by_code(db: Session, platform_code: str) -> AIPlatform | None:
     return db.execute(
         select(AIPlatform).where(
@@ -15,6 +16,7 @@ def get_by_code(db: Session, platform_code: str) -> AIPlatform | None:
     ).scalar_one_or_none()
 
 
+# 分页查询 AI 平台，支持按启用状态筛选
 def list_platforms(
     db: Session,
     *,
@@ -42,6 +44,7 @@ def list_platforms(
     return items, total
 
 
+# 查询候选 AI 平台列表，可按编码集合限定范围
 def list_candidates(
     db: Session, platform_codes: list[str] | None
 ) -> list[AIPlatform]:

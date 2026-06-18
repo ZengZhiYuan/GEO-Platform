@@ -23,6 +23,7 @@ from app.geo_monitoring.adapters.errors import (
 class DeepSeekAdapter:
     code = "deepseek"
 
+    # 初始化 DeepSeek 适配器的 API 地址、超时与原始响应开关
     def __init__(
         self,
         *,
@@ -34,6 +35,7 @@ class DeepSeekAdapter:
         self._timeout_seconds = timeout_seconds
         self._raw_response_enabled = raw_response_enabled
 
+    # 调用 DeepSeek Chat Completions API 并返回统一答案结构
     async def query(
         self,
         request: PlatformQuery,
@@ -69,12 +71,14 @@ class DeepSeekAdapter:
         )
 
 
+# 校验并提取 DeepSeek API Key
 def _require_api_key(credential: PlatformCredential) -> str:
     if not credential.api_key:
         raise AdapterError("deepseek api key is required", category=ErrorCategory.UNAUTHORIZED)
     return credential.api_key
 
 
+# 构建 OpenAI 兼容的 Chat Completions 请求体
 def _chat_payload(request: PlatformQuery) -> dict[str, Any]:
     messages: list[dict[str, str]] = []
     if request.system_prompt:
@@ -90,6 +94,7 @@ def _chat_payload(request: PlatformQuery) -> dict[str, Any]:
     return payload
 
 
+# 异步 POST 调用 Chat Completions 接口
 async def _post_chat_completion(
     url: str,
     payload: dict[str, Any],
@@ -118,6 +123,7 @@ async def _post_chat_completion(
         ) from exc
 
 
+# 将 HTTP 错误响应转换为 AdapterError
 def _raise_for_error(response: httpx.Response, *, api_key: str) -> None:
     if response.status_code < 400:
         return
@@ -131,6 +137,7 @@ def _raise_for_error(response: httpx.Response, *, api_key: str) -> None:
     )
 
 
+# 从错误响应体中提取可读错误消息
 def _error_message(response: httpx.Response) -> str:
     try:
         payload = response.json()
@@ -144,6 +151,7 @@ def _error_message(response: httpx.Response) -> str:
     return str(payload)
 
 
+# 解析 Retry-After 响应头为秒数
 def _retry_after_seconds(response: httpx.Response) -> float | None:
     value = response.headers.get("retry-after")
     if value is None:
@@ -154,6 +162,7 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
         return None
 
 
+# 从响应 JSON 中提取首条回答文本
 def _extract_text(data: dict[str, Any]) -> str:
     choices = data.get("choices")
     if not isinstance(choices, list) or not choices:
@@ -165,6 +174,7 @@ def _extract_text(data: dict[str, Any]) -> str:
     return content if isinstance(content, str) else ""
 
 
+# 从响应 JSON 中提取引用列表
 def _extract_citations(data: dict[str, Any]) -> list[dict[str, Any]]:
     choices = data.get("choices")
     if not isinstance(choices, list) or not choices:

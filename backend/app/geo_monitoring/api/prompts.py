@@ -20,6 +20,7 @@ router = APIRouter()
 
 
 @router.get("/projects/{project_id}/prompt-sets", summary="分页查询提示词集")
+# 分页查询项目下的提示词集列表
 def list_prompt_sets(
     project_id: int = Path(..., ge=1),
     page: int = Query(1, ge=1),
@@ -39,6 +40,7 @@ def list_prompt_sets(
 
 
 @router.post("/projects/{project_id}/prompt-sets", summary="创建提示词集")
+# 在指定项目下创建提示词集
 def create_prompt_set(
     payload: PromptSetCreate,
     project_id: int = Path(..., ge=1),
@@ -49,6 +51,7 @@ def create_prompt_set(
 
 
 @router.get("/prompt-sets/{prompt_set_id}", summary="获取提示词集")
+# 按 ID 获取提示词集详情
 def get_prompt_set(
     prompt_set_id: int = Path(..., ge=1), db: Session = Depends(get_db)
 ) -> dict:
@@ -57,6 +60,7 @@ def get_prompt_set(
 
 
 @router.put("/prompt-sets/{prompt_set_id}", summary="更新提示词集")
+# 更新提示词集信息
 def update_prompt_set(
     payload: PromptSetUpdate,
     prompt_set_id: int = Path(..., ge=1),
@@ -67,6 +71,7 @@ def update_prompt_set(
 
 
 @router.delete("/prompt-sets/{prompt_set_id}", summary="删除提示词集")
+# 软删除指定提示词集
 def delete_prompt_set(
     prompt_set_id: int = Path(..., ge=1), db: Session = Depends(get_db)
 ) -> dict:
@@ -75,6 +80,7 @@ def delete_prompt_set(
 
 
 @router.post("/prompt-sets/{prompt_set_id}/activate", summary="激活提示词集")
+# 激活指定提示词集并归档同项目其他激活版本
 def activate_prompt_set(
     prompt_set_id: int = Path(..., ge=1), db: Session = Depends(get_db)
 ) -> dict:
@@ -83,6 +89,7 @@ def activate_prompt_set(
 
 
 @router.get("/prompt-sets/{prompt_set_id}/prompts", summary="分页查询提示词")
+# 分页查询提示词集下的提示词列表
 def list_prompts(
     prompt_set_id: int = Path(..., ge=1),
     page: int = Query(1, ge=1),
@@ -97,6 +104,7 @@ def list_prompts(
 
 
 @router.post("/prompt-sets/{prompt_set_id}/prompts", summary="创建提示词")
+# 在提示词集下创建提示词
 def create_prompt(
     payload: PromptCreate,
     prompt_set_id: int = Path(..., ge=1),
@@ -107,6 +115,7 @@ def create_prompt(
 
 
 @router.put("/prompts/{prompt_id}", summary="更新提示词")
+# 更新提示词内容或属性
 def update_prompt(
     payload: PromptUpdate,
     prompt_id: int = Path(..., ge=1),
@@ -117,6 +126,7 @@ def update_prompt(
 
 
 @router.delete("/prompts/{prompt_id}", summary="删除提示词")
+# 软删除指定提示词
 def delete_prompt(
     prompt_id: int = Path(..., ge=1), db: Session = Depends(get_db)
 ) -> dict:

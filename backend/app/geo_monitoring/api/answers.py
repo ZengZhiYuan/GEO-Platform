@@ -12,6 +12,7 @@ router = APIRouter()
 
 
 @router.get("/runs/{run_id}/answers", summary="分页查询运行答案")
+# 分页查询指定运行下的采集答案
 def list_run_answers(
     run_id: int = Path(..., ge=1),
     page: int = Query(1, ge=1),
@@ -26,6 +27,7 @@ def list_run_answers(
 
 
 @router.get("/answers/{answer_id}", summary="获取答案详情")
+# 按 ID 获取答案详情（含引用与品牌识别）
 def get_answer(
     answer_id: int = Path(..., ge=1), db: Session = Depends(get_db)
 ) -> dict:

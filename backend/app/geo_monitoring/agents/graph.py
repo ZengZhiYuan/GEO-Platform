@@ -33,27 +33,34 @@ class AnalysisState(TypedDict, total=False):
     skip_reason: str | None
 
 
+# 加载数据后路由：无有效回答则跳过分析直接持久化
 def _route_after_load(state: AnalysisState) -> str:
     if state.get("analysis_status") == "skipped":
         return "persist_results"
     return "calculate_metrics"
 
 
+# 构建 LangGraph 分析流水线并编译为可执行图
 def build_analysis_graph(*, db: Session, llm_client: AgentLLMClient):
     graph = StateGraph(AnalysisState)
 
+    # 加载运行数据节点（注入数据库会话）
     def load_run_data(state: AnalysisState) -> AnalysisState:
         return nodes.load_run_data(state, db=db)
 
+    # 计算确定性指标节点
     def calculate_metrics(state: AnalysisState) -> AnalysisState:
         return nodes.calculate_metrics(state)
 
+    # LLM 回答分类节点
     def classify_answers(state: AnalysisState) -> AnalysisState:
         return nodes.classify_answers(state, llm_client=llm_client)
 
+    # LLM 洞察生成节点
     def generate_insights(state: AnalysisState) -> AnalysisState:
         return nodes.generate_insights(state, llm_client=llm_client)
 
+    # 分析结果持久化节点
     def persist_results(state: AnalysisState) -> AnalysisState:
         return nodes.persist_results(state, db=db)
 

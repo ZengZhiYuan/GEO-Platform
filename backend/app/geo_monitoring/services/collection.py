@@ -62,6 +62,7 @@ class CollectionRuntime:
     key_pool: CredentialKeyPool
     stale_running_seconds: int | None = None
 
+    # 判定 running 任务是否超时的 stale 阈值
     @property
     def running_stale_after(self) -> timedelta:
         seconds = self.stale_running_seconds
@@ -73,16 +74,19 @@ class CollectionRuntime:
 _runtime: CollectionRuntime | None = None
 
 
+# 注入全局采集运行时依赖（测试或自定义配置时使用）
 def configure_runtime(runtime: CollectionRuntime) -> None:
     global _runtime
     _runtime = runtime
 
 
+# 清除全局采集运行时（测试 teardown 使用）
 def reset_runtime() -> None:
     global _runtime
     _runtime = None
 
 
+# 获取全局采集运行时，未配置则构建默认实例
 def get_runtime() -> CollectionRuntime:
     global _runtime
     if _runtime is None:
@@ -90,6 +94,7 @@ def get_runtime() -> CollectionRuntime:
     return _runtime
 
 
+# 组装默认采集运行时（会话工厂、适配器注册表、密钥池）
 def build_default_runtime(
     *,
     session_factory: Callable[[], Session] | None = None,
@@ -108,6 +113,7 @@ def build_default_runtime(
     )
 
 
+# 从配置构建各平台 API 密钥池
 def build_credential_key_pool(
     runtime_settings: Settings,
     *,
@@ -137,6 +143,7 @@ def build_credential_key_pool(
     return pool
 
 
+# 将某平台的 API Key 列表注册到密钥池
 def _register_api_keys(
     pool: CredentialKeyPool,
     runtime_settings: Settings,
@@ -173,6 +180,7 @@ def enqueue_run_query_tasks(run_id: int, *, db: Session | None = None) -> int:
             .scalars()
             .all()
         )
+        # 批量标记 queued 并收集待入队 ID
         for task in tasks:
             task.status = "queued"
             task.queued_at = now
@@ -189,12 +197,14 @@ def enqueue_run_query_tasks(run_id: int, *, db: Session | None = None) -> int:
     return len(task_ids)
 
 
+# QueryTask 终态后回调刷新 Run 聚合状态
 def _after_task_terminal(db: Session, run_id: int) -> None:
     from app.geo_monitoring.services.runs import on_query_task_terminal
 
     on_query_task_terminal(db, run_id)
 
 
+# 执行单个 QueryTask：认领、调用平台、持久化或处理失败
 async def execute_query_task(task_id: int) -> bool:
     runtime = get_runtime()
     snapshot = _claim_task_for_execution(runtime, task_id)
@@ -216,6 +226,7 @@ async def execute_query_task(task_id: int) -> bool:
     return False
 
 
+# 加锁认领 QueryTask 并构建执行快照，不可执行时返回 None
 def _claim_task_for_execution(
     runtime: CollectionRuntime,
     task_id: int,
@@ -246,6 +257,7 @@ def _claim_task_for_execution(
         if run is None:
             return None
 
+        # 运行或任务已取消则标记 cancelled 并刷新聚合
         if run.status == "cancelled" or task.status == "cancelled":
             _mark_task_cancelled(db, task, now)
             run_id = task.run_id
@@ -255,6 +267,7 @@ def _claim_task_for_execution(
 
         if task.status == "running":
             started_at = _as_utc(task.started_at or task.updated_at or now)
+            # running 未超时则跳过，避免重复执行
             if now - started_at < runtime.running_stale_after:
                 return None
             reclaim = True
@@ -263,6 +276,7 @@ def _claim_task_for_execution(
         else:
             return None
 
+        # 答案已存在则直接将任务标为 success
         if answer_repo.get_by_task_id(db, task.id) is not None:
             task.status = "success"
             task.completed_at = now
@@ -285,6 +299,7 @@ def _claim_task_for_execution(
             )
         ).scalar_one_or_none()
         if prompt is None or platform is None or not platform.enabled:
+            # 提示词或平台不可用则标记失败
             _mark_task_failed(
                 db,
                 task,
@@ -299,6 +314,7 @@ def _claim_task_for_execution(
 
         if not reclaim:
             task.attempt_count += 1
+        # 更新为 running 并返回执行快照
         task.status = "running"
         task.started_at = now
         task.error_code = None
@@ -320,6 +336,7 @@ def _claim_task_for_execution(
         db.close()
 
 
+# 调用平台适配器查询并上报密钥池成功/失败
 async def _collect_platform_answer(
     runtime: CollectionRuntime,
     snapshot: TaskSnapshot,
@@ -344,6 +361,7 @@ async def _collect_platform_answer(
         )
         return answer
     except AdapterError as exc:
+        # 失败时通知密钥池以便轮换或退避
         await runtime.key_pool.report_failure(
             credential.fingerprint,
             exc,
@@ -353,6 +371,7 @@ async def _collect_platform_answer(
         raise
 
 
+# 持久化平台答案、引用、品牌匹配结果并标记任务成功
 def _persist_success(
     runtime: CollectionRuntime,
     snapshot: TaskSnapshot,
@@ -391,6 +410,7 @@ def _persist_success(
         answer_repo.add(db, answer)
         db.flush()
 
+        # 写入引用列表
         for index, citation in enumerate(platform_answer.citations, start=1):
             normalized_url = normalize_citation_url(citation.get("url"))
             answer_repo.add_citation(
@@ -406,6 +426,7 @@ def _persist_success(
                 ),
             )
 
+        # 匹配品牌提及并写入结果
         brands, aliases_by_brand = _load_project_brands(db, snapshot.project_id)
         for match in match_brands_in_text(normalized_text, brands, aliases_by_brand):
             answer_repo.add_brand_result(
@@ -453,6 +474,7 @@ def _handle_adapter_failure(
         task.error_code = error.category.value
         task.error_message = error.sanitized_message()
 
+        # 可重试且未达上限则重新入队
         if is_retryable(error.category) and task.attempt_count < task.max_attempts:
             task.status = "queued"
             task.retry_count += 1
@@ -476,6 +498,7 @@ def _handle_adapter_failure(
         db.close()
 
 
+# 将 QueryTask 标记为 failed 并写入错误信息
 def _mark_task_failed(
     db: Session,
     task: QueryTask,
@@ -493,12 +516,14 @@ def _mark_task_failed(
     task.finished_at = now
 
 
+# 将 QueryTask 标记为 cancelled
 def _mark_task_cancelled(db: Session, task: QueryTask, now: datetime) -> None:
     task.status = "cancelled"
     task.completed_at = now
     task.finished_at = now
 
 
+# 加载项目活跃品牌及按品牌分组的启用别名
 def _load_project_brands(
     db: Session,
     project_id: int,
@@ -535,6 +560,7 @@ def _load_project_brands(
     return brands, aliases_by_brand
 
 
+# 解析平台实际使用的模型名（平台配置或环境变量）
 def _resolve_model(runtime_settings: Settings, platform: AIPlatform) -> str:
     if platform.model_name:
         return platform.model_name
@@ -542,6 +568,7 @@ def _resolve_model(runtime_settings: Settings, platform: AIPlatform) -> str:
     return str(getattr(runtime_settings, f"{prefix}_MODEL", "") or "")
 
 
+# 规范化引用 URL（小写 scheme/host、去除默认端口与 fragment）
 def normalize_citation_url(url: str | None) -> str | None:
     if not url:
         return None
@@ -568,6 +595,7 @@ def normalize_citation_url(url: str | None) -> str | None:
     )
 
 
+# 从 URL 提取小写域名
 def extract_domain(url: str | None) -> str | None:
     if not url:
         return None
@@ -575,6 +603,7 @@ def extract_domain(url: str | None) -> str | None:
     return host.lower() if host else None
 
 
+# 将 datetime 统一转为 UTC  aware
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)

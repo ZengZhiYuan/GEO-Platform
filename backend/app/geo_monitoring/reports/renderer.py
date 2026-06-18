@@ -26,21 +26,25 @@ _jinja_env = Environment(
 )
 
 
+# 对文本进行 HTML 转义，供模板安全输出。
 def html_escape(text: str | None) -> str:
     return escape(text or "", quote=True)
 
 
+# 将 Decimal 指标格式化为字符串，空值输出 "0"。
 def _decimal(value: Decimal | None) -> str:
     if value is None:
         return "0"
     return str(value)
 
 
+# 聚合运行、平台分析、来源统计与回答数据，构建报告渲染上下文。
 def build_report_context(db: Session, run_id: int) -> dict[str, Any]:
     base = load_run_context(db, run_id)
     run: MonitorRun = base["run"]
     project: MonitorProject = base["project"]
 
+    # 加载各平台分析结果
     platform_rows = list(
         db.execute(
             select(PlatformAnalysis).where(
@@ -51,6 +55,7 @@ def build_report_context(db: Session, run_id: int) -> dict[str, Any]:
         .scalars()
         .all()
     )
+    # 加载引用来源统计
     source_rows = list(
         db.execute(
             select(SourceStat).where(
@@ -61,6 +66,7 @@ def build_report_context(db: Session, run_id: int) -> dict[str, Any]:
         .scalars()
         .all()
     )
+    # 加载成功的 Agent 语义分析输出
     agent_rows = list(
         db.execute(
             select(AgentExecution).where(
@@ -73,6 +79,7 @@ def build_report_context(db: Session, run_id: int) -> dict[str, Any]:
         .all()
     )
 
+    # 关联 Prompt 文本以便在报告中展示问题内容
     prompt_rows = list(
         db.execute(
             select(Prompt, QueryTask)
@@ -90,6 +97,7 @@ def build_report_context(db: Session, run_id: int) -> dict[str, Any]:
         prompt_map[prompt.id] = prompt.prompt_text
 
     answers = []
+    # 组装每条回答及其引用列表
     for answer in base["answers"]:
         answers.append(
             {
@@ -185,11 +193,13 @@ def build_report_context(db: Session, run_id: int) -> dict[str, Any]:
     }
 
 
+# 使用 Jinja2 模板将上下文渲染为 Markdown 报告。
 def render_markdown(context: dict[str, Any]) -> str:
     template = _jinja_env.get_template("report.md.j2")
     return template.render(**context)
 
 
+# 使用 Jinja2 模板将上下文渲染为 HTML 报告。
 def render_html(context: dict[str, Any]) -> str:
     template = _jinja_env.get_template("report.html.j2")
     return template.render(**context, html_escape=html_escape)

@@ -10,23 +10,28 @@ from app.geo_monitoring.adapters.errors import PlatformDisabledError, PlatformNo
 
 
 class AdapterRegistry:
+    # 初始化空的平台适配器注册表
     def __init__(self) -> None:
         self._adapters: dict[str, PlatformAdapter] = {}
 
+    # 注册一个平台适配器实例
     def register(self, adapter: PlatformAdapter) -> None:
         self._adapters[adapter.code] = adapter
 
+    # 按平台代码获取已注册的适配器
     def get(self, platform_code: str) -> PlatformAdapter:
         adapter = self._adapters.get(platform_code)
         if adapter is None:
             raise PlatformNotRegisteredError(platform_code=platform_code)
         return adapter
 
+    # 校验平台已启用后返回对应适配器
     def require_enabled(self, platform_code: str, *, enabled: bool) -> PlatformAdapter:
         if not enabled:
             raise PlatformDisabledError(platform_code=platform_code)
         return self.get(platform_code)
 
+    # 返回所有已注册平台代码的有序元组
     def registered_codes(self) -> tuple[str, ...]:
         return tuple(sorted(self._adapters))
 
@@ -99,6 +104,7 @@ def build_adapter_registry(runtime_settings: Any | None = None) -> AdapterRegist
     return registry
 
 
+# 检查某平台是否已启用且具备 URL、模型与凭证配置
 def _configured(runtime_settings: Any, prefix: str) -> bool:
     enabled = bool(getattr(runtime_settings, f"{prefix}_ENABLED"))
     base_url = str(getattr(runtime_settings, f"{prefix}_BASE_URL", "")).strip()
@@ -110,6 +116,7 @@ def _configured(runtime_settings: Any, prefix: str) -> bool:
     return _has_api_keys(getattr(runtime_settings, f"{prefix}_API_KEYS", ""))
 
 
+# 判断配置中是否包含至少一个有效 API Key
 def _has_api_keys(raw_value: Any) -> bool:
     if raw_value is None:
         return False
@@ -118,6 +125,7 @@ def _has_api_keys(raw_value: Any) -> bool:
     return any(item.strip() for item in str(raw_value).split(","))
 
 
+# 判断配置中是否包含至少一组有效腾讯元宝凭证
 def _has_yuanbao_credentials(runtime_settings: Any) -> bool:
     parser = getattr(runtime_settings, "parsed_yuanbao_credentials", None)
     if callable(parser):
@@ -140,6 +148,7 @@ def _has_yuanbao_credentials(runtime_settings: Any) -> bool:
     )
 
 
+# 校验单条元宝凭证是否同时包含 secret_id 与 secret_key
 def _valid_yuanbao_credential(item: Any) -> bool:
     if not isinstance(item, dict):
         return False

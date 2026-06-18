@@ -80,10 +80,12 @@ class GeoReport(BaseModel):
 
 
 class ReportStorage:
+    # 初始化报告本地存储根目录并确保目录存在。
     def __init__(self, root_dir: str | Path) -> None:
         self.root = Path(root_dir).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
 
+    # 按项目/运行/报告 ID 生成相对存储路径。
     def build_relative_path(
         self,
         *,
@@ -95,6 +97,7 @@ class ReportStorage:
         normalized_ext = ext.lstrip(".")
         return f"{project_id}/{run_id}/{report_id}.{normalized_ext}"
 
+    # 将相对路径解析为绝对路径并校验防目录穿越。
     def resolve_path(self, relative_path: str) -> Path:
         normalized = relative_path.replace("\\", "/").strip()
         if not normalized:
@@ -111,16 +114,19 @@ class ReportStorage:
             raise PathTraversalError("path escapes storage root")
         return candidate
 
+    # 读取相对路径对应报告文件的二进制内容。
     def read_bytes(self, relative_path: str) -> bytes:
         path = self.resolve_path(relative_path)
         return path.read_bytes()
 
+    # 删除相对路径对应的报告文件（存在时）。
     def delete_file(self, relative_path: str) -> None:
         path = self.resolve_path(relative_path)
         if path.exists():
             path.unlink()
 
 
+# 原子写入报告文件并返回文件大小与 SHA256 校验和。
 def write_report_file(
     storage: ReportStorage,
     relative_path: str,
@@ -128,6 +134,7 @@ def write_report_file(
 ) -> tuple[int, str]:
     target = storage.resolve_path(relative_path)
     target.parent.mkdir(parents=True, exist_ok=True)
+    # 先写临时文件再原子替换，避免生成不完整报告
     temp_path = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
     try:
         temp_path.write_bytes(content)
@@ -139,18 +146,22 @@ def write_report_file(
     return len(content), checksum
 
 
+# 判断报告是否被标记为永久保留（不参与过期清理）。
 def is_report_retained(report: GeoReport) -> bool:
     return report.created_by == RETAIN_MARKER
 
 
+# 将报告标记为永久保留。
 def mark_report_retained(report: GeoReport) -> None:
     report.created_by = RETAIN_MARKER
 
 
+# 使用全局配置创建默认报告存储实例。
 def _default_storage() -> ReportStorage:
     return ReportStorage(settings.REPORT_STORAGE_DIR)
 
 
+# 为已完成分析的运行创建待生成的报告元数据记录。
 def create_run_reports(
     db: Session,
     run_id: int,
@@ -185,6 +196,7 @@ def create_run_reports(
         )
         db.add(report)
         db.flush()
+        # flush 后获得 report.id，再确定最终存储路径
         report.relative_storage_path = (
             f"{run.project_id}/{run.id}/{report.id}.{fmt}"
         )
@@ -197,6 +209,7 @@ def create_run_reports(
     return reports
 
 
+# 渲染指定报告内容、写入文件并更新状态与运行报告进度。
 def generate_report_content(
     db: Session,
     report_id: int,
@@ -213,6 +226,7 @@ def generate_report_content(
 
     try:
         context = build_report_context(db, report.run_id)
+        # 按格式选择 Markdown 或 HTML 渲染
         if report.format == "md":
             content = render_markdown(context).encode("utf-8")
         elif report.format == "html":
@@ -233,6 +247,7 @@ def generate_report_content(
 
         run = db.get(MonitorRun, report.run_id)
         if run is not None:
+            # 同运行下无其他待生成报告时标记报告阶段完成
             sibling_pending = db.scalar(
                 select(func.count())
                 .select_from(GeoReport)
@@ -259,6 +274,7 @@ def generate_report_content(
     return report
 
 
+# 软删除报告记录并移除本地存储文件。
 def delete_report(
     db: Session,
     report_id: int,
@@ -283,6 +299,7 @@ def delete_report(
     return report
 
 
+# 清理超过保留期且未标记保留的已完成报告。
 def purge_expired_reports(
     db: Session,
     storage: ReportStorage,
@@ -322,6 +339,7 @@ def purge_expired_reports(
     return removed
 
 
+# 按 ID 获取有效报告记录，不存在时抛出业务异常。
 def get_report(db: Session, report_id: int) -> GeoReport:
     report = db.get(GeoReport, report_id)
     if report is None or report.is_deleted:
@@ -329,6 +347,7 @@ def get_report(db: Session, report_id: int) -> GeoReport:
     return report
 
 
+# 分页查询指定运行下的报告列表。
 def list_run_reports(
     db: Session,
     run_id: int,
@@ -356,6 +375,7 @@ def list_run_reports(
     return items, total
 
 
+# 读取已完成报告文件的二进制内容。
 def read_report_bytes(report: GeoReport, storage: ReportStorage | None = None) -> bytes:
     if report.status != "completed":
         raise BusinessException(message="报告尚未生成完成", code=40921, status_code=409)

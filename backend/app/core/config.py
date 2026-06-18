@@ -18,6 +18,7 @@ class YuanbaoCredential(BaseModel):
     secret_key: str
 
 
+# 将 URL 脱敏为 scheme://host:port/path 摘要，用于日志与探针
 def _url_target_summary(value: str) -> str:
     parsed = urlparse(value)
     netloc = parsed.hostname or ""
@@ -27,6 +28,7 @@ def _url_target_summary(value: str) -> str:
     return f"{parsed.scheme}://{netloc}{path}"
 
 
+# 校验连接 URL 的 scheme 与 host 是否合法
 def _validate_url_scheme(
     value: str, field_name: str, allowed_prefixes: tuple[str, ...]
 ) -> str:
@@ -46,6 +48,7 @@ def _validate_url_scheme(
     return value
 
 
+# 校验 Nacos 地址格式为 host:port 列表
 def _validate_nacos_addresses(value: str) -> str:
     for address in value.split(","):
         address = address.strip()
@@ -59,6 +62,7 @@ def _validate_nacos_addresses(value: str) -> str:
     return value
 
 
+# 解析逗号分隔的 API Key 列表并去重
 def _parse_comma_separated_keys(value: str | list[str] | None) -> list[str]:
     if value is None:
         return []
@@ -77,6 +81,7 @@ def _parse_comma_separated_keys(value: str | list[str] | None) -> list[str]:
     return parsed
 
 
+# 从 JSON 字符串或列表解析元宝平台凭证
 def _parse_yuanbao_credentials(value: Any) -> list[YuanbaoCredential]:
     if value is None or value == "" or value == "[]":
         return []
@@ -111,6 +116,7 @@ def _parse_yuanbao_credentials(value: Any) -> list[YuanbaoCredential]:
     return credentials
 
 
+# 确保报告存储目录存在，不存在则递归创建
 def _ensure_report_storage_dir(value: str) -> str:
     path = Path(value)
     try:
@@ -120,6 +126,7 @@ def _ensure_report_storage_dir(value: str) -> str:
     return value
 
 
+# 将空白字符串规范化为 None
 def _optional_text(value: str | None) -> str | None:
     if value is None:
         return None
@@ -223,12 +230,15 @@ class Settings(BaseSettings):
     def APP_DEBUG(self) -> bool:
         return self.DEBUG
 
+    # 解析逗号分隔的 API Key 原始配置
     def parsed_api_keys(self, raw_value: str) -> list[str]:
         return _parse_comma_separated_keys(raw_value)
 
+    # 解析元宝平台 JSON 凭证配置
     def parsed_yuanbao_credentials(self) -> list[YuanbaoCredential]:
         return _parse_yuanbao_credentials(self.YUANBAO_CREDENTIALS_JSON)
 
+    # 校验数据库 URL 必须为 postgresql 或 sqlite
     @field_validator("DATABASE_URL")
     @classmethod
     def validate_database_url(cls, value: str) -> str:
@@ -328,6 +338,7 @@ class Settings(BaseSettings):
             raise ValueError(f"SCHEDULER_TIMEZONE is invalid: {value}") from exc
         return value
 
+    # 模型级联校验：Nacos 与已启用平台的必填项
     @model_validator(mode="after")
     def validate_runtime_contract(self) -> Settings:
         if self.NACOS_ENABLED and not self.NACOS_SERVER_ADDRESSES:
@@ -361,6 +372,7 @@ class Settings(BaseSettings):
 
         return self
 
+    # 返回数据库、Redis、Nacos 连接目标摘要（脱敏）
     def connection_targets_summary(self) -> dict[str, Any]:
         return {
             "database": _url_target_summary(self.DATABASE_URL),
@@ -374,6 +386,7 @@ class Settings(BaseSettings):
             },
         }
 
+    # 返回完整运行时配置摘要，供日志与诊断使用
     def runtime_summary(self) -> dict[str, Any]:
         return {
             "app_env": self.APP_ENV,
@@ -437,6 +450,7 @@ class Settings(BaseSettings):
             },
         }
 
+    # 生成单个 AI 平台配置的摘要（不含密钥明文）
     @staticmethod
     def _platform_summary(
         enabled: bool, base_url: str, model: str, api_key_count: int
@@ -449,6 +463,7 @@ class Settings(BaseSettings):
         }
 
 
+# 单例获取应用配置（带 LRU 缓存）
 @lru_cache
 def get_settings() -> Settings:
     return Settings()

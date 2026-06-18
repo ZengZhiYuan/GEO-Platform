@@ -47,20 +47,24 @@ from app.geo_monitoring.services.analysis import (
 
 
 class LLMClientProtocol(Protocol):
+    # LLM 结构化输出生成接口
     async def generate_structured(
         self, request: AgentLLMRequest
     ) -> AgentLLMResult | AgentLLMFailure:
         ...
 
 
+# 返回当前 UTC 时间
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# 将 None 的 Decimal 转为零值
 def _decimal(value: Decimal | None) -> Decimal:
     return value if value is not None else Decimal("0")
 
 
+# 将 ORM 回答行转换为分析用 AnswerInput DTO
 def _answer_input_from_row(answer: Any, task_status: str = "success") -> AnswerInput:
     return AnswerInput(
         answer_id=answer.id,
@@ -92,10 +96,12 @@ def _answer_input_from_row(answer: Any, task_status: str = "success") -> AnswerI
     )
 
 
+# 将 PlatformMetricsOutput 序列化为可写入状态的字典
 def _metrics_to_dict(metrics: PlatformMetricsOutput) -> dict[str, Any]:
     return serialize_state({"metrics": metrics})["metrics"]
 
 
+# 生成供 LLM 阅读的平台指标摘要文本
 def _metrics_summary(metrics: PlatformMetricsOutput) -> str:
     visibility = metrics.brand_visibility.rate
     citation = metrics.citation_rate.rate
@@ -109,6 +115,7 @@ def _metrics_summary(metrics: PlatformMetricsOutput) -> str:
     )
 
 
+# 将 Agent 推荐意图输出映射为布尔值或 None
 def _recommendation_bool(output: RecommendationIntentOutput) -> bool | None:
     if output.intent in {RecommendationIntent.STRONG_RECOMMEND, RecommendationIntent.RECOMMEND}:
         return True
@@ -117,6 +124,7 @@ def _recommendation_bool(output: RecommendationIntentOutput) -> bool | None:
     return None
 
 
+# 从数据库加载监测运行上下文并初始化分析状态
 def load_run_data(state: AnalysisState, *, db: Session) -> AnalysisState:
     run_id = state["run_id"]
     context = load_run_context(db, run_id)
@@ -151,6 +159,7 @@ def load_run_data(state: AnalysisState, *, db: Session) -> AnalysisState:
     return next_state
 
 
+# 按平台计算确定性指标并写入状态
 def calculate_metrics(state: AnalysisState) -> AnalysisState:
     if state.get("analysis_status") == "skipped":
         return {}
@@ -186,10 +195,12 @@ def calculate_metrics(state: AnalysisState) -> AnalysisState:
     return {"platform_metrics": platform_metrics}
 
 
+# 调用 LLM 对每条有效回答进行情感与推荐意图分类
 def classify_answers(state: AnalysisState, *, llm_client: LLMClientProtocol) -> AnalysisState:
     if state.get("analysis_status") == "skipped":
         return {}
 
+    # 异步遍历有效回答，逐条调用分类 Agent
     async def _run() -> tuple[dict[str, Any], dict[str, list[str]], list[dict[str, Any]]]:
         answers = [_deserialize_answer(item) for item in state["answers"]]
         valid_answers = filter_valid_answers(answers)
@@ -265,6 +276,7 @@ def classify_answers(state: AnalysisState, *, llm_client: LLMClientProtocol) -> 
         _run()
     )
 
+    # 分类完成后用更新后的回答重新计算指标
     metrics_update = calculate_metrics({**state, "answers": updated_answers})
     return {
         "answers": updated_answers,
@@ -275,10 +287,12 @@ def classify_answers(state: AnalysisState, *, llm_client: LLMClientProtocol) -> 
     }
 
 
+# 基于平台指标调用 LLM 生成风险评估与改进洞察
 def generate_insights(state: AnalysisState, *, llm_client: LLMClientProtocol) -> AnalysisState:
     if state.get("analysis_status") == "skipped":
         return {}
 
+    # 异步逐平台调用风险与洞察 Agent
     async def _run() -> tuple[dict[str, Any], dict[str, list[str]], list[dict[str, Any]]]:
         platform_insights: dict[str, Any] = {}
         platform_failures = dict(state.get("platform_failures") or {})
@@ -341,6 +355,7 @@ def generate_insights(state: AnalysisState, *, llm_client: LLMClientProtocol) ->
     }
 
 
+# 将分析结果持久化到数据库并更新运行状态
 def persist_results(state: AnalysisState, *, db: Session) -> AnalysisState:
     run_id = state["run_id"]
     now = _utcnow()
@@ -415,6 +430,7 @@ def persist_results(state: AnalysisState, *, db: Session) -> AnalysisState:
     return {"analysis_status": analysis_status}
 
 
+# 从状态字典反序列化为 AnswerInput
 def _deserialize_answer(payload: dict[str, Any]) -> AnswerInput:
     return AnswerInput(
         answer_id=payload["answer_id"],
@@ -432,6 +448,7 @@ def _deserialize_answer(payload: dict[str, Any]) -> AnswerInput:
     )
 
 
+# 从状态字典反序列化为 PlatformMetricsOutput
 def _deserialize_platform_metrics(payload: dict[str, Any]) -> PlatformMetricsOutput:
     from app.geo_monitoring.analysis.dto import (
         BrandMetricsRow,
@@ -442,6 +459,7 @@ def _deserialize_platform_metrics(payload: dict[str, Any]) -> PlatformMetricsOut
         SourceStatRow,
     )
 
+    # 辅助：反序列化 RateMetric 子结构
     def _rate(data: dict[str, Any]) -> RateMetric:
         return RateMetric(
             numerator=int(data["numerator"]),
@@ -548,6 +566,7 @@ def _deserialize_platform_metrics(payload: dict[str, Any]) -> PlatformMetricsOut
     )
 
 
+# 将 LLM 调用结果转换为 Agent 执行记录字典
 def _execution_record_from_result(
     *,
     run_id: int,
@@ -597,6 +616,7 @@ def _execution_record_from_result(
     }
 
 
+# 插入或更新 Agent 执行审计记录（保留历史快照）
 def _upsert_execution(db: Session, **fields: Any) -> None:
     existing = db.execute(
         select(AgentExecution).where(
@@ -639,6 +659,7 @@ def _upsert_execution(db: Session, **fields: Any) -> None:
     existing.finished_at = fields.get("finished_at")
 
 
+# 插入或更新平台级分析汇总记录
 def _upsert_platform_analysis(
     db: Session,
     *,
@@ -693,6 +714,7 @@ def _upsert_platform_analysis(
             setattr(existing, key, value)
 
 
+# 插入或更新各引用域名的来源统计记录
 def _upsert_source_stats(
     db: Session, *, run_id: int, metrics: PlatformMetricsOutput
 ) -> None:
@@ -722,6 +744,7 @@ def _upsert_source_stats(
                 setattr(existing, key, value)
 
 
+# 插入或更新各 Prompt 的竞争力分析记录
 def _upsert_prompt_competitiveness(
     db: Session, *, run_id: int, metrics: PlatformMetricsOutput
 ) -> None:
@@ -753,6 +776,7 @@ def _upsert_prompt_competitiveness(
                 setattr(existing, key, value)
 
 
+# 插入或更新平台级与推荐率指标快照
 def _upsert_metric_snapshots(
     db: Session,
     *,

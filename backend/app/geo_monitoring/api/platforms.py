@@ -12,6 +12,7 @@ router = APIRouter()
 
 
 @router.get("/platforms", summary="分页查询 AI 平台")
+# 分页查询 AI 平台配置列表
 def list_platforms(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
@@ -26,6 +27,7 @@ def list_platforms(
 
 
 @router.put("/platforms/{platform_code}", summary="更新 AI 平台配置")
+# 更新指定 AI 平台的配置
 def update_platform(
     payload: AIPlatformUpdate,
     platform_code: str = Path(..., min_length=1, max_length=32),
@@ -36,6 +38,7 @@ def update_platform(
 
 
 @router.get("/platforms/{platform_code}", summary="获取 AI 平台配置")
+# 按平台编码获取 AI 平台详情
 def get_platform(
     platform_code: str = Path(..., min_length=1, max_length=32),
     db: Session = Depends(get_db),

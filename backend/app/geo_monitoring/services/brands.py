@@ -18,6 +18,7 @@ from app.geo_monitoring.schemas import (
 from app.geo_monitoring.services.projects import require_active_project
 
 
+# 提交数据库变更，唯一约束冲突时转为业务异常
 def _commit_unique(db: Session, *, code: int, message: str) -> None:
     try:
         db.commit()
@@ -26,6 +27,7 @@ def _commit_unique(db: Session, *, code: int, message: str) -> None:
         raise BusinessException(message=message, code=code) from exc
 
 
+# 按 ID 查询品牌，不存在则抛业务异常
 def get_brand(db: Session, brand_id: int) -> Brand:
     brand = brand_repo.get_by_id(db, brand_id)
     if brand is None:
@@ -33,6 +35,7 @@ def get_brand(db: Session, brand_id: int) -> Brand:
     return brand
 
 
+# 校验项目内尚未存在其他目标品牌
 def _ensure_target_available(
     db: Session, project_id: int, *, exclude_brand_id: int | None = None
 ) -> None:
@@ -45,6 +48,7 @@ def _ensure_target_available(
         raise BusinessException(message="每个项目只能配置一个目标品牌", code=40010)
 
 
+# 分页列出项目下的品牌
 def list_brands(
     db: Session,
     *,
@@ -67,6 +71,7 @@ def list_brands(
     )
 
 
+# 创建品牌并校验名称与目标品牌唯一性
 def create_brand(db: Session, project_id: int, payload: BrandCreate) -> Brand:
     require_active_project(db, project_id)
     if payload.brand_type.value == "target":
@@ -90,6 +95,7 @@ def create_brand(db: Session, project_id: int, payload: BrandCreate) -> Brand:
     return brand
 
 
+# 更新品牌字段并校验目标品牌约束
 def update_brand(db: Session, brand_id: int, payload: BrandUpdate) -> Brand:
     brand = get_brand(db, brand_id)
     data = payload.model_dump(exclude_unset=True)
@@ -104,6 +110,7 @@ def update_brand(db: Session, brand_id: int, payload: BrandUpdate) -> Brand:
     return brand
 
 
+# 软删除品牌，已被答案引用则拒绝
 def delete_brand(db: Session, brand_id: int) -> None:
     brand = get_brand(db, brand_id)
     if brand_repo.has_answer_results(db, brand_id):
@@ -117,6 +124,7 @@ def delete_brand(db: Session, brand_id: int) -> None:
     db.commit()
 
 
+# 按 ID 查询品牌别名，不存在则抛业务异常
 def get_alias(db: Session, alias_id: int) -> BrandAlias:
     alias = brand_repo.get_alias_by_id(db, alias_id)
     if alias is None:
@@ -124,6 +132,7 @@ def get_alias(db: Session, alias_id: int) -> BrandAlias:
     return alias
 
 
+# 分页列出品牌下的别名
 def list_aliases(
     db: Session, *, brand_id: int, page: int, page_size: int
 ) -> tuple[list[BrandAlias], int]:
@@ -133,6 +142,7 @@ def list_aliases(
     )
 
 
+# 创建品牌别名并校验同品牌内不重复
 def create_alias(
     db: Session, brand_id: int, payload: BrandAliasCreate
 ) -> BrandAlias:
@@ -155,6 +165,7 @@ def create_alias(
     return alias
 
 
+# 更新品牌别名字段
 def update_alias(
     db: Session, alias_id: int, payload: BrandAliasUpdate
 ) -> BrandAlias:
@@ -166,6 +177,7 @@ def update_alias(
     return alias
 
 
+# 软删除品牌别名
 def delete_alias(db: Session, alias_id: int) -> None:
     alias = get_alias(db, alias_id)
     alias.is_deleted = True

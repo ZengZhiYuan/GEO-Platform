@@ -8,6 +8,7 @@ from app.geo_monitoring.analysis.dto import AnswerInput, CitationInput, RateMetr
 from app.geo_monitoring.analysis.metrics import compute_rate, filter_valid_answers
 
 
+# 规范化域名：小写并去除 www 前缀
 def normalize_domain(domain: str | None) -> str | None:
     if domain is None:
         return None
@@ -17,6 +18,7 @@ def normalize_domain(domain: str | None) -> str | None:
     return normalized or None
 
 
+# 从引用记录中提取规范化域名（优先 domain 字段，否则解析 URL）
 def _domain_from_citation(citation: CitationInput) -> str | None:
     domain = normalize_domain(citation.domain)
     if domain:
@@ -27,6 +29,7 @@ def _domain_from_citation(citation: CitationInput) -> str | None:
     return normalize_domain(host)
 
 
+# 判断引用是否有效（具备域名或非空 URL）
 def is_valid_citation(citation: CitationInput) -> bool:
     domain = _domain_from_citation(citation)
     if domain:
@@ -34,6 +37,7 @@ def is_valid_citation(citation: CitationInput) -> bool:
     return bool(citation.url and citation.url.strip())
 
 
+# 计算官方域名在有效回答中的引用覆盖率
 def compute_source_coverage(
     answers: list[AnswerInput],
     *,
@@ -62,6 +66,7 @@ def compute_source_coverage(
     )
 
 
+# 按域名聚合引用次数、回答覆盖数与份额排行
 def compute_source_stats(
     answers: list[AnswerInput],
     *,
@@ -98,6 +103,7 @@ def compute_source_stats(
         for domain in citation_totals
     ]
     rows.sort(key=lambda row: (-row.citation_count, row.domain))
+    # 写入最终排名序号
     return [
         SourceStatRow(
             platform_code=row.platform_code,

@@ -12,6 +12,7 @@ router = APIRouter()
 
 
 @router.get("/projects/{project_id}/schedules", summary="分页查询项目调度")
+# 分页查询项目下的监测调度配置
 def list_schedules(
     project_id: int = Path(..., ge=1),
     page: int = Query(1, ge=1),
@@ -26,6 +27,7 @@ def list_schedules(
 
 
 @router.post("/projects/{project_id}/schedules", summary="创建监测调度")
+# 为项目创建定时监测调度
 def create_schedule(
     payload: ScheduleCreate,
     project_id: int = Path(..., ge=1),
@@ -36,6 +38,7 @@ def create_schedule(
 
 
 @router.get("/schedules/{schedule_id}", summary="获取监测调度")
+# 按 ID 获取监测调度详情
 def get_schedule(
     schedule_id: int = Path(..., ge=1), db: Session = Depends(get_db)
 ) -> dict:
@@ -44,6 +47,7 @@ def get_schedule(
 
 
 @router.put("/schedules/{schedule_id}", summary="更新监测调度")
+# 更新监测调度的配置
 def update_schedule(
     payload: ScheduleUpdate,
     schedule_id: int = Path(..., ge=1),
@@ -54,6 +58,7 @@ def update_schedule(
 
 
 @router.delete("/schedules/{schedule_id}", summary="删除监测调度")
+# 软删除指定监测调度
 def delete_schedule(
     schedule_id: int = Path(..., ge=1), db: Session = Depends(get_db)
 ) -> dict:
@@ -62,6 +67,7 @@ def delete_schedule(
 
 
 @router.post("/schedules/{schedule_id}/enable", summary="启用监测调度")
+# 启用监测调度
 def enable_schedule(
     schedule_id: int = Path(..., ge=1), db: Session = Depends(get_db)
 ) -> dict:
@@ -70,6 +76,7 @@ def enable_schedule(
 
 
 @router.post("/schedules/{schedule_id}/disable", summary="停用监测调度")
+# 停用监测调度
 def disable_schedule(
     schedule_id: int = Path(..., ge=1), db: Session = Depends(get_db)
 ) -> dict:
@@ -78,6 +85,7 @@ def disable_schedule(
 
 
 @router.post("/schedules/{schedule_id}/trigger", summary="立即触发监测调度")
+# 立即手动触发一次监测运行
 def trigger_schedule(
     schedule_id: int = Path(..., ge=1), db: Session = Depends(get_db)
 ) -> dict:

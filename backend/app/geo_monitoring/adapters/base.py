@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 
+# 根据平台代码与密钥材料生成短指纹，用于密钥池标识
 def compute_credential_fingerprint(platform_code: str, secret_material: str) -> str:
     payload = f"{platform_code}:{secret_material}".encode("utf-8")
     return hashlib.sha256(payload).hexdigest()[:16]
@@ -40,6 +41,7 @@ class PlatformCredential:
     secret_id: str | None = None
     secret_key: str | None = None
 
+    # 判断凭证类型：腾讯密钥对或普通 API Key
     @property
     def kind(self) -> str:
         if self.secret_id is not None and self.secret_key is not None:

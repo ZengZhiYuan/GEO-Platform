@@ -19,6 +19,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from app.core.config import settings
 
 
+# 根据数据库类型构建 SQLAlchemy 引擎连接池参数
 def _engine_options() -> dict:
     options = {
         "echo": settings.DB_ECHO,

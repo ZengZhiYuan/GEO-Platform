@@ -37,6 +37,7 @@ class AgentLLMErrorCategory(StrEnum):
 class AgentLLMError(Exception):
     """Agent LLM 调用失败，消息已脱敏。"""
 
+    # 构造带错误分类与脱敏消息的 Agent LLM 异常
     def __init__(
         self,
         message: str,
@@ -99,6 +100,7 @@ class ChatCompletionsTransport(Protocol):
 class OpenAIChatTransport:
     """OpenAI-compatible SDK 传输层；业务代码通过 AgentLLMClient 间接使用。"""
 
+    # 初始化 OpenAI 兼容异步客户端
     def __init__(self, *, base_url: str, api_key: str, timeout_seconds: float) -> None:
         self._client = AsyncOpenAI(
             base_url=base_url.rstrip("/"),
@@ -106,6 +108,7 @@ class OpenAIChatTransport:
             timeout=timeout_seconds,
         )
 
+    # 调用 Chat Completions 并返回字典形式响应
     async def create_chat_completion(self, **kwargs: Any) -> dict[str, Any]:
         response = await self._client.chat.completions.create(**kwargs)
         return response.model_dump()
@@ -114,6 +117,7 @@ class OpenAIChatTransport:
 class AgentLLMClient:
     """封装结构化输出、重试、解析修复与审计元数据。"""
 
+    # 初始化 LLM 客户端，可选注入自定义传输层
     def __init__(
         self,
         config: AgentLLMConfig,
@@ -128,6 +132,7 @@ class AgentLLMClient:
         )
         self._secrets = (config.api_key,)
 
+    # 渲染 Prompt、调用 LLM 并解析/修复结构化 JSON 输出
     async def generate_structured(
         self, request: AgentLLMRequest
     ) -> AgentLLMResult | AgentLLMFailure:
@@ -178,6 +183,7 @@ class AgentLLMClient:
             raw_text=raw_text,
         )
 
+    # 截断过长输入变量并记录截断元数据
     def _prepare_input(self, request: AgentLLMRequest) -> dict[str, Any]:
         render_variables: dict[str, str] = {}
         truncated = False
@@ -194,6 +200,7 @@ class AgentLLMClient:
             "original_input_chars": original_chars,
         }
 
+    # 构建审计用的输入元数据快照
     def _build_input_metadata(
         self,
         request: AgentLLMRequest,
@@ -211,6 +218,7 @@ class AgentLLMClient:
             "max_input_chars": self._config.max_input_chars,
         }
 
+    # 记录脱敏后的 LLM 请求日志
     def _log_request(
         self,
         *,
@@ -229,6 +237,7 @@ class AgentLLMClient:
             sanitize_message(preview, self._secrets),
         )
 
+    # 带指数退避重试的 Chat Completions 调用
     async def _call_with_retries(
         self,
         *,
@@ -280,6 +289,7 @@ class AgentLLMClient:
             secrets=self._secrets,
         )
 
+    # 解析 JSON 输出，失败时尝试 LLM 修复
     async def _parse_or_repair(
         self,
         *,
@@ -312,6 +322,7 @@ class AgentLLMClient:
             "repair_attempted": repair_attempted,
         }
 
+    # 调用修复 Prompt 让 LLM 修正不符合 Schema 的输出
     async def _repair(
         self,
         raw_text: str,
@@ -356,6 +367,7 @@ def create_agent_llm_client(
     return AgentLLMClient(config, transport=transport)
 
 
+# 截断文本至最大字符数并返回是否已截断
 def _truncate_text(text: str, max_chars: int) -> tuple[str, bool]:
     if len(text) <= max_chars:
         return text, False
@@ -364,6 +376,7 @@ def _truncate_text(text: str, max_chars: int) -> tuple[str, bool]:
     return text[: max_chars - 3] + "...", True
 
 
+# 从 Chat Completions 响应字典中提取文本内容
 def _extract_content(completion: dict[str, Any]) -> str:
     choices = completion.get("choices")
     if not isinstance(choices, list) or not choices:
@@ -375,11 +388,13 @@ def _extract_content(completion: dict[str, Any]) -> str:
     return content if isinstance(content, str) else ""
 
 
+# 从 usage 字典中安全提取整型 Token 计数
 def _usage_int(usage: dict[str, Any], key: str) -> int | None:
     value = usage.get(key)
     return int(value) if isinstance(value, int) else None
 
 
+# 将 LLM 原始 JSON 文本解析并校验为目标 Pydantic 模型
 def _parse_structured_output(
     raw_text: str,
     output_schema: type[BaseModel],

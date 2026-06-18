@@ -40,10 +40,12 @@ class ApiKeyCredential:
     platform_code: str
     api_key: str
 
+    # 计算 API Key 凭证的 SHA256 短指纹
     @property
     def fingerprint(self) -> str:
         return compute_credential_fingerprint(self.platform_code, self.api_key)
 
+    # 转换为统一的 PlatformCredential 结构
     def to_platform_credential(self) -> PlatformCredential:
         return PlatformCredential(
             platform_code=self.platform_code,
@@ -58,11 +60,13 @@ class YuanbaoCredential:
     secret_id: str
     secret_key: str
 
+    # 计算腾讯密钥对的 SHA256 短指纹
     @property
     def fingerprint(self) -> str:
         material = f"{self.secret_id}:{self.secret_key}"
         return compute_credential_fingerprint(self.platform_code, material)
 
+    # 转换为统一的 PlatformCredential 结构
     def to_platform_credential(self) -> PlatformCredential:
         return PlatformCredential(
             platform_code=self.platform_code,
@@ -76,6 +80,7 @@ CredentialInput = ApiKeyCredential | YuanbaoCredential | PlatformCredential
 
 
 class CredentialKeyPool:
+    # 初始化密钥池，支持 Redis 协调与进程内降级
     def __init__(
         self,
         redis_client: RedisClient | None,
@@ -91,6 +96,7 @@ class CredentialKeyPool:
         self._fallback_state: dict[tuple[str, str], dict[str, str]] = {}
         self._redis_degraded_logged = False
 
+    # 注册某平台的凭证列表并同步 Redis 元数据
     def register_platform_credentials(
         self,
         platform_code: str,
@@ -109,6 +115,7 @@ class CredentialKeyPool:
         self._credentials[platform_code] = tuple(normalized)
         self._sync_redis_metadata(platform_code, normalized)
 
+    # 获取一个可用凭证，Redis 失败时降级到进程内轮询
     async def acquire(
         self,
         platform_code: str,
@@ -125,6 +132,7 @@ class CredentialKeyPool:
             self._log_redis_degraded(exc)
             return self._acquire_with_fallback(platform_code, credentials, request_id=request_id)
 
+    # 根据失败类型更新凭证状态（禁用、冷却或忽略）
     async def report_failure(
         self,
         fingerprint: str,
@@ -158,9 +166,11 @@ class CredentialKeyPool:
         if error.category in {ErrorCategory.INVALID_REQUEST, ErrorCategory.CONTENT_SAFETY}:
             return
 
+    # 调用成功后将凭证恢复为健康状态
     async def report_success(self, fingerprint: str, *, platform_code: str) -> None:
         self._set_state(platform_code, fingerprint, CredentialState.HEALTHY)
 
+    # 查询指定凭证的当前状态（含冷却过期判断）
     def get_credential_state(self, platform_code: str, fingerprint: str) -> CredentialState:
         state = self._read_state(platform_code, fingerprint)
         status = state.get("status", CredentialState.HEALTHY.value)
@@ -170,6 +180,7 @@ class CredentialKeyPool:
                 return CredentialState.HEALTHY
         return CredentialState(status)
 
+    # 通过 Redis 原子递增游标实现跨进程轮询选钥
     def _acquire_with_redis(
         self,
         platform_code: str,
@@ -187,6 +198,7 @@ class CredentialKeyPool:
             request_id=request_id,
         )
 
+    # Redis 不可用时使用进程内计数器轮询选钥
     def _acquire_with_fallback(
         self,
         platform_code: str,
@@ -204,6 +216,7 @@ class CredentialKeyPool:
             use_fallback=True,
         )
 
+    # 从游标起点遍历凭证，返回第一个可选中的凭证
     def _select_from_cursor(
         self,
         platform_code: str,
@@ -224,6 +237,7 @@ class CredentialKeyPool:
                 return candidate
         raise NoAvailableCredentialError(platform_code=platform_code, request_id=request_id)
 
+    # 将新注册凭证的初始健康状态写入 Redis
     def _sync_redis_metadata(
         self,
         platform_code: str,
@@ -246,6 +260,7 @@ class CredentialKeyPool:
         except Exception as exc:
             self._log_redis_degraded(exc)
 
+    # 更新凭证状态到 Redis 与进程内缓存
     def _set_state(
         self,
         platform_code: str,
@@ -265,6 +280,7 @@ class CredentialKeyPool:
             self._log_redis_degraded(exc)
         self._fallback_state[(platform_code, fingerprint)] = mapping
 
+    # 读取凭证状态，Redis 失败时回退到进程内缓存
     def _read_state(self, platform_code: str, fingerprint: str) -> dict[str, str]:
         try:
             if self._redis is not None:
@@ -273,6 +289,7 @@ class CredentialKeyPool:
             self._log_redis_degraded(exc)
         return self._read_fallback_state(platform_code, fingerprint)
 
+    # 从进程内缓存读取凭证状态
     def _read_fallback_state(self, platform_code: str, fingerprint: str) -> dict[str, str]:
         return dict(
             self._fallback_state.get(
@@ -284,6 +301,7 @@ class CredentialKeyPool:
             )
         )
 
+    # 判断凭证是否可选（非禁用且冷却已结束）
     @staticmethod
     def _is_selectable(state: dict[str, str]) -> bool:
         status = state.get("status", CredentialState.HEALTHY.value)
@@ -294,12 +312,15 @@ class CredentialKeyPool:
             return cooldown_until <= time.time()
         return True
 
+    # 生成 Redis 轮询游标键名
     def _cursor_key(self, platform_code: str) -> str:
         return f"{self._key_prefix}:{platform_code}:cursor"
 
+    # 生成 Redis 凭证状态哈希键名
     def _state_key(self, platform_code: str, fingerprint: str) -> str:
         return f"{self._key_prefix}:{platform_code}:fp:{fingerprint}"
 
+    # 记录 Redis 降级警告（仅首次）
     def _log_redis_degraded(self, exc: Exception) -> None:
         if self._redis_degraded_logged:
             return

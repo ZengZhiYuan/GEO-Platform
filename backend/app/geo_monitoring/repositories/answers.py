@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.geo_monitoring.models import Answer, AnswerBrandResult, AnswerCitation
 
 
+# 按 ID 查询答案，并预加载引用与品牌识别结果
 def get_by_id(db: Session, answer_id: int) -> Answer | None:
     return db.execute(
         select(Answer)
@@ -17,6 +18,7 @@ def get_by_id(db: Session, answer_id: int) -> Answer | None:
     ).scalar_one_or_none()
 
 
+# 按查询任务 ID 查询关联答案
 def get_by_task_id(db: Session, task_id: int) -> Answer | None:
     return db.execute(
         select(Answer).where(
@@ -26,6 +28,7 @@ def get_by_task_id(db: Session, task_id: int) -> Answer | None:
     ).scalar_one_or_none()
 
 
+# 分页查询指定运行下的答案列表
 def list_by_run_id(
     db: Session,
     *,
@@ -40,6 +43,7 @@ def list_by_run_id(
         QueryTask.run_id == run_id,
         QueryTask.is_deleted.is_(False),
     ]
+    # 通过 QueryTask 关联统计与分页
     total = db.execute(
         select(func.count())
         .select_from(Answer)
@@ -61,18 +65,22 @@ def list_by_run_id(
     return items, total
 
 
+# 将答案实体加入当前会话
 def add(db: Session, answer: Answer) -> None:
     db.add(answer)
 
 
+# 将答案引用实体加入当前会话
 def add_citation(db: Session, citation: AnswerCitation) -> None:
     db.add(citation)
 
 
+# 将答案品牌识别结果实体加入当前会话
 def add_brand_result(db: Session, brand_result: AnswerBrandResult) -> None:
     db.add(brand_result)
 
 
+# 统计指定查询任务下的答案数量
 def count_by_task_id(db: Session, task_id: int) -> int:
     return (
         db.scalar(

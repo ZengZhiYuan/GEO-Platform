@@ -10,6 +10,7 @@ from sqlalchemy import Engine, text
 from app.core.config import _url_target_summary, settings
 
 
+# 探测 PostgreSQL 是否可连接（执行 SELECT 1）
 def check_database_ready(
     *,
     engine: Engine,
@@ -23,6 +24,7 @@ def check_database_ready(
     }
 
 
+# 探测 Redis 是否可 ping 通
 def check_redis_ready(
     *,
     redis_url: str | None = None,
@@ -43,6 +45,7 @@ def check_redis_ready(
     return {"ok": True, "target": _url_target_summary(url)}
 
 
+# 探测 Nacos 配置中心是否就绪（未启用时直接返回 ok）
 def check_nacos_ready(
     *,
     enabled: bool | None = None,
@@ -65,6 +68,7 @@ def check_nacos_ready(
     return {"ok": True, "enabled": True, "target": addresses}
 
 
+# 聚合数据库与 Redis 就绪状态，返回整体 ready / not_ready
 def check_readiness() -> dict[str, Any]:
     from app.core.database import engine
 

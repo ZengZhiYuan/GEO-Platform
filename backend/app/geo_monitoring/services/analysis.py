@@ -292,6 +292,7 @@ class SourceStat(BaseModel):
     rank_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+# 递归将 Decimal、datetime 等转为 JSON 可序列化值
 def _json_default(value: Any) -> Any:
     if isinstance(value, Decimal):
         return str(value)
@@ -306,10 +307,12 @@ def _json_default(value: Any) -> Any:
     return value
 
 
+# 将分析状态字典序列化为 JSON 兼容结构
 def serialize_state(state: dict[str, Any]) -> dict[str, Any]:
     return _json_default(dict(state))
 
 
+# 从应用配置构建 Agent LLM 客户端参数
 def build_agent_llm_config(settings: Settings | None = None) -> AgentLLMConfig:
     cfg = settings or default_settings
     return AgentLLMConfig(
@@ -321,7 +324,9 @@ def build_agent_llm_config(settings: Settings | None = None) -> AgentLLMConfig:
     )
 
 
+# 根据运行 ID 加载分析所需的运行、品牌与成功答案上下文
 def load_run_context(db: Session, run_id: int) -> dict[str, Any]:
+    # 查询运行记录
     run = db.execute(
         select(MonitorRun).where(
             MonitorRun.id == run_id,
@@ -329,6 +334,7 @@ def load_run_context(db: Session, run_id: int) -> dict[str, Any]:
         )
     ).scalar_one()
 
+    # 加载所属项目
     project = db.execute(
         select(MonitorProject).where(
             MonitorProject.id == run.project_id,
@@ -336,6 +342,7 @@ def load_run_context(db: Session, run_id: int) -> dict[str, Any]:
         )
     ).scalar_one()
 
+    # 加载活跃品牌并定位目标品牌
     brands = list(
         db.execute(
             select(Brand).where(
@@ -351,6 +358,7 @@ def load_run_context(db: Session, run_id: int) -> dict[str, Any]:
     if target is None:
         raise ValueError(f"run {run_id} has no active target brand")
 
+    # 加载目标品牌的启用别名
     aliases = list(
         db.execute(
             select(BrandAlias).where(
@@ -368,6 +376,7 @@ def load_run_context(db: Session, run_id: int) -> dict[str, Any]:
     ]
     brand_names = {brand.id: brand.brand_name for brand in brands}
 
+    # 加载本次运行下成功任务的答案及关联数据
     answers = list(
         db.execute(
             select(Answer)
@@ -411,12 +420,13 @@ def run_analysis(
     settings: Settings | None = None,
     include_state: bool = False,
 ) -> dict[str, Any]:
-    """执行 LangGraph 分析流程。"""
+    """执行 LangGraph 分析流程并返回运行分析状态。"""
     from app.geo_monitoring.agents.graph import build_analysis_graph
 
     client = llm_client or create_agent_llm_client(build_agent_llm_config(settings))
     graph = build_analysis_graph(db=db, llm_client=client)
     initial_state = {"run_id": run_id}
+    # 调用 LangGraph 图完成指标计算与 Agent 编排
     final_state = graph.invoke(initial_state)
 
     payload: dict[str, Any] = {

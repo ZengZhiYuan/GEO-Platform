@@ -25,22 +25,26 @@ _TASK_IN_PROGRESS = frozenset({"pending", "queued", "running"})
 _session_factory: Callable[[], Session] | None = None
 
 
+# 注入可替换的数据库会话工厂，便于测试。
 def configure_session_factory(factory: Callable[[], Session]) -> None:
     global _session_factory
     _session_factory = factory
 
 
+# 重置会话工厂为默认的 SessionLocal。
 def reset_session_factory() -> None:
     global _session_factory
     _session_factory = None
 
 
+# 打开数据库会话，优先使用已注入的工厂。
 def _open_session() -> Session:
     if _session_factory is not None:
         return _session_factory()
     return SessionLocal()
 
 
+# 采集全部结束后幂等地将运行分析任务入队。
 def maybe_enqueue_run_analysis(run_id: int, *, db: Session | None = None) -> bool:
     """采集进入终态后自动入队一次分析（幂等）。"""
     owns_session = db is None
@@ -56,6 +60,7 @@ def maybe_enqueue_run_analysis(run_id: int, *, db: Session | None = None) -> boo
         if run is None or run.status not in RUN_TERMINAL_STATUSES:
             return False
 
+        # 仍有进行中的查询任务时不触发分析
         in_progress = (
             db.scalar(
                 select(func.count())
@@ -84,6 +89,7 @@ def maybe_enqueue_run_analysis(run_id: int, *, db: Session | None = None) -> boo
             db.close()
 
 
+# 消费分析队列消息，执行 LangGraph 语义分析并更新状态。
 @dramatiq.actor(queue_name="analysis", max_retries=0)
 def analyze_run(run_id: int) -> None:
     """消费 run_id 消息，执行 LangGraph 分析。"""
@@ -101,6 +107,7 @@ def analyze_run(run_id: int) -> None:
         run.analysis_status = "running"
         db.commit()
 
+        # 调用 LangGraph 分析流水线
         llm_client = create_agent_llm_client(build_agent_llm_config(settings))
         result = run_analysis(db, run_id, llm_client=llm_client, settings=settings)
         logger.info(

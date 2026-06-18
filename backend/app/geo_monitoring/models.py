@@ -27,6 +27,7 @@ from app.models.base import BaseModel
 JSON_VALUE = JSONB().with_variant(JSON(), "sqlite")
 
 
+# 监测项目：品牌监测的配置主体，含行业与报告展示信息。
 class MonitorProject(BaseModel):
     __tablename__ = "geo_monitor_project"
     __table_args__ = (
@@ -53,6 +54,7 @@ class MonitorProject(BaseModel):
     report_subtitle: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
+# 品牌：目标品牌、竞品或候选品牌，归属监测项目。
 class Brand(BaseModel):
     __tablename__ = "geo_brand"
     __table_args__ = (
@@ -90,6 +92,7 @@ class Brand(BaseModel):
     )
 
 
+# 品牌别名：支持多种匹配模式的品牌识别变体。
 class BrandAlias(BaseModel):
     __tablename__ = "geo_brand_alias"
     __table_args__ = (
@@ -122,6 +125,7 @@ class BrandAlias(BaseModel):
     )
 
 
+# Prompt 集：版本化的问题集合，每个项目最多一个 active 版本。
 class PromptSet(BaseModel):
     __tablename__ = "geo_prompt_set"
     __table_args__ = (
@@ -161,6 +165,7 @@ class PromptSet(BaseModel):
     )
 
 
+# Prompt：单条监测问题，归属特定 Prompt 集版本。
 class Prompt(BaseModel):
     __tablename__ = "geo_prompt"
     __table_args__ = (
@@ -196,6 +201,7 @@ class Prompt(BaseModel):
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
+# AI 平台：外部大模型采集端点与并发/超时配置。
 class AIPlatform(BaseModel):
     __tablename__ = "geo_ai_platform"
     __table_args__ = (
@@ -235,6 +241,7 @@ class AIPlatform(BaseModel):
     extra_config: Mapped[dict] = mapped_column(JSON_VALUE, default=dict, nullable=False)
 
 
+# 监测运行：一次完整的采集-分析-报告执行实例及其各阶段状态。
 class MonitorRun(BaseModel):
     __tablename__ = "geo_monitor_run"
     __table_args__ = (
@@ -334,6 +341,7 @@ class MonitorRun(BaseModel):
     )
 
 
+# 查询任务：单条 Prompt 在单个平台上的采集子任务。
 class QueryTask(BaseModel):
     __tablename__ = "geo_query_task"
     __table_args__ = (
@@ -410,6 +418,7 @@ class QueryTask(BaseModel):
     )
 
 
+# 回答：AI 平台对单条查询任务返回的原始文本与元数据。
 class Answer(BaseModel):
     __tablename__ = "geo_answer"
     __table_args__ = (
@@ -463,6 +472,7 @@ class Answer(BaseModel):
     )
 
 
+# 回答引用：AI 回答中引用的外部来源链接与摘要。
 class AnswerCitation(BaseModel):
     __tablename__ = "geo_answer_citation"
     __table_args__ = (
@@ -486,6 +496,7 @@ class AnswerCitation(BaseModel):
     answer: Mapped[Answer] = relationship("Answer", back_populates="citations")
 
 
+# 回答品牌识别结果：单条回答中各品牌的提及与位置信息。
 class AnswerBrandResult(BaseModel):
     __tablename__ = "geo_answer_brand_result"
     __table_args__ = (
@@ -525,6 +536,7 @@ class AnswerBrandResult(BaseModel):
     answer: Mapped[Answer] = relationship("Answer", back_populates="brand_results")
 
 
+# 监测计划：按 cron 表达式定时触发项目监测运行。
 class MonitorSchedule(BaseModel):
     __tablename__ = "geo_monitor_schedule"
     __table_args__ = (

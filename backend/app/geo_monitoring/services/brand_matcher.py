@@ -39,6 +39,7 @@ def match_brands_in_text(
         patterns = _brand_patterns(brand, aliases_by_brand.get(brand.id, ()))
         positions: list[int] = []
         matched_terms: list[str] = []
+        # 汇总各匹配模式命中的位置与术语
         for pattern in patterns:
             found = _find_matches(normalized, lowered, pattern)
             if found:
@@ -65,7 +66,9 @@ class _MatchPattern:
     context_keywords: tuple[str, ...]
 
 
+# 构建品牌名与启用别名的匹配模式列表
 def _brand_patterns(brand: Brand, aliases: list[BrandAlias]) -> list[_MatchPattern]:
+    # 品牌名默认 contains 匹配，再叠加启用别名的规则
     patterns = [
         _MatchPattern(term=brand.brand_name, match_mode="contains", context_keywords=())
     ]
@@ -82,6 +85,7 @@ def _brand_patterns(brand: Brand, aliases: list[BrandAlias]) -> list[_MatchPatte
     return patterns
 
 
+# 按 match_mode 在文本中查找匹配位置
 def _find_matches(
     normalized: str,
     lowered: str,
@@ -92,9 +96,11 @@ def _find_matches(
         return []
     term_lower = term.lower()
     if pattern.match_mode == "exact":
+        # 整词边界精确匹配
         regex = re.compile(rf"(?<!\w){re.escape(term_lower)}(?!\w)", re.IGNORECASE)
         return [match.start() for match in regex.finditer(normalized)]
     if pattern.match_mode == "context":
+        # 需同时出现上下文关键词
         if term_lower not in lowered:
             return []
         if pattern.context_keywords and not any(
@@ -102,9 +108,11 @@ def _find_matches(
         ):
             return []
         return _find_substring_positions(lowered, term_lower)
+    # contains 模式：子串出现即算匹配
     return _find_substring_positions(lowered, term_lower)
 
 
+# 枚举小写文本中 needle 的所有起始位置
 def _find_substring_positions(haystack_lower: str, needle_lower: str) -> list[int]:
     positions: list[int] = []
     start = 0

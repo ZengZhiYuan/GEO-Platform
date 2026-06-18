@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.geo_monitoring.models import MonitorRun, Prompt, PromptSet, QueryTask
 
 
+# 按 ID 查询未删除的提示词集
 def get_prompt_set_by_id(db: Session, prompt_set_id: int) -> PromptSet | None:
     return db.execute(
         select(PromptSet).where(
@@ -15,6 +16,7 @@ def get_prompt_set_by_id(db: Session, prompt_set_id: int) -> PromptSet | None:
     ).scalar_one_or_none()
 
 
+# 分页查询项目下的提示词集，支持按状态筛选
 def list_prompt_sets(
     db: Session,
     *,
@@ -46,6 +48,7 @@ def list_prompt_sets(
     return items, total
 
 
+# 查找项目内同版本号的提示词集 ID，用于重复校验
 def find_duplicate_version(
     db: Session, project_id: int, version_no: str
 ) -> int | None:
@@ -58,6 +61,7 @@ def find_duplicate_version(
     ).scalar_one_or_none()
 
 
+# 查找项目当前激活的提示词集，可排除指定 ID
 def find_active_prompt_set(
     db: Session, project_id: int, *, exclude_id: int | None = None
 ) -> PromptSet | None:
@@ -71,6 +75,7 @@ def find_active_prompt_set(
     return db.execute(select(PromptSet).where(*conditions)).scalar_one_or_none()
 
 
+# 解析项目下可用的激活提示词集，可按指定 ID 精确匹配
 def resolve_active_prompt_set(
     db: Session, project_id: int, prompt_set_id: int | None
 ) -> PromptSet | None:
@@ -84,6 +89,7 @@ def resolve_active_prompt_set(
     return db.execute(select(PromptSet).where(*conditions)).scalar_one_or_none()
 
 
+# 列出提示词集下所有已启用的提示词
 def list_enabled_prompts(db: Session, prompt_set_id: int) -> list[Prompt]:
     return list(
         db.execute(
@@ -100,6 +106,7 @@ def list_enabled_prompts(db: Session, prompt_set_id: int) -> list[Prompt]:
     )
 
 
+# 列出提示词集下可用于激活校验的已启用提示词
 def list_prompts_for_activation(db: Session, prompt_set_id: int) -> list[Prompt]:
     return list(
         db.execute(
@@ -116,12 +123,14 @@ def list_prompts_for_activation(db: Session, prompt_set_id: int) -> list[Prompt]
     )
 
 
+# 按 ID 查询未删除的提示词
 def get_prompt_by_id(db: Session, prompt_id: int) -> Prompt | None:
     return db.execute(
         select(Prompt).where(Prompt.id == prompt_id, Prompt.is_deleted.is_(False))
     ).scalar_one_or_none()
 
 
+# 分页查询提示词集下的提示词列表
 def list_prompts(
     db: Session, *, prompt_set_id: int, page: int, page_size: int
 ) -> tuple[list[Prompt], int]:
@@ -146,6 +155,7 @@ def list_prompts(
     return items, total
 
 
+# 查找提示词集内同编码的提示词 ID，用于重复校验
 def find_duplicate_prompt_code(
     db: Session, prompt_set_id: int, prompt_code: str
 ) -> int | None:
@@ -158,14 +168,17 @@ def find_duplicate_prompt_code(
     ).scalar_one_or_none()
 
 
+# 将提示词集实体加入当前会话
 def add_prompt_set(db: Session, prompt_set: PromptSet) -> None:
     db.add(prompt_set)
 
 
+# 将提示词实体加入当前会话
 def add_prompt(db: Session, prompt: Prompt) -> None:
     db.add(prompt)
 
 
+# 判断提示词集是否已被监测运行引用
 def has_runs(db: Session, prompt_set_id: int) -> bool:
     return (
         db.execute(
@@ -178,6 +191,7 @@ def has_runs(db: Session, prompt_set_id: int) -> bool:
     )
 
 
+# 判断提示词是否已被查询任务引用
 def has_query_tasks(db: Session, prompt_id: int) -> bool:
     return (
         db.execute(

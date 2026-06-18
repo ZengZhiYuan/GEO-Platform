@@ -20,6 +20,7 @@ from app.geo_monitoring.services.runs import RUN_TERMINAL_STATUSES, get_run
 router = APIRouter()
 
 
+# 将平台分析 ORM 行序列化为 API 响应字段
 def _platform_analysis_payload(row: PlatformAnalysis) -> dict:
     return {
         "platform_code": row.platform_code,
@@ -39,6 +40,7 @@ def _platform_analysis_payload(row: PlatformAnalysis) -> dict:
     }
 
 
+# 将 Agent 执行审计 ORM 行序列化为 API 响应字段
 def _agent_execution_payload(row: AgentExecution) -> dict:
     return {
         "id": row.id,
@@ -60,11 +62,13 @@ def _agent_execution_payload(row: AgentExecution) -> dict:
 
 
 @router.post("/runs/{run_id}/analyze", summary="手工触发或重跑分析")
+# 手工触发或重跑指定运行的 Agent 分析
 def trigger_run_analysis(
     run_id: int = Path(..., ge=1),
     db: Session = Depends(get_db),
 ) -> dict:
     run = get_run(db, run_id)
+    # 采集未完成时拒绝分析
     if run.status not in RUN_TERMINAL_STATUSES:
         from app.core.exceptions import BusinessException
 
@@ -77,6 +81,7 @@ def trigger_run_analysis(
     run.analysis_status = "running"
     db.commit()
 
+    # 同步执行分析流水线
     llm_client = create_agent_llm_client(build_agent_llm_config())
     result = run_analysis(db, run_id, llm_client=llm_client)
     db.refresh(run)
@@ -90,6 +95,7 @@ def trigger_run_analysis(
 
 
 @router.get("/runs/{run_id}/analysis", summary="获取运行平台指标与洞察")
+# 获取运行各平台的确定性指标与 Agent 洞察
 def get_run_analysis(
     run_id: int = Path(..., ge=1),
     db: Session = Depends(get_db),
@@ -115,6 +121,7 @@ def get_run_analysis(
 
 
 @router.get("/runs/{run_id}/agent-executions", summary="分页查询 Agent 执行审计")
+# 分页查询运行的 Agent 执行审计记录
 def list_agent_executions(
     run_id: int = Path(..., ge=1),
     page: int = Query(1, ge=1),

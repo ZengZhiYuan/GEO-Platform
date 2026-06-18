@@ -19,6 +19,7 @@ from app.geo_monitoring.services import runs as run_service
 router = APIRouter()
 
 
+# 查询子任务分页响应的共用逻辑
 def _list_query_tasks(
     db: Session,
     *,
@@ -41,6 +42,7 @@ def _list_query_tasks(
 
 
 @router.get("/runs", summary="分页查询监测运行")
+# 分页查询监测运行，支持按项目、状态与时间范围筛选
 def list_runs(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
@@ -64,24 +66,28 @@ def list_runs(
 
 
 @router.post("/runs", summary="创建监测运行")
+# 创建新的监测运行并生成查询子任务
 def create_run(payload: RunCreate, db: Session = Depends(get_db)) -> dict:
     run = run_service.create_run(db, payload)
     return success(MonitorRunOut.model_validate(run).model_dump(mode="json"))
 
 
 @router.get("/runs/{run_id}", summary="获取监测运行详情")
+# 获取监测运行详情及汇总统计
 def get_run(run_id: int = Path(..., ge=1), db: Session = Depends(get_db)) -> dict:
     run = run_service.get_run_detail(db, run_id)
     return success(run.model_dump(mode="json"))
 
 
 @router.post("/runs/{run_id}/cancel", summary="取消监测运行")
+# 取消进行中的监测运行
 def cancel_run(run_id: int = Path(..., ge=1), db: Session = Depends(get_db)) -> dict:
     run = run_service.cancel_run(db, run_id)
     return success(MonitorRunOut.model_validate(run).model_dump(mode="json"))
 
 
 @router.post("/runs/{run_id}/retry-failed", summary="重试失败任务")
+# 重试运行中失败的查询子任务
 def retry_failed(run_id: int = Path(..., ge=1), db: Session = Depends(get_db)) -> dict:
     run, retried_count = run_service.retry_failed_tasks(db, run_id)
     payload = MonitorRunOut.model_validate(run).model_dump(mode="json")
@@ -90,6 +96,7 @@ def retry_failed(run_id: int = Path(..., ge=1), db: Session = Depends(get_db)) -
 
 
 @router.get("/runs/{run_id}/query-tasks", summary="分页查询运行任务")
+# 分页查询运行下的查询子任务
 def list_query_tasks(
     run_id: int = Path(..., ge=1),
     page: int = Query(1, ge=1),
@@ -109,6 +116,7 @@ def list_query_tasks(
 
 
 @router.get("/runs/{run_id}/tasks", summary="分页查询运行任务（别名）")
+# 查询子任务分页接口的别名路由
 def list_tasks(
     run_id: int = Path(..., ge=1),
     page: int = Query(1, ge=1),

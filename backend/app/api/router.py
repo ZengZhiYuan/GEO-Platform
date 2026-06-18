@@ -10,6 +10,7 @@ from app.geo_monitoring.api import legacy_router, router as geo_monitoring_route
 api_router = APIRouter()
 
 
+# 全局健康检查：确认 API 进程存活
 @api_router.get("/health", summary="健康检查")
 async def health() -> dict:
     return success(
@@ -21,6 +22,7 @@ async def health() -> dict:
     )
 
 
+# 全局就绪检查：探测数据库与 Redis 是否可用
 @api_router.get("/ready", summary="就绪检查")
 async def ready() -> dict:
     return success(check_readiness())

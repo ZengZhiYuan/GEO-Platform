@@ -9,6 +9,7 @@ from dramatiq.brokers.stub import StubBroker
 from app.core.config import settings
 
 
+# 根据配置创建 Dramatiq 消息代理（Redis 或内存 Stub）。
 def create_broker() -> dramatiq.Broker:
     if settings.DRAMATIQ_BROKER == "stub":
         broker = StubBroker()

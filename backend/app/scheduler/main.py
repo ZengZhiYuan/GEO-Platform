@@ -20,6 +20,7 @@ from app.scheduler import jobs as scheduler_jobs
 logger = logging.getLogger(__name__)
 
 
+# 配置调度进程的基础日志格式与级别。
 def _configure_logging() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -27,10 +28,12 @@ def _configure_logging() -> None:
     )
 
 
+# 创建阻塞式调度器并注册监测计划同步轮询任务。
 def create_scheduler(session_factory: sessionmaker | None = None) -> BlockingScheduler:
     factory = session_factory or SessionLocal
     scheduler = BlockingScheduler(timezone=settings.SCHEDULER_TIMEZONE)
 
+    # 周期性从数据库同步启用的 cron 调度任务
     def sync_job() -> None:
         scheduler_jobs.sync_schedules(scheduler, factory)
 
@@ -43,10 +46,11 @@ def create_scheduler(session_factory: sessionmaker | None = None) -> BlockingSch
         max_instances=1,
         coalesce=True,
     )
-    sync_job()
+    sync_job()  # 启动时立即同步一次
     return scheduler
 
 
+# 调度进程主入口：校验开关、注册信号处理并启动调度器。
 def main() -> int:
     if not settings.SCHEDULER_ENABLED:
         logger.error("SCHEDULER_ENABLED=false，拒绝启动调度进程")
@@ -56,6 +60,7 @@ def main() -> int:
     scheduler = create_scheduler()
     stop_requested = False
 
+    # 捕获 SIGINT/SIGTERM 以优雅停止调度器
     def _handle_stop(signum, frame) -> None:  # noqa: ARG001
         nonlocal stop_requested
         stop_requested = True

@@ -20,6 +20,7 @@ class ErrorCategory(StrEnum):
 REDACTED = "[REDACTED]"
 
 
+# 将 HTTP 状态码与错误消息映射为统一错误分类
 def classify_http_status(status_code: int, *, message: str = "") -> ErrorCategory:
     normalized = message.lower()
     if "content safety" in normalized or "content policy" in normalized:
@@ -35,6 +36,7 @@ def classify_http_status(status_code: int, *, message: str = "") -> ErrorCategor
     return ErrorCategory.UNKNOWN
 
 
+# 判断该错误类别是否适合自动重试
 def is_retryable(category: ErrorCategory) -> bool:
     return category in {
         ErrorCategory.RATE_LIMITED,
@@ -43,6 +45,7 @@ def is_retryable(category: ErrorCategory) -> bool:
     }
 
 
+# 从错误消息中替换敏感密钥为占位符
 def sanitize_message(message: str, secrets: Iterable[str] = ()) -> str:
     sanitized = message
     for secret in secrets:
@@ -54,6 +57,7 @@ def sanitize_message(message: str, secrets: Iterable[str] = ()) -> str:
 class AdapterError(Exception):
     """适配器统一异常，消息中不得包含明文密钥。"""
 
+    # 构造带分类与脱敏消息的适配器异常
     def __init__(
         self,
         message: str,
@@ -69,11 +73,13 @@ class AdapterError(Exception):
         self._secrets = tuple(secrets)
         super().__init__(sanitize_message(message, self._secrets))
 
+    # 返回已脱敏的异常消息文本
     def sanitized_message(self) -> str:
         return str(self)
 
 
 class NoAvailableCredentialError(AdapterError):
+    # 平台无可用凭证时抛出
     def __init__(self, *, platform_code: str, request_id: str | None = None) -> None:
         suffix = f" request_id={request_id}" if request_id else ""
         super().__init__(
@@ -85,6 +91,7 @@ class NoAvailableCredentialError(AdapterError):
 
 
 class PlatformDisabledError(AdapterError):
+    # 平台被禁用时抛出
     def __init__(self, *, platform_code: str) -> None:
         super().__init__(
             f"platform disabled: {platform_code}",
@@ -94,6 +101,7 @@ class PlatformDisabledError(AdapterError):
 
 
 class PlatformNotRegisteredError(AdapterError):
+    # 平台适配器未注册时抛出
     def __init__(self, *, platform_code: str) -> None:
         super().__init__(
             f"platform adapter not registered: {platform_code}",
@@ -102,6 +110,7 @@ class PlatformNotRegisteredError(AdapterError):
         self.platform_code = platform_code
 
 
+# 记录脱敏后的适配器调用/失败事件
 def log_adapter_event(
     logger: logging.Logger,
     *,

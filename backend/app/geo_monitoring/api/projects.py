@@ -17,6 +17,7 @@ router = APIRouter()
 
 
 @router.get("/projects", summary="分页查询监测项目")
+# 分页查询监测项目列表
 def list_projects(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
@@ -36,12 +37,14 @@ def list_projects(
 
 
 @router.post("/projects", summary="创建监测项目")
+# 创建新的监测项目
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db)) -> dict:
     project = project_service.create_project(db, payload)
     return success(ProjectOut.model_validate(project).model_dump(mode="json"))
 
 
 @router.get("/projects/{project_id}", summary="获取监测项目")
+# 按 ID 获取监测项目详情
 def get_project(
     project_id: int = Path(..., ge=1), db: Session = Depends(get_db)
 ) -> dict:
@@ -50,6 +53,7 @@ def get_project(
 
 
 @router.put("/projects/{project_id}", summary="更新监测项目")
+# 更新监测项目信息
 def update_project(
     payload: ProjectUpdate,
     project_id: int = Path(..., ge=1),
@@ -60,6 +64,7 @@ def update_project(
 
 
 @router.delete("/projects/{project_id}", summary="删除监测项目")
+# 软删除指定监测项目
 def delete_project(
     project_id: int = Path(..., ge=1), db: Session = Depends(get_db)
 ) -> dict:

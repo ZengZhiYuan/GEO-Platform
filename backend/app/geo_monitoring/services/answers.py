@@ -10,6 +10,7 @@ from app.geo_monitoring.repositories import runs as run_repo
 from app.geo_monitoring.schemas import AnswerCreate, AnswerDetailRead
 
 
+# 按 ID 查询答案，不存在则抛业务异常
 def get_answer(db: Session, answer_id: int) -> Answer:
     answer = answer_repo.get_by_id(db, answer_id)
     if answer is None:
@@ -17,10 +18,12 @@ def get_answer(db: Session, answer_id: int) -> Answer:
     return answer
 
 
+# 获取答案详情 DTO
 def get_answer_detail(db: Session, answer_id: int) -> AnswerDetailRead:
     return AnswerDetailRead.model_validate(get_answer(db, answer_id))
 
 
+# 分页列出某次运行下的答案
 def list_run_answers(
     db: Session,
     *,
@@ -35,6 +38,7 @@ def list_run_answers(
     )
 
 
+# 创建答案记录，同一任务幂等返回已有答案
 def create_answer(db: Session, payload: AnswerCreate) -> Answer:
     existing = answer_repo.get_by_task_id(db, payload.task_id)
     if existing is not None:
@@ -45,6 +49,7 @@ def create_answer(db: Session, payload: AnswerCreate) -> Answer:
         answer_repo.add(db, answer)
         db.commit()
     except IntegrityError:
+        # 并发写入冲突时回滚并尝试返回已存在记录
         db.rollback()
         existing = answer_repo.get_by_task_id(db, payload.task_id)
         if existing is not None:

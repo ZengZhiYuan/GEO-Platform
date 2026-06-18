@@ -21,10 +21,12 @@ logger = logging.getLogger(__name__)
 JOB_ID_PREFIX = "monitor_schedule:"
 
 
+# 根据调度 ID 生成 APScheduler 任务唯一标识。
 def build_job_id(schedule_id: int) -> str:
     return f"{JOB_ID_PREFIX}{schedule_id}"
 
 
+# 将错过触发策略映射为 APScheduler 的 misfire 参数。
 def build_misfire_kwargs(misfire_policy: str) -> dict:
     if misfire_policy == "ignore":
         return {
@@ -39,6 +41,7 @@ def build_misfire_kwargs(misfire_policy: str) -> dict:
     }
 
 
+# 在计划触发时刻执行一次监测运行创建。
 def execute_schedule_fire(
     schedule_id: int,
     *,
@@ -55,6 +58,7 @@ def execute_schedule_fire(
         return schedule_service.fire_schedule(db, schedule_id, aligned)
 
 
+# 将数据库中启用的监测计划同步到 APScheduler 任务列表。
 def sync_schedules(
     scheduler: BaseScheduler,
     session_factory: sessionmaker,
@@ -72,6 +76,7 @@ def sync_schedules(
         )
         enabled_ids = {schedule.id for schedule in enabled_schedules}
 
+    # 移除数据库中已禁用或删除的调度任务
     for job in scheduler.get_jobs():
         if not job.id.startswith(JOB_ID_PREFIX):
             continue
@@ -79,6 +84,7 @@ def sync_schedules(
         if schedule_id not in enabled_ids:
             scheduler.remove_job(job.id)
 
+    # 为每个启用的计划注册或更新 cron 触发器
     for schedule in enabled_schedules:
         tz = schedule_service.get_zoneinfo(schedule.timezone)
         trigger = CronTrigger.from_crontab(schedule.cron_expr, timezone=tz)
@@ -91,10 +97,12 @@ def sync_schedules(
         )
 
 
+# 构建调度触发时调用的闭包，绑定会话工厂与计划 ID。
 def _build_fire_callable(
     session_factory: sessionmaker,
     schedule_id: int,
 ) -> Callable[[], object]:
+    # APScheduler 实际执行的触发回调
     def _fire() -> object:
         return execute_schedule_fire(
             schedule_id,

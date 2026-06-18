@@ -80,6 +80,7 @@ REPAIR_USER_TEMPLATE = (
 )
 
 
+# 按模板键获取 Prompt 模板定义
 def get_prompt_template(template_key: str) -> PromptTemplate:
     try:
         return PROMPT_TEMPLATES[template_key]
