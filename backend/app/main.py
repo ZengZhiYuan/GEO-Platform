@@ -1,4 +1,4 @@
-"""实朴GEO 后端入口。
+"""后端入口。
 
 启动：
     uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
