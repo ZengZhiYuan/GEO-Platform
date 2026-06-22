@@ -349,6 +349,44 @@ def test_metric_snapshots_include_single_recommendation_combined_rate_per_platfo
         assert len(rows) == 1
 
 
+def test_metric_snapshot_upsert_revives_soft_deleted_row(session_factory):
+    llm = FakeLLMClient()
+    with session_factory() as db:
+        seeded = _seed_run(db, platforms=("qwen",))
+
+    with session_factory() as db:
+        first = run_analysis(db, seeded["run_id"], llm_client=llm)
+        assert first["analysis_status"] == "completed"
+
+    with session_factory() as db:
+        row = db.execute(
+            select(MetricSnapshot).where(
+                MetricSnapshot.run_id == seeded["run_id"],
+                MetricSnapshot.metric_code == "recommendation_combined_rate",
+                MetricSnapshot.platform_code == "qwen",
+                MetricSnapshot.is_deleted.is_(False),
+            )
+        ).scalar_one()
+        row.is_deleted = True
+        row.deleted_at = datetime.now(timezone.utc)
+        db.commit()
+
+    with session_factory() as db:
+        second = run_analysis(db, seeded["run_id"], llm_client=llm)
+        assert second["analysis_status"] == "completed"
+
+    with session_factory() as db:
+        rows = db.execute(
+            select(MetricSnapshot).where(
+                MetricSnapshot.run_id == seeded["run_id"],
+                MetricSnapshot.metric_code == "recommendation_combined_rate",
+                MetricSnapshot.platform_code == "qwen",
+                MetricSnapshot.is_deleted.is_(False),
+            )
+        ).scalars().all()
+        assert len(rows) == 1
+
+
 def test_rerun_is_idempotent_and_preserves_execution_history(session_factory):
     llm = FakeLLMClient()
     with session_factory() as db:

@@ -27,6 +27,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, Session, mapped_column, selectinload
 
 from app.core.config import Settings, settings as default_settings
+from app.core.exceptions import BusinessException
 from app.geo_monitoring.agents.llm import AgentLLMClient, AgentLLMConfig, create_agent_llm_client
 from app.geo_monitoring.models import (
     Answer,
@@ -36,6 +37,7 @@ from app.geo_monitoring.models import (
     MonitorRun,
     QueryTask,
 )
+from app.geo_monitoring.services.runs import RUN_TERMINAL_STATUSES
 
 if False:  # type checking only
     from app.geo_monitoring.agents.graph import AnalysisState
@@ -411,6 +413,38 @@ def load_run_context(db: Session, run_id: int) -> dict[str, Any]:
         "prompt_set_version": run.prompt_set_version,
         "answers": answers,
     }
+
+
+def begin_run_analysis(db: Session, run_id: int) -> MonitorRun:
+    """加锁认领运行分析，防止并发重复触发。"""
+    run = db.execute(
+        select(MonitorRun)
+        .where(
+            MonitorRun.id == run_id,
+            MonitorRun.is_deleted.is_(False),
+        )
+        .with_for_update()
+    ).scalar_one_or_none()
+    if run is None:
+        raise BusinessException(message="监测运行不存在", code=40400)
+
+    if run.status not in RUN_TERMINAL_STATUSES:
+        raise BusinessException(
+            message="采集尚未完成，暂不可分析",
+            code=40910,
+            status_code=409,
+        )
+
+    if run.analysis_status == "running":
+        raise BusinessException(
+            message="分析正在进行中，请勿重复触发",
+            code=40911,
+            status_code=409,
+        )
+
+    run.analysis_status = "running"
+    db.commit()
+    return run
 
 
 def run_analysis(

@@ -776,6 +776,67 @@ def _upsert_prompt_competitiveness(
                 setattr(existing, key, value)
 
 
+# 按维度查找指标快照（含软删行，避免唯一索引冲突）
+def _find_metric_snapshot_for_upsert(
+    db: Session,
+    *,
+    project_id: int,
+    run_id: int,
+    metric_code: str,
+    platform_code: str,
+    prompt_id: int | None,
+) -> MetricSnapshot | None:
+    conditions = [
+        MetricSnapshot.project_id == project_id,
+        MetricSnapshot.run_id == run_id,
+        MetricSnapshot.metric_code == metric_code,
+        MetricSnapshot.platform_code == platform_code,
+    ]
+    if prompt_id is None:
+        conditions.append(MetricSnapshot.prompt_id.is_(None))
+    else:
+        conditions.append(MetricSnapshot.prompt_id == prompt_id)
+
+    active = db.execute(
+        select(MetricSnapshot).where(*conditions, MetricSnapshot.is_deleted.is_(False))
+    ).scalar_one_or_none()
+    if active is not None:
+        return active
+
+    return db.execute(
+        select(MetricSnapshot).where(*conditions, MetricSnapshot.is_deleted.is_(True))
+    ).scalar_one_or_none()
+
+
+# 写入或更新单条指标快照
+def _save_metric_snapshot(
+    db: Session,
+    *,
+    project_id: int,
+    run_id: int,
+    platform_code: str,
+    prompt_id: int | None,
+    metric_code: str,
+    payload: dict[str, Any],
+) -> None:
+    existing = _find_metric_snapshot_for_upsert(
+        db,
+        project_id=project_id,
+        run_id=run_id,
+        metric_code=metric_code,
+        platform_code=platform_code,
+        prompt_id=prompt_id,
+    )
+    if existing is None:
+        db.add(MetricSnapshot(**payload))
+        return
+
+    for key, value in payload.items():
+        setattr(existing, key, value)
+    existing.is_deleted = False
+    existing.deleted_at = None
+
+
 # 插入或更新平台级与推荐率指标快照
 def _upsert_metric_snapshots(
     db: Session,
@@ -791,16 +852,6 @@ def _upsert_metric_snapshots(
         "source_coverage": metrics.source_coverage,
     }
     for metric_code, metric in metric_rows.items():
-        existing = db.execute(
-            select(MetricSnapshot).where(
-                MetricSnapshot.project_id == project_id,
-                MetricSnapshot.run_id == run_id,
-                MetricSnapshot.metric_code == metric_code,
-                MetricSnapshot.platform_code == metrics.platform_code,
-                MetricSnapshot.prompt_id.is_(None),
-                MetricSnapshot.is_deleted.is_(False),
-            )
-        ).scalar_one_or_none()
         payload = {
             "project_id": project_id,
             "run_id": run_id,
@@ -815,23 +866,17 @@ def _upsert_metric_snapshots(
             "is_comparable": True,
             "completeness_rate": _decimal(metrics.brand_visibility.rate),
         }
-        if existing is None:
-            db.add(MetricSnapshot(**payload))
-        else:
-            for key, value in payload.items():
-                setattr(existing, key, value)
+        _save_metric_snapshot(
+            db,
+            project_id=project_id,
+            run_id=run_id,
+            platform_code=metrics.platform_code,
+            prompt_id=None,
+            metric_code=metric_code,
+            payload=payload,
+        )
 
     recommendation = metrics.recommendation
-    existing = db.execute(
-        select(MetricSnapshot).where(
-            MetricSnapshot.project_id == project_id,
-            MetricSnapshot.run_id == run_id,
-            MetricSnapshot.metric_code == "recommendation_combined_rate",
-            MetricSnapshot.platform_code == metrics.platform_code,
-            MetricSnapshot.prompt_id.is_(None),
-            MetricSnapshot.is_deleted.is_(False),
-        )
-    ).scalar_one_or_none()
     payload = {
         "project_id": project_id,
         "run_id": run_id,
@@ -846,8 +891,12 @@ def _upsert_metric_snapshots(
         "is_comparable": True,
         "completeness_rate": _decimal(metrics.brand_visibility.rate),
     }
-    if existing is None:
-        db.add(MetricSnapshot(**payload))
-    else:
-        for key, value in payload.items():
-            setattr(existing, key, value)
+    _save_metric_snapshot(
+        db,
+        project_id=project_id,
+        run_id=run_id,
+        platform_code=metrics.platform_code,
+        prompt_id=None,
+        metric_code="recommendation_combined_rate",
+        payload=payload,
+    )

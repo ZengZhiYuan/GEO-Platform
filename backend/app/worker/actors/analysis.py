@@ -12,9 +12,14 @@ import dramatiq
 
 from app.core.config import settings
 from app.core.database import SessionLocal
+from app.core.exceptions import BusinessException
 from app.geo_monitoring.agents.llm import create_agent_llm_client
 from app.geo_monitoring.models import MonitorRun, QueryTask
-from app.geo_monitoring.services.analysis import build_agent_llm_config, run_analysis
+from app.geo_monitoring.services.analysis import (
+    begin_run_analysis,
+    build_agent_llm_config,
+    run_analysis,
+)
 from app.geo_monitoring.services.runs import RUN_TERMINAL_STATUSES
 from app.worker import broker as _broker  # noqa: F401
 
@@ -104,8 +109,13 @@ def analyze_run(run_id: int) -> None:
         if run is None:
             return
 
-        run.analysis_status = "running"
-        db.commit()
+        try:
+            begin_run_analysis(db, run_id)
+        except BusinessException as exc:
+            if exc.code == 40911:
+                logger.info("analysis already running run_id=%s", run_id)
+                return
+            raise
 
         # 调用 LangGraph 分析流水线
         llm_client = create_agent_llm_client(build_agent_llm_config(settings))
