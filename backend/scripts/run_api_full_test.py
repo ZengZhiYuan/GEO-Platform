@@ -52,6 +52,7 @@ class TestContext:
     disabled_project_id: int | None = None
     empty_prompt_set_id: int | None = None
     platform_codes: list[str] = field(default_factory=list)
+    core_keyword_id: int | None = None
 
 
 def record(
@@ -132,6 +133,31 @@ def json_msg(body: Any) -> str:
     if isinstance(body, dict):
         return str(body.get("message", ""))
     return ""
+
+
+def ensure_enabled_platform_codes(client: httpx.Client, ctx: TestContext) -> list[str]:
+    """确保至少有一个已启用平台，供监测设置与创建运行使用。"""
+    status, body, _, _ = req(
+        client, "GET", f"{GEO}/platforms", params={"page": 1, "page_size": 20, "enabled": True}
+    )
+    items = (json_data(body) or {}).get("items", []) if status == 200 else []
+    codes = [p["platform_code"] for p in items if p.get("enabled")]
+    if not codes:
+        status, body, _, _ = req(
+            client, "GET", f"{GEO}/platforms", params={"page": 1, "page_size": 20}
+        )
+        all_items = (json_data(body) or {}).get("items", [])
+        for code in ("qwen", "deepseek", "doubao", "kimi", "yuanbao"):
+            if any(p["platform_code"] == code for p in all_items):
+                req(client, "PUT", f"{GEO}/platforms/{code}", json_body={"enabled": True})
+                codes.append(code)
+                break
+        if not codes and all_items:
+            code = all_items[0]["platform_code"]
+            req(client, "PUT", f"{GEO}/platforms/{code}", json_body={"enabled": True})
+            codes = [code]
+    ctx.platform_codes = codes[:2] if len(codes) >= 2 else codes
+    return ctx.platform_codes
 
 
 def assert_json_ok(
@@ -297,7 +323,7 @@ def test_brands(client: httpx.Client, ctx: TestContext) -> None:
     pid = ctx.project_id
 
     for brand_type, key in [("target", "target_brand_id"), ("competitor", "competitor_brand_id")]:
-        name = "实朴检测" if brand_type == "target" else "竞品A"
+        name = "杭州宋城" if brand_type == "target" else "竞品A"
         status, body, elapsed, _ = req(
             client,
             "POST",
@@ -316,7 +342,7 @@ def test_brands(client: httpx.Client, ctx: TestContext) -> None:
         client,
         "POST",
         f"{GEO}/projects/{pid}/brands",
-        json_body={"brand_name": "实朴检测", "brand_type": "competitor"},
+        json_body={"brand_name": "杭州宋城", "brand_type": "competitor"},
     )
     assert_json_fail(ctx, section=section, name="5.2 重复品牌名", method="POST", url=f"{GEO}/projects/{{id}}/brands", params="同名品牌", status=status, body=body, elapsed=elapsed, expected_code=40012)
 
@@ -348,17 +374,17 @@ def test_brands(client: httpx.Client, ctx: TestContext) -> None:
             client,
             "POST",
             f"{GEO}/brands/{brand_id}/aliases",
-            json_body={"alias_name": "实朴", "match_mode": "contains", "context_keywords": ["文旅"]},
+            json_body={"alias_name": "宋城", "match_mode": "contains", "context_keywords": ["文旅"]},
         )
         alias_data = json_data(body) or {}
-        if assert_json_ok(ctx, section=section, name="5.3 创建品牌别名", method="POST", url=f"{GEO}/brands/{{id}}/aliases", params="alias_name=实朴", status=status, body=body, elapsed=elapsed):
+        if assert_json_ok(ctx, section=section, name="5.3 创建品牌别名", method="POST", url=f"{GEO}/brands/{{id}}/aliases", params="alias_name=宋城", status=status, body=body, elapsed=elapsed):
             ctx.alias_id = alias_data.get("id")
 
         status, body, elapsed, _ = req(
             client,
             "POST",
             f"{GEO}/brands/{brand_id}/aliases",
-            json_body={"alias_name": "实朴"},
+            json_body={"alias_name": "宋城"},
         )
         assert_json_fail(ctx, section=section, name="5.3 重复别名", method="POST", url=f"{GEO}/brands/{{id}}/aliases", params="重复alias", status=status, body=body, elapsed=elapsed, expected_code=40011)
 
@@ -471,13 +497,243 @@ def test_prompts(client: httpx.Client, ctx: TestContext) -> None:
         assert_json_fail(ctx, section=section, name="6.3 非草稿修改提示词集", method="PUT", url=f"{GEO}/prompt-sets/{{id}}", params="已激活", status=status, body=body, elapsed=elapsed, expected_code=40020)
 
 
+def test_monitor_setup(client: httpx.Client, ctx: TestContext) -> None:
+    if not ctx.project_id:
+        return
+    section = "5.4 核心词、Prompt 词库与监测设置"
+    pid = ctx.project_id
+    platform_codes = ensure_enabled_platform_codes(client, ctx)
+
+    status, body, elapsed, _ = req(
+        client, "GET", f"{GEO}/prompt-library", params={"page": 1, "page_size": 20}
+    )
+    assert_json_ok(
+        ctx,
+        section=section,
+        name="5.4 分页查询 Prompt 词库",
+        method="GET",
+        url=f"{GEO}/prompt-library",
+        params="page=1",
+        status=status,
+        body=body,
+        elapsed=elapsed,
+    )
+
+    status, body, elapsed, _ = req(
+        client,
+        "POST",
+        f"{GEO}/projects/{pid}/core-keywords",
+        json_body={"keyword": "文旅演艺", "sort_order": 1, "description": "API全量测试核心词"},
+    )
+    ck_data = json_data(body) or {}
+    if assert_json_ok(
+        ctx,
+        section=section,
+        name="5.4 创建核心词",
+        method="POST",
+        url=f"{GEO}/projects/{{id}}/core-keywords",
+        params="keyword=文旅演艺",
+        status=status,
+        body=body,
+        elapsed=elapsed,
+    ):
+        ctx.core_keyword_id = ck_data.get("id")
+
+    status, body, elapsed, _ = req(client, "GET", f"{GEO}/projects/{pid}/core-keywords")
+    assert_json_ok(
+        ctx,
+        section=section,
+        name="5.4 分页查询核心词",
+        method="GET",
+        url=f"{GEO}/projects/{{id}}/core-keywords",
+        params="",
+        status=status,
+        body=body,
+        elapsed=elapsed,
+    )
+
+    status, body, elapsed, _ = req(
+        client,
+        "POST",
+        f"{GEO}/projects/{pid}/core-keywords",
+        json_body={"keyword": "文旅演艺"},
+    )
+    assert_json_fail(
+        ctx,
+        section=section,
+        name="5.4 重复核心词",
+        method="POST",
+        url=f"{GEO}/projects/{{id}}/core-keywords",
+        params="重复keyword",
+        status=status,
+        body=body,
+        elapsed=elapsed,
+        expected_code=40024,
+    )
+
+    if ctx.core_keyword_id:
+        status, body, elapsed, _ = req(
+            client,
+            "PUT",
+            f"{GEO}/core-keywords/{ctx.core_keyword_id}",
+            json_body={"description": "更新后的核心词说明"},
+        )
+        assert_json_ok(
+            ctx,
+            section=section,
+            name="5.4 更新核心词",
+            method="PUT",
+            url=f"{GEO}/core-keywords/{{id}}",
+            params="description",
+            status=status,
+            body=body,
+            elapsed=elapsed,
+        )
+
+    status, body, elapsed, _ = req(client, "GET", f"{GEO}/projects/{pid}/monitor-setup")
+    assert_json_ok(
+        ctx,
+        section=section,
+        name="5.4 获取监测设置",
+        method="GET",
+        url=f"{GEO}/projects/{{id}}/monitor-setup",
+        params="",
+        status=status,
+        body=body,
+        elapsed=elapsed,
+    )
+
+    setup_payload = {
+        "brand": {
+            "brand_name": "杭州宋城",
+            "official_domain": "https://www.sepchina.com",
+            "description": "API全量测试-目标品牌",
+            "brand_words": ["宋城", "SEP"],
+        },
+        "competitors": [
+            {"brand_name": "竞品A", "competitor_words": ["竞品A", "CompA"]},
+        ],
+        "core_keywords": [
+            {"keyword": "文旅演艺", "sort_order": 1},
+            {"keyword": "环境检测", "sort_order": 2},
+        ],
+        "ai_questions": [
+            {
+                "core_keyword": "文旅演艺",
+                "prompt_text": "推荐国内有哪些值得看的文旅演艺项目？",
+            },
+            {
+                "library_prompt_code": "LIB_RECOMMEND_001",
+                "core_keyword": "文旅演艺",
+            },
+        ],
+        "selected_platform_codes": platform_codes,
+        "activate_prompt_set": True,
+    }
+    status, body, elapsed, _ = req(
+        client,
+        "PUT",
+        f"{GEO}/projects/{pid}/monitor-setup",
+        json_body=setup_payload,
+    )
+    setup_data = json_data(body) or {}
+    if assert_json_ok(
+        ctx,
+        section=section,
+        name="5.4 保存监测设置",
+        method="PUT",
+        url=f"{GEO}/projects/{{id}}/monitor-setup",
+        params="brand+competitors+questions+platforms",
+        status=status,
+        body=body,
+        elapsed=elapsed,
+    ):
+        brand = setup_data.get("brand") or {}
+        if brand.get("brand_name") != "杭州宋城":
+            record(
+                ctx,
+                section=section,
+                name="5.4 保存后品牌名校验",
+                method="PUT",
+                url="",
+                params="",
+                expected="brand_name=杭州宋城",
+                passed=False,
+                http_status=status,
+                response_code=json_code(body),
+                message="brand_name mismatch",
+            )
+        if setup_data.get("active_prompt_set_id") is None:
+            record(
+                ctx,
+                section=section,
+                name="5.4 保存后激活提示词集校验",
+                method="PUT",
+                url="",
+                params="",
+                expected="active_prompt_set_id not null",
+                passed=False,
+                http_status=status,
+                response_code=json_code(body),
+                message="prompt set not activated",
+            )
+        if len(setup_data.get("ai_questions") or []) < 2:
+            record(
+                ctx,
+                section=section,
+                name="5.4 保存后 AI 问题数量校验",
+                method="PUT",
+                url="",
+                params="",
+                expected=">=2 ai_questions",
+                passed=False,
+                http_status=status,
+                response_code=json_code(body),
+                message="ai_questions count insufficient",
+            )
+
+    status, body, elapsed, _ = req(client, "GET", f"{GEO}/projects/{pid}/monitor-setup")
+    assert_json_ok(
+        ctx,
+        section=section,
+        name="5.4 保存后再次获取监测设置",
+        method="GET",
+        url=f"{GEO}/projects/{{id}}/monitor-setup",
+        params="",
+        status=status,
+        body=body,
+        elapsed=elapsed,
+    )
+
+    status, body, elapsed, _ = req(
+        client,
+        "PUT",
+        f"{GEO}/projects/{pid}/monitor-setup",
+        json_body={
+            "brand": {"brand_name": "杭州宋城", "brand_words": ["宋城"]},
+            "selected_platform_codes": ["invalid_platform_code"],
+        },
+    )
+    assert_json_fail(
+        ctx,
+        section=section,
+        name="5.4 非法平台编码",
+        method="PUT",
+        url=f"{GEO}/projects/{{id}}/monitor-setup",
+        params="invalid platform",
+        status=status,
+        body=body,
+        elapsed=elapsed,
+        expected_code=40025,
+    )
+
+
 def test_platforms(client: httpx.Client, ctx: TestContext) -> None:
     section = "7. AI 平台模块"
     status, body, elapsed, _ = req(client, "GET", f"{GEO}/platforms", params={"page": 1, "page_size": 20})
     assert_json_ok(ctx, section=section, name="7.2 分页查询AI平台", method="GET", url=f"{GEO}/platforms", params="page=1", status=status, body=body, elapsed=elapsed)
     items = (json_data(body) or {}).get("items", []) if isinstance(json_data(body), dict) else []
-    enabled = [p["platform_code"] for p in items if p.get("enabled")]
-    ctx.platform_codes = enabled[:2] if enabled else ["doubao"]
+    ensure_enabled_platform_codes(client, ctx)
 
     if items:
         code = items[0]["platform_code"]
@@ -498,11 +754,14 @@ def test_platforms(client: httpx.Client, ctx: TestContext) -> None:
     status, body, elapsed, _ = req(client, "GET", f"{GEO}/platforms", params={"page_size": 999})
     assert_json_fail(ctx, section=section, name="7.2 page_size超限", method="GET", url=f"{GEO}/platforms", params="page_size=999", status=status, body=body, elapsed=elapsed, expected_code=422)
 
+    ensure_enabled_platform_codes(client, ctx)
+
 
 def test_runs(client: httpx.Client, ctx: TestContext) -> None:
     if not ctx.project_id:
         return
     section = "8. 监测运行与任务模块"
+    ensure_enabled_platform_codes(client, ctx)
 
     # no active prompt set scenario - use empty project
     status, body, elapsed, _ = req(
@@ -1011,7 +1270,7 @@ def generate_report(ctx: TestContext, started_at: datetime, finished_at: datetim
         [
             "## 说明",
             "",
-            "1. 正向流程按文档 §14.2 顺序执行：项目 → 品牌/别名 → 提示词集 → 平台 → 运行 → 答案 → 分析 → 看板 → 报告。",
+            "1. 正向流程按文档 §14.2 顺序执行：项目 → 品牌/别名 → 提示词集 → 平台 → 监测设置 → 运行 → 答案 → 分析 → 看板 → 报告。",
             "2. 本 API 多数业务错误返回 **HTTP 200 + 非零 code**（如 40400、40012），反向用例以响应体 `code` 为准判定。",
             "3. 运行采集依赖 Dramatiq worker 与外部 AI 平台可用性；采集等待上限为 120 秒。",
             "4. 分析与报告生成依赖 Agent LLM 配置；分析未完成时报告接口返回 40920。",
@@ -1040,6 +1299,7 @@ def main() -> int:
             test_brands(client, ctx)
             test_prompts(client, ctx)
             test_platforms(client, ctx)
+            test_monitor_setup(client, ctx)
             test_schedules(client, ctx)
             test_runs(client, ctx)
             test_answers_analysis_dashboard(client, ctx)

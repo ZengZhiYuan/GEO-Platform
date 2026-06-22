@@ -37,6 +37,7 @@ from app.geo_monitoring.models import (
     MonitorRun,
     QueryTask,
 )
+from app.geo_monitoring.services.competitor_scope import resolve_competitor_brand_ids
 from app.geo_monitoring.services.runs import RUN_TERMINAL_STATUSES
 
 if False:  # type checking only
@@ -400,13 +401,20 @@ def load_run_context(db: Session, run_id: int) -> dict[str, Any]:
         .all()
     )
 
+    resolved_competitor_ids = resolve_competitor_brand_ids(
+        brands=brands,
+        target_brand_id=target.id,
+        answers=answers,
+    )
+
     return {
         "run": run,
         "project": project,
         "target_brand_id": target.id,
         "target_brand_name": target.brand_name,
         "target_aliases": tuple(alias.alias_name for alias in aliases),
-        "competitor_brand_ids": tuple(competitor_ids),
+        "competitor_brand_ids": resolved_competitor_ids,
+        "configured_competitor_ids": tuple(competitor_ids),
         "brand_names": brand_names,
         "official_domain": project.official_domain or "",
         "platform_codes": tuple(run.platform_codes or ()),

@@ -10,88 +10,24 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.response import paginate, success
-from app.geo_monitoring.models import MonitorRun
-from app.geo_monitoring.services.analysis import MetricSnapshot, PlatformAnalysis
+from app.geo_monitoring.services.analysis import MetricSnapshot
+from app.geo_monitoring.services.dashboard import build_project_dashboard
 from app.geo_monitoring.services.projects import require_active_project
 
 router = APIRouter()
 
 
-# 将监测运行 ORM 行序列化为看板摘要字段
-def _run_summary(run: MonitorRun) -> dict:
-    return {
-        "run_id": run.id,
-        "run_no": run.run_no,
-        "status": run.status,
-        "collection_status": run.collection_status,
-        "analysis_status": run.analysis_status,
-        "valid_answer_count": run.valid_answer_count,
-        "data_completeness_rate": str(run.data_completeness_rate),
-        "completed_at": run.completed_at.isoformat() if run.completed_at else None,
-    }
-
-
-# 将平台分析 ORM 行序列化为看板展示字段
-def _platform_analysis_payload(row: PlatformAnalysis) -> dict:
-    return {
-        "platform_code": row.platform_code,
-        "status": row.status,
-        "valid_answer_count": row.valid_answer_count,
-        "brand_mention_rate": str(row.brand_mention_rate),
-        "brand_first_rate": str(row.brand_first_rate),
-        "top_competitors": row.top_competitors,
-        "top_sources": row.top_sources,
-        "summary_json": row.summary_json,
-        "improvement_json": row.improvement_json,
-    }
-
-
 @router.get("/projects/{project_id}/dashboard", summary="获取项目最新分析汇总")
-# 获取项目最近一次运行的分析汇总看板
 def get_project_dashboard(
     project_id: int = Path(..., ge=1),
+    run_id: int | None = Query(None, ge=1, description="指定运行 ID，默认取最近已分析或已采集运行"),
     db: Session = Depends(get_db),
 ) -> dict:
-    require_active_project(db, project_id)
-    # 取最近一条已进入分析阶段的运行
-    latest_run = db.execute(
-        select(MonitorRun)
-        .where(
-            MonitorRun.project_id == project_id,
-            MonitorRun.is_deleted.is_(False),
-            MonitorRun.analysis_status.in_(
-                {"completed", "partial_success", "skipped", "running", "pending"}
-            ),
-        )
-        .order_by(MonitorRun.id.desc())
-        .limit(1)
-    ).scalar_one_or_none()
-
-    platforms: list[dict] = []
-    if latest_run is not None:
-        rows = list(
-            db.execute(
-                select(PlatformAnalysis).where(
-                    PlatformAnalysis.run_id == latest_run.id,
-                    PlatformAnalysis.is_deleted.is_(False),
-                )
-            )
-            .scalars()
-            .all()
-        )
-        platforms = [_platform_analysis_payload(row) for row in rows]
-
-    return success(
-        {
-            "project_id": project_id,
-            "latest_run": _run_summary(latest_run) if latest_run else None,
-            "platforms": platforms,
-        }
-    )
+    payload = build_project_dashboard(db, project_id, run_id=run_id)
+    return success(payload)
 
 
 @router.get("/projects/{project_id}/trends", summary="按指标、平台和时间范围查询趋势")
-# 分页查询项目指标快照趋势数据
 def list_project_trends(
     project_id: int = Path(..., ge=1),
     metric_code: str = Query(..., min_length=1, max_length=100),

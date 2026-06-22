@@ -52,6 +52,9 @@ class MonitorProject(BaseModel):
     official_domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
     report_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     report_subtitle: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    default_platform_codes: Mapped[list[str]] = mapped_column(
+        JSON_VALUE, default=list, server_default=text("'[]'"), nullable=False
+    )
 
 
 # 品牌：目标品牌、竞品或候选品牌，归属监测项目。
@@ -165,6 +168,31 @@ class PromptSet(BaseModel):
     )
 
 
+# 核心词：项目级监测主题词，用于 AI 问题推荐与分组。
+class CoreKeyword(BaseModel):
+    __tablename__ = "geo_core_keyword"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "keyword", name="uq_geo_core_keyword_project_keyword"
+        ),
+        Index("ix_geo_core_keyword_project_sort", "project_id", "sort_order"),
+    )
+
+    project_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_monitor_project.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    keyword: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sort_order: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true"), nullable=False
+    )
+
+
 # Prompt：单条监测问题，归属特定 Prompt 集版本。
 class Prompt(BaseModel):
     __tablename__ = "geo_prompt"
@@ -192,6 +220,11 @@ class Prompt(BaseModel):
     contains_brand: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"), nullable=False
     )
+    core_keyword_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_core_keyword.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=text("true"), nullable=False
     )
@@ -199,6 +232,27 @@ class Prompt(BaseModel):
         Integer, default=0, server_default="0", nullable=False
     )
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+# Prompt 词库：全局可复用的 AI 问题模板，供项目设置时选取。
+class PromptLibrary(BaseModel):
+    __tablename__ = "geo_prompt_library"
+    __table_args__ = (
+        UniqueConstraint("prompt_code", name="uq_geo_prompt_library_code"),
+        Index("ix_geo_prompt_library_industry_enabled", "industry", "enabled"),
+    )
+
+    prompt_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_text: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_type: Mapped[str] = mapped_column(
+        String(50), default="generic", server_default="generic", nullable=False
+    )
+    industry: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    scene_tag: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    default_core_keyword: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true"), nullable=False
+    )
 
 
 # AI 平台：外部大模型采集端点与并发/超时配置。

@@ -36,3 +36,5 @@ Thumbs.db
 .claude/settings.local.json
 .worktrees/
 .codegraph/
+
+data/

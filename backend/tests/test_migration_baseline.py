@@ -6,11 +6,13 @@ BASELINE_NAME = "20260615_0001-ai_monitoring_baseline.py"
 COLLECTION_NAME = "20260615_0002-geo_monitoring_0002_collection.py"
 ANALYSIS_NAME = "20260615_0003-geo_monitoring_0003_analysis_metrics.py"
 SCHEDULE_REPORT_NAME = "20260615_0004-geo_monitoring_0004_schedule_report.py"
+MONITOR_SETUP_NAME = "20260622_0005-geo_monitoring_0005_monitor_setup.py"
 EXPECTED_MIGRATIONS = [
     BASELINE_NAME,
     COLLECTION_NAME,
     ANALYSIS_NAME,
     SCHEDULE_REPORT_NAME,
+    MONITOR_SETUP_NAME,
 ]
 
 
