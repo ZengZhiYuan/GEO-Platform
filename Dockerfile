@@ -3,9 +3,16 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/backend \
-    REPORT_STORAGE_DIR=/app/backend/data/reports
+    REPORT_STORAGE_DIR=/app/backend/data/reports \
+    TZ=Asia/Shanghai
 
 WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
+    && echo $TZ > /etc/timezone
 
 RUN groupadd --system appuser \
     && useradd --system --gid appuser --home-dir /app appuser

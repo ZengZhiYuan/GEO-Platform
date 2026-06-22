@@ -147,6 +147,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "ai-application-monitoring"
     APP_ENV: str = "dev"
     DEBUG: bool = Field(default=False, validation_alias="APP_DEBUG")
+    APP_TIMEZONE: str = "Asia/Shanghai"
 
     # 后端服务
     BACKEND_HOST: str = "0.0.0.0"
@@ -330,13 +331,13 @@ class Settings(BaseSettings):
             raise ValueError("value must be greater than 0")
         return value
 
-    @field_validator("SCHEDULER_TIMEZONE")
+    @field_validator("APP_TIMEZONE", "SCHEDULER_TIMEZONE")
     @classmethod
-    def validate_scheduler_timezone(cls, value: str) -> str:
+    def validate_timezone(cls, value: str) -> str:
         try:
             ZoneInfo(value)
         except ZoneInfoNotFoundError as exc:
-            raise ValueError(f"SCHEDULER_TIMEZONE is invalid: {value}") from exc
+            raise ValueError(f"timezone is invalid: {value}") from exc
         return value
 
     @field_validator("AGENT_LLM_PROVIDER")
@@ -403,6 +404,7 @@ class Settings(BaseSettings):
         return {
             "app_env": self.APP_ENV,
             "debug": self.DEBUG,
+            "timezone": self.APP_TIMEZONE,
             **self.connection_targets_summary(),
             "collection": {
                 "request_timeout_seconds": self.COLLECTION_REQUEST_TIMEOUT_SECONDS,
@@ -482,3 +484,7 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+from app.core.timezone import configure_process_timezone  # noqa: E402
+
+app_timezone = configure_process_timezone(settings.APP_TIMEZONE)
