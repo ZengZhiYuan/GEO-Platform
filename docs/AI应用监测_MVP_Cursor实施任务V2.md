@@ -44,7 +44,7 @@
 
 ```powershell
 New-Item -ItemType Directory -Force .worktrees | Out-Null
-git worktree add .worktrees/mvp-backend-integration -b feature/ai-monitoring-backend-mvp
+git worktree add .worktrees/mvp-integration -b feature/ai-monitoring-mvp
 ```
 
 ### 1.4 总体依赖与并行窗口
@@ -116,8 +116,8 @@ git log -5 --oneline
 创建并进入集成 worktree：
 
 ```powershell
-git worktree add .worktrees/mvp-backend-integration -b feature/ai-monitoring-backend-mvp
-Set-Location .worktrees/mvp-backend-integration
+git worktree add .worktrees/mvp-integration -b feature/ai-monitoring-mvp
+Set-Location .worktrees/mvp-integration
 ```
 
 ### 验证
@@ -349,7 +349,7 @@ backend/.venv/Scripts/python -m pytest backend/tests/test_api_contract.py -q
 
 ```dotenv
 APP_ENV=dev
-DEBUG=false
+APP_DEBUG=false
 DATABASE_URL=postgresql+psycopg2://<user>:<password>@<server-host>:5432/geo_platform
 REDIS_URL=redis://:<password>@<server-host>:6379/0
 
@@ -1234,7 +1234,7 @@ backend/.venv/Scripts/python -m pytest backend/tests/geo_monitoring/reports -q
 - [ ] API 参数、分页上限、报告路径和文件名均校验。
 - [ ] HTML 报告转义用户和模型内容。
 - [ ] CORS 只允许配置来源。
-- [ ] 生产环境 `DEBUG=false`，异常响应不返回堆栈。
+- [ ] 生产环境 `APP_DEBUG=false`，异常响应不返回堆栈。
 - [ ] 用测试扫描响应、日志 fixture 和数据库 raw response，不得出现测试密钥。
 
 ### 验证

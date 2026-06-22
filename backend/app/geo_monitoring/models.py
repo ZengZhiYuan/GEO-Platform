@@ -16,16 +16,18 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
 
 JSON_VALUE = JSONB().with_variant(JSON(), "sqlite")
 
 
+# 监测项目：品牌监测的配置主体，含行业与报告展示信息。
 class MonitorProject(BaseModel):
     __tablename__ = "geo_monitor_project"
     __table_args__ = (
@@ -52,6 +54,7 @@ class MonitorProject(BaseModel):
     report_subtitle: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
+# 品牌：目标品牌、竞品或候选品牌，归属监测项目。
 class Brand(BaseModel):
     __tablename__ = "geo_brand"
     __table_args__ = (
@@ -89,6 +92,7 @@ class Brand(BaseModel):
     )
 
 
+# 品牌别名：支持多种匹配模式的品牌识别变体。
 class BrandAlias(BaseModel):
     __tablename__ = "geo_brand_alias"
     __table_args__ = (
@@ -121,6 +125,7 @@ class BrandAlias(BaseModel):
     )
 
 
+# Prompt 集：版本化的问题集合，每个项目最多一个 active 版本。
 class PromptSet(BaseModel):
     __tablename__ = "geo_prompt_set"
     __table_args__ = (
@@ -160,6 +165,7 @@ class PromptSet(BaseModel):
     )
 
 
+# Prompt：单条监测问题，归属特定 Prompt 集版本。
 class Prompt(BaseModel):
     __tablename__ = "geo_prompt"
     __table_args__ = (
@@ -195,6 +201,7 @@ class Prompt(BaseModel):
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
+# AI 平台：外部大模型采集端点与并发/超时配置。
 class AIPlatform(BaseModel):
     __tablename__ = "geo_ai_platform"
     __table_args__ = (
@@ -234,6 +241,7 @@ class AIPlatform(BaseModel):
     extra_config: Mapped[dict] = mapped_column(JSON_VALUE, default=dict, nullable=False)
 
 
+# 监测运行：一次完整的采集-分析-报告执行实例及其各阶段状态。
 class MonitorRun(BaseModel):
     __tablename__ = "geo_monitor_run"
     __table_args__ = (
@@ -262,6 +270,7 @@ class MonitorRun(BaseModel):
         ),
         Index("ix_geo_monitor_run_project_created", "project_id", "created_at"),
         Index("ix_geo_monitor_run_status", "status", "created_at"),
+        Index("ix_geo_monitor_run_status_completed", "status", "completed_at"),
     )
 
     run_no: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
@@ -275,6 +284,7 @@ class MonitorRun(BaseModel):
     trigger_type: Mapped[str] = mapped_column(
         String(20), default="manual", server_default="manual", nullable=False
     )
+    triggered_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     status: Mapped[str] = mapped_column(
         String(30), default="pending", server_default="pending", nullable=False
     )
@@ -307,7 +317,23 @@ class MonitorRun(BaseModel):
     )
     result_json: Mapped[dict | None] = mapped_column(JSON_VALUE, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    total_tasks: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    succeeded_tasks: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    failed_tasks: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    cancelled_tasks: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     finished_at: Mapped[datetime | None] = mapped_column(
@@ -315,6 +341,7 @@ class MonitorRun(BaseModel):
     )
 
 
+# 查询任务：单条 Prompt 在单个平台上的采集子任务。
 class QueryTask(BaseModel):
     __tablename__ = "geo_query_task"
     __table_args__ = (
@@ -330,6 +357,7 @@ class QueryTask(BaseModel):
         Index(
             "ix_geo_query_task_platform_status", "platform_code", "status"
         ),
+        Index("ix_geo_query_task_status_queued", "status", "queued_at"),
     )
 
     run_id: Mapped[int] = mapped_column(
@@ -355,14 +383,192 @@ class QueryTask(BaseModel):
     retry_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False
     )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    max_attempts: Mapped[int] = mapped_column(
+        Integer, default=3, server_default="3", nullable=False
+    )
     request_json: Mapped[dict | None] = mapped_column(JSON_VALUE, nullable=True)
     response_http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    queued_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
     started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     finished_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    answer: Mapped["Answer | None"] = relationship(
+        "Answer",
+        back_populates="task",
+        uselist=False,
+    )
+
+
+# 回答：AI 平台对单条查询任务返回的原始文本与元数据。
+class Answer(BaseModel):
+    __tablename__ = "geo_answer"
+    __table_args__ = (
+        UniqueConstraint("task_id", name="uq_geo_answer_task"),
+        Index("ix_geo_answer_platform_collected", "platform_code", "collected_at"),
+    )
+
+    task_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_query_task.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    platform_code: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("geo_ai_platform.platform_code"),
+        nullable=False,
+    )
+    prompt_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_prompt.id"),
+        nullable=False,
+    )
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    prompt_tokens: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    completion_tokens: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    total_tokens: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    collected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    raw_response_json: Mapped[dict | None] = mapped_column(JSON_VALUE, nullable=True)
+    task: Mapped[QueryTask] = relationship("QueryTask", back_populates="answer")
+    citations: Mapped[list["AnswerCitation"]] = relationship(
+        "AnswerCitation",
+        back_populates="answer",
+        order_by="AnswerCitation.citation_no",
+    )
+    brand_results: Mapped[list["AnswerBrandResult"]] = relationship(
+        "AnswerBrandResult",
+        back_populates="answer",
+    )
+
+
+# 回答引用：AI 回答中引用的外部来源链接与摘要。
+class AnswerCitation(BaseModel):
+    __tablename__ = "geo_answer_citation"
+    __table_args__ = (
+        UniqueConstraint(
+            "answer_id", "citation_no", name="uq_geo_answer_citation_answer_no"
+        ),
+        Index("ix_geo_answer_citation_domain", "domain"),
+    )
+
+    answer_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_answer.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    citation_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    quoted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer: Mapped[Answer] = relationship("Answer", back_populates="citations")
+
+
+# 回答品牌识别结果：单条回答中各品牌的提及与位置信息。
+class AnswerBrandResult(BaseModel):
+    __tablename__ = "geo_answer_brand_result"
+    __table_args__ = (
+        UniqueConstraint(
+            "answer_id",
+            "brand_id",
+            name="uq_geo_answer_brand_result_answer_brand",
+        ),
+        Index(
+            "ix_geo_answer_brand_result_brand_mentioned",
+            "brand_id",
+            "is_mentioned",
+        ),
+    )
+
+    answer_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_answer.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    brand_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_brand.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    is_mentioned: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
+    mention_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    first_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sentiment: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    context_json: Mapped[dict] = mapped_column(
+        JSON_VALUE, default=dict, server_default=text("'{}'"), nullable=False
+    )
+    answer: Mapped[Answer] = relationship("Answer", back_populates="brand_results")
+
+
+# 监测计划：按 cron 表达式定时触发项目监测运行。
+class MonitorSchedule(BaseModel):
+    __tablename__ = "geo_monitor_schedule"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "name", name="uq_geo_monitor_schedule_project_name"
+        ),
+        CheckConstraint(
+            "misfire_policy IN ('fire_once', 'ignore')",
+            name="ck_geo_monitor_schedule_misfire_policy",
+        ),
+        Index("ix_geo_monitor_schedule_project_enabled", "project_id", "enabled"),
+    )
+
+    project_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_monitor_project.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    cron_expr: Mapped[str] = mapped_column(String(100), nullable=False)
+    timezone: Mapped[str] = mapped_column(
+        String(64), default="Asia/Shanghai", server_default="Asia/Shanghai", nullable=False
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true"), nullable=False
+    )
+    next_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    misfire_policy: Mapped[str] = mapped_column(
+        String(20), default="fire_once", server_default="fire_once", nullable=False
     )

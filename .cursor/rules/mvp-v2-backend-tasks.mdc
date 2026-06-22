@@ -1,0 +1,61 @@
+---
+description: MVP V2 后端开发任务执行流程（按需读取任务书，禁止通读全文）
+alwaysApply: true
+---
+
+# MVP V2 后端任务执行
+
+本仓库后端 MVP 开发以 `docs/AI应用监测_MVP_Cursor实施任务V2.md` 为任务书。用户下达开发任务时，**默认已授权按任务书执行**，无需用户重复声明「先读任务文档」。
+
+## 读取策略（节约 token）
+
+1. **禁止**一次性读取或加载任务书全文（约 1300+ 行）。
+2. **先读** `docs/AI应用监测_MVP_V2_Task索引.md`（执行规则摘要 + 任务目录 + 行号）。
+3. **再读**任务书两个局部片段：
+   - `§1 执行规则`（索引给出行号，通常仅首次会话或涉及并行/迁移/公共文件时）
+   - **当前 Task 对应章节**（按索引行号 `Read` 指定 `offset`/`limit`）
+4. 用户若已粘贴 Task 编号、目标、允许/禁止文件或验收命令，以用户消息为准；任务书只补全缺失约束。
+5. 涉及架构口径或领域规则时，按需追加 `CLAUDE.md`、`AI应用监测_技术开发文档.md` 的相关段落，仍禁止通读。
+
+## 执行顺序
+
+1. 从用户消息或索引定位 Task 编号与章节行号。
+2. **Superpowers：** Read `using-superpowers` skill；代码任务加载 `test-driven-development`，收尾前加载 `verification-before-completion`（详见 `.cursor/rules/superpowers-dev-workflow.mdc`）。
+3. 读取该 Task 的：目标、修改文件、人机边界、步骤、测试先行、验证命令、专用提示词、提交信息。
+4. 检查现有代码与迁移，严守 Task 允许/禁止修改范围。
+5. 测试先行 → 最小实现 → 运行 Task 验收命令 → **更新 CodeGraph 索引** → 汇报改动、结果、剩余限制与用户待办。
+
+## 任务完成后：CodeGraph 索引更新
+
+每次开发任务通过验收后，在**仓库根目录**增量更新项目地图与符号索引：
+
+```powershell
+codegraph status
+codegraph sync
+codegraph status
+```
+
+规则：
+
+- **何时执行：** Task 修改了 `backend/`、`frontend/` 或其他会被 CodeGraph 索引的源码后；Task 0 且无代码改动可跳过。
+- **首次或无索引：** 若 `codegraph status` 提示未初始化，先执行 `codegraph init`，再 `codegraph sync`。
+- **禁止**用全量 `codegraph index --force` 替代常规 `sync`，除非 `sync` 失败且 `status` 显示索引明显不一致。
+- **失败处理：** 索引失败不推翻已通过的业务验收，但必须在汇报中说明；可尝试 `codegraph unlock` 后重试 `sync`。
+- **查询前：** 编辑后已执行 `sync` 则可直接使用 `codegraph_*` MCP 工具；否则先 `sync` 再查询。
+
+## 硬约束（索引未覆盖时回查 §1）
+
+- 读取任务书/文档、查看 pytest 或 git 输出时 **默认 UTF-8**；Windows PowerShell 下先按 `AGENTS.md`「文本编码规则」设置终端编码，禁止用未指定编码的 `Get-Content` / 系统代码页解读中文。
+- 本阶段只做 `backend`；不开发/验收 `frontend`。
+- 迁移 Task 2、9、14 须串行；禁止并行 worktree 各自生成 Alembic revision。
+- 公共文件（`config.py`、迁移链、`.env.example`、依赖）由主 Agent 维护，单次只合并一个公共契约变更。
+- 不读取、打印或提交 `.env` 真实密钥；本地 PostgreSQL/Redis/Nacos 仅通过 `.env` 连接。
+- 后端命令使用 `backend/.venv`（见 `AGENTS.md`）。
+
+## 用户下任务时的推荐格式（可选，更省 token）
+
+```
+执行 V2 Task N：<简述>
+```
+
+Agent 应自动完成索引定位与局部读取，无需用户重复粘贴任务书内容。

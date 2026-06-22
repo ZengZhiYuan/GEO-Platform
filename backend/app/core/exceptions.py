@@ -19,6 +19,7 @@ logger = logging.getLogger("app")
 class BusinessException(Exception):
     """业务异常。在 service / router 中主动抛出。"""
 
+    # 构造业务异常，默认 HTTP 200 + 非零 code
     def __init__(
         self,
         message: str = "business error",
@@ -34,6 +35,7 @@ class BusinessException(Exception):
 def register_exception_handlers(app: FastAPI) -> None:
     """注册全局异常处理器。"""
 
+    # 将 BusinessException 转为统一 JSON 失败响应
     @app.exception_handler(BusinessException)
     async def business_exception_handler(
         request: Request, exc: BusinessException
@@ -43,6 +45,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content=fail(code=exc.code, message=exc.message),
         )
 
+    # 将 Pydantic 参数校验错误转为 code=422 响应
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(
         request: Request, exc: RequestValidationError
@@ -52,6 +55,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content=fail(code=422, message="参数校验失败", data=exc.errors()),
         )
 
+    # 将 Starlette HTTP 异常转为统一失败响应
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(
         request: Request, exc: StarletteHTTPException
@@ -61,6 +65,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content=fail(code=exc.status_code, message=str(exc.detail)),
         )
 
+    # 兜底处理未捕获异常，返回 500 并记录堆栈
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(
         request: Request, exc: Exception

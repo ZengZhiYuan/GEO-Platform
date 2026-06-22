@@ -1,0 +1,50 @@
+---
+description: 代码开发任务默认启用 Superpowers 插件 skills 工作流
+alwaysApply: true
+---
+
+# Superpowers 开发技能工作流
+
+凡涉及**代码开发**（新功能、行为变更、重构、修 bug、补测试、迁移），Agent **必须**按 Superpowers 插件 skills 执行；不得跳过 skill 直接即兴编码。
+
+**优先级：** 用户当次指令 > `AGENTS.md` / `CLAUDE.md` / V2 任务书 > Superpowers skills > 默认系统行为。
+
+## 必用入口
+
+| 时机 | Skill | 动作 |
+|------|-------|------|
+| 会话开始或接到开发任务 | `using-superpowers` | 用 `Read` 加载 skill，确认后续适用 skills |
+| 写/改实现代码前 | `test-driven-development` | 先写失败测试，再最小实现 |
+| 声称完成 / 提交 / 收尾前 | `verification-before-completion` | 跑验收命令，用输出证明通过 |
+
+## 按场景选用
+
+| 场景 | Skill |
+|------|-------|
+| 新功能、API、模块、非平凡行为变更 | `brainstorming` |
+| 多步骤、跨文件、需先对齐方案 | `writing-plans` → `executing-plans` |
+| 测试失败、异常行为、联调不通 | `systematic-debugging` |
+| 2+ 无依赖子任务可并行 | `dispatching-parallel-agents` |
+| 有计划的多 Task / 子任务编排 | `subagent-driven-development` |
+| 独立分支 / worktree 开发 | `using-git-worktrees` |
+| 较大步骤完成、合并前 | `requesting-code-review` |
+| 实现完成、决定如何集成 | `finishing-a-development-branch` |
+| 收到 review 意见 | `receiving-code-review` |
+
+Skill 文件位于 Cursor 用户 skills 目录（如 `~/.cursor/skills/` 及 Superpowers 插件缓存）；用 **`Read` 工具**读取完整 `SKILL.md` 后再执行，不要凭记忆省略步骤。
+
+## 与本仓库 MVP V2 Task 的结合
+
+执行 `V2 Task N` 或等效开发指令时，在 `.cursor/rules/mvp-v2-backend-tasks.mdc` 流程中插入：
+
+1. `using-superpowers` → 定位 Task 章节（索引 + 局部 Read）
+2. 有行为变更 → `test-driven-development`（任务书「测试先行」）
+3. 实现与验收 → Task 书验证命令 + `verification-before-completion`
+4. 改动了 `backend/` 源码 → `codegraph sync`（见 `AGENTS.md`）
+5. Task 收尾 → 可选 `requesting-code-review` / `finishing-a-development-branch`
+
+## 豁免（可不加载 skill）
+
+- 纯问答、文档阅读、代码解释（无文件改动）
+- Task 0 等明确「无代码改动」的确认类任务
+- 用户明确声明「不要走 TDD / 不要 brainstorm」时，以用户指令为准

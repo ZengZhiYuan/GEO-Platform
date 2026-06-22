@@ -1,13 +1,25 @@
-fastapi
-uvicorn[standard]
-pydantic
-pydantic-settings
-python-dotenv
+# -*- coding: utf-8 -*-
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+pydantic>=2.7,<3
+pydantic-settings>=2.3,<3
+python-dotenv>=1.0,<2
 
 # 数据库 / ORM / 迁移
-sqlalchemy>=2.0
-alembic>=1.13
-psycopg2-binary
+sqlalchemy>=2.0,<3
+alembic>=1.13,<2
+psycopg2-binary>=2.9,<3
 
 # 异步任务 / MQ 基础设施
-dramatiq[redis]>=1.16
+dramatiq[redis]>=1.16,<3
+
+# 采集 / Agent / 调度 / 报告 / 配置中心
+httpx>=0.27,<1
+tenacity>=8.2,<10
+apscheduler>=3.10,<4
+langgraph>=0.2,<1
+openai>=1.40,<2
+dashscope>=1.20,<2
+jinja2>=3.1,<4
+markdown>=3.5,<4
+nacos-sdk-python>=0.1.12,<1
