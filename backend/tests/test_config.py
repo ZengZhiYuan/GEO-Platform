@@ -252,6 +252,19 @@ def test_runtime_summary_redacts_all_secrets(tmp_path):
     assert settings.runtime_summary()["agent_llm"]["has_api_key"] is True
 
 
+def test_agent_llm_provider_accepts_supported_values():
+    openai_settings = make_settings(AGENT_LLM_PROVIDER="openai_compatible")
+    dashscope_settings = make_settings(AGENT_LLM_PROVIDER="dashscope")
+
+    assert openai_settings.AGENT_LLM_PROVIDER == "openai_compatible"
+    assert dashscope_settings.AGENT_LLM_PROVIDER == "dashscope"
+
+
+def test_agent_llm_provider_rejects_unknown_value():
+    with pytest.raises(ValidationError):
+        make_settings(AGENT_LLM_PROVIDER="unknown")
+
+
 def test_env_example_uses_placeholders_without_real_connection_values():
     text = (Path(__file__).parents[2] / ".env.example").read_text(encoding="utf-8")
 
@@ -262,3 +275,4 @@ def test_env_example_uses_placeholders_without_real_connection_values():
     assert "admin123" not in text
     assert "ark-" not in text
     assert "sk-" not in text
+    assert "AGENT_LLM_PROVIDER=openai_compatible" in text

@@ -38,6 +38,7 @@ from app.geo_monitoring.models import (
 )
 from app.geo_monitoring.services.analysis import (
     AgentExecution,
+    MetricSnapshot,
     PlatformAnalysis,
     run_analysis,
     serialize_state,
@@ -324,6 +325,28 @@ def test_single_platform_llm_failure_yields_partial_success(session_factory):
         statuses = {row.platform_code: row.status for row in rows}
         assert statuses["qwen"] == "completed"
         assert statuses["deepseek"] == "partial_success"
+
+
+def test_metric_snapshots_include_single_recommendation_combined_rate_per_platform(
+    session_factory,
+):
+    llm = FakeLLMClient()
+    with session_factory() as db:
+        seeded = _seed_run(db, platforms=("qwen",))
+
+    with session_factory() as db:
+        result = run_analysis(db, seeded["run_id"], llm_client=llm)
+        assert result["analysis_status"] == "completed"
+
+        rows = db.execute(
+            select(MetricSnapshot).where(
+                MetricSnapshot.run_id == seeded["run_id"],
+                MetricSnapshot.metric_code == "recommendation_combined_rate",
+                MetricSnapshot.platform_code == "qwen",
+                MetricSnapshot.is_deleted.is_(False),
+            )
+        ).scalars().all()
+        assert len(rows) == 1
 
 
 def test_rerun_is_idempotent_and_preserves_execution_history(session_factory):

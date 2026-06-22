@@ -319,6 +319,7 @@ def build_agent_llm_config(settings: Settings | None = None) -> AgentLLMConfig:
         base_url=cfg.AGENT_LLM_BASE_URL or "https://agent-llm.test/v1",
         api_key=cfg.AGENT_LLM_API_KEY or "test-agent-key",
         model=cfg.AGENT_LLM_MODEL or "agent-model",
+        provider=cfg.AGENT_LLM_PROVIDER,
         timeout_seconds=float(cfg.AGENT_LLM_TIMEOUT_SECONDS),
         max_attempts=cfg.AGENT_LLM_MAX_ATTEMPTS,
     )

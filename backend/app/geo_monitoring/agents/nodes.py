@@ -851,34 +851,3 @@ def _upsert_metric_snapshots(
     else:
         for key, value in payload.items():
             setattr(existing, key, value)
-
-    recommendation = metrics.recommendation
-    existing = db.execute(
-        select(MetricSnapshot).where(
-            MetricSnapshot.project_id == project_id,
-            MetricSnapshot.run_id == run_id,
-            MetricSnapshot.metric_code == "recommendation_combined_rate",
-            MetricSnapshot.platform_code == metrics.platform_code,
-            MetricSnapshot.prompt_id.is_(None),
-            MetricSnapshot.is_deleted.is_(False),
-        )
-    ).scalar_one_or_none()
-    payload = {
-        "project_id": project_id,
-        "run_id": run_id,
-        "platform_code": metrics.platform_code,
-        "prompt_id": None,
-        "metric_code": "recommendation_combined_rate",
-        "numerator": Decimal(recommendation.combined_numerator),
-        "denominator": Decimal(recommendation.denominator),
-        "metric_value": recommendation.combined_rate,
-        "metric_json": serialize_state({"metric": recommendation})["metric"],
-        "prompt_set_version": prompt_set_version,
-        "is_comparable": True,
-        "completeness_rate": _decimal(metrics.brand_visibility.rate),
-    }
-    if existing is None:
-        db.add(MetricSnapshot(**payload))
-    else:
-        for key, value in payload.items():
-            setattr(existing, key, value)

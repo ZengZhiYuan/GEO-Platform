@@ -213,6 +213,7 @@ class Settings(BaseSettings):
     AGENT_LLM_BASE_URL: str = ""
     AGENT_LLM_API_KEY: str = ""
     AGENT_LLM_MODEL: str = ""
+    AGENT_LLM_PROVIDER: str = "openai_compatible"
     AGENT_LLM_TIMEOUT_SECONDS: int = 90
     AGENT_LLM_MAX_ATTEMPTS: int = 2
 
@@ -337,6 +338,17 @@ class Settings(BaseSettings):
         except ZoneInfoNotFoundError as exc:
             raise ValueError(f"SCHEDULER_TIMEZONE is invalid: {value}") from exc
         return value
+
+    @field_validator("AGENT_LLM_PROVIDER")
+    @classmethod
+    def validate_agent_llm_provider(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        allowed = {"openai_compatible", "dashscope"}
+        if normalized not in allowed:
+            raise ValueError(
+                "AGENT_LLM_PROVIDER must be one of: openai_compatible, dashscope"
+            )
+        return normalized
 
     # 模型级联校验：Nacos 与已启用平台的必填项
     @model_validator(mode="after")

@@ -81,9 +81,16 @@ def trigger_run_analysis(
     run.analysis_status = "running"
     db.commit()
 
-    # 同步执行分析流水线
-    llm_client = create_agent_llm_client(build_agent_llm_config())
-    result = run_analysis(db, run_id, llm_client=llm_client)
+    try:
+        llm_client = create_agent_llm_client(build_agent_llm_config())
+        result = run_analysis(db, run_id, llm_client=llm_client)
+    except Exception:
+        db.rollback()
+        run = get_run(db, run_id)
+        run.analysis_status = "failed"
+        db.commit()
+        raise
+
     db.refresh(run)
     payload = {
         "run_id": run_id,

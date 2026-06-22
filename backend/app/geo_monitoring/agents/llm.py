@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
+from dashscope import Generation
 from openai import APIConnectionError, APITimeoutError, AsyncOpenAI, RateLimitError
 from pydantic import BaseModel, ValidationError
 
@@ -23,6 +25,9 @@ from app.geo_monitoring.agents.schemas import SCHEMA_VERSION
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_INPUT_CHARS = 12_000
+DEFAULT_DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/api/v1"
+AGENT_LLM_PROVIDER_OPENAI = "openai_compatible"
+AGENT_LLM_PROVIDER_DASHSCOPE = "dashscope"
 
 
 class AgentLLMErrorCategory(StrEnum):
@@ -50,16 +55,28 @@ class AgentLLMError(Exception):
         super().__init__(sanitize_message(message, self._secrets))
 
 
+class TransportTimeoutError(Exception):
+    """传输层超时，供 AgentLLMClient 重试。"""
+
+
+class TransportRateLimitError(Exception):
+    """传输层限流，供 AgentLLMClient 重试。"""
+
+
+class TransportNetworkError(Exception):
+    """传输层网络/服务端异常，供 AgentLLMClient 重试。"""
+
+
 @dataclass(frozen=True)
 class AgentLLMConfig:
     base_url: str
     api_key: str
     model: str
+    provider: str = AGENT_LLM_PROVIDER_OPENAI
     timeout_seconds: float = 90.0
     max_attempts: int = 2
     max_input_chars: int = DEFAULT_MAX_INPUT_CHARS
     temperature: float = 0.0
-
 
 @dataclass(frozen=True)
 class AgentLLMRequest:
@@ -114,6 +131,84 @@ class OpenAIChatTransport:
         return response.model_dump()
 
 
+class DashScopeGenerationTransport:
+    """DashScope 原生 Generation API 传输层。"""
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        timeout_seconds: float,
+        base_url: str | None = None,
+    ) -> None:
+        self._api_key = api_key
+        self._model = model
+        self._timeout_seconds = timeout_seconds
+        self._base_url = base_url or DEFAULT_DASHSCOPE_BASE_URL
+
+    async def create_chat_completion(self, **kwargs: Any) -> dict[str, Any]:
+        model = str(kwargs.get("model") or self._model)
+        messages = kwargs.get("messages") or []
+        temperature = kwargs.get("temperature", 0.0)
+
+        def _call() -> Any:
+            import dashscope
+
+            dashscope.base_http_api_url = self._base_url
+            return Generation.call(
+                api_key=self._api_key,
+                model=model,
+                messages=messages,
+                result_format="message",
+                temperature=temperature,
+            )
+
+        try:
+            response = await asyncio.wait_for(
+                asyncio.to_thread(_call),
+                timeout=self._timeout_seconds,
+            )
+        except asyncio.TimeoutError as exc:
+            raise TransportTimeoutError(
+                f"dashscope request timed out after {self._timeout_seconds}s"
+            ) from exc
+        except TransportRateLimitError:
+            raise
+        except TransportNetworkError:
+            raise
+        except AgentLLMError:
+            raise
+        except Exception as exc:
+            raise _map_dashscope_exception(exc) from exc
+
+        return _dashscope_response_to_completion(response, model=model)
+
+
+def resolve_dashscope_base_url(base_url: str) -> str:
+    """将 Agent LLM base_url 规范为 DashScope 原生 API v1 地址。"""
+    normalized = (base_url or "").strip().rstrip("/")
+    if not normalized or "compatible-mode" in normalized:
+        return DEFAULT_DASHSCOPE_BASE_URL
+    return normalized
+
+
+def build_agent_llm_transport(config: AgentLLMConfig) -> ChatCompletionsTransport:
+    provider = (config.provider or AGENT_LLM_PROVIDER_OPENAI).strip().lower()
+    if provider == AGENT_LLM_PROVIDER_DASHSCOPE:
+        return DashScopeGenerationTransport(
+            api_key=config.api_key,
+            model=config.model,
+            timeout_seconds=config.timeout_seconds,
+            base_url=resolve_dashscope_base_url(config.base_url),
+        )
+    return OpenAIChatTransport(
+        base_url=config.base_url,
+        api_key=config.api_key,
+        timeout_seconds=config.timeout_seconds,
+    )
+
+
 class AgentLLMClient:
     """封装结构化输出、重试、解析修复与审计元数据。"""
 
@@ -125,13 +220,8 @@ class AgentLLMClient:
         transport: ChatCompletionsTransport | None = None,
     ) -> None:
         self._config = config
-        self._transport = transport or OpenAIChatTransport(
-            base_url=config.base_url,
-            api_key=config.api_key,
-            timeout_seconds=config.timeout_seconds,
-        )
+        self._transport = transport or build_agent_llm_transport(config)
         self._secrets = (config.api_key,)
-
     # 渲染 Prompt、调用 LLM 并解析/修复结构化 JSON 输出
     async def generate_structured(
         self, request: AgentLLMRequest
@@ -256,10 +346,19 @@ class AgentLLMClient:
             except APITimeoutError as exc:
                 last_error = exc
                 category = AgentLLMErrorCategory.TIMEOUT
+            except TransportTimeoutError as exc:
+                last_error = exc
+                category = AgentLLMErrorCategory.TIMEOUT
             except RateLimitError as exc:
                 last_error = exc
                 category = AgentLLMErrorCategory.RATE_LIMITED
+            except TransportRateLimitError as exc:
+                last_error = exc
+                category = AgentLLMErrorCategory.RATE_LIMITED
             except APIConnectionError as exc:
+                last_error = exc
+                category = AgentLLMErrorCategory.NETWORK
+            except TransportNetworkError as exc:
                 last_error = exc
                 category = AgentLLMErrorCategory.NETWORK
             except Exception as exc:
@@ -365,6 +464,98 @@ def create_agent_llm_client(
 ) -> AgentLLMClient:
     """工厂方法：业务代码通过此函数获取客户端，不直接实例化 SDK。"""
     return AgentLLMClient(config, transport=transport)
+
+
+def _dashscope_response_to_completion(response: Any, *, model: str) -> dict[str, Any]:
+    status_code = int(getattr(response, "status_code", 0) or 0)
+    if status_code != 200:
+        _raise_for_dashscope_response(response)
+
+    content = _extract_dashscope_content(response)
+    usage = getattr(response, "usage", None) or {}
+    prompt_tokens = _dashscope_usage_int(usage, "input_tokens")
+    completion_tokens = _dashscope_usage_int(usage, "output_tokens")
+    return {
+        "model": model,
+        "choices": [{"message": {"content": content}}],
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+        },
+    }
+
+
+def _extract_dashscope_content(response: Any) -> str:
+    output = getattr(response, "output", None)
+    if output is None:
+        return ""
+
+    if isinstance(output, dict):
+        choices = output.get("choices")
+        if isinstance(choices, list) and choices:
+            message = choices[0].get("message") if isinstance(choices[0], dict) else None
+            if isinstance(message, dict):
+                content = message.get("content")
+                if isinstance(content, str):
+                    return content
+        text = output.get("text")
+        if isinstance(text, str):
+            return text
+        return ""
+
+    choices = getattr(output, "choices", None)
+    if choices:
+        message = getattr(choices[0], "message", None)
+        if message is not None:
+            content = getattr(message, "content", None)
+            if isinstance(content, str):
+                return content
+            if isinstance(message, dict):
+                content = message.get("content")
+                if isinstance(content, str):
+                    return content
+
+    text = getattr(output, "text", None)
+    return text if isinstance(text, str) else ""
+
+
+def _dashscope_usage_int(usage: Any, key: str) -> int | None:
+    if isinstance(usage, dict):
+        value = usage.get(key)
+    else:
+        value = getattr(usage, key, None)
+    return int(value) if isinstance(value, int) else None
+
+
+def _raise_for_dashscope_response(response: Any) -> None:
+    status_code = int(getattr(response, "status_code", 0) or 0)
+    code = str(getattr(response, "code", "") or "")
+    message = str(getattr(response, "message", "") or "dashscope api error")
+    detail = f"dashscope api error status={status_code} code={code}: {message}"
+
+    if status_code == 429 or "Throttling" in code or "RateQuota" in code:
+        raise TransportRateLimitError(detail)
+    if status_code >= 500:
+        raise TransportNetworkError(detail)
+    raise AgentLLMError(
+        detail,
+        category=AgentLLMErrorCategory.PROVIDER,
+    )
+
+
+def _map_dashscope_exception(exc: Exception) -> Exception:
+    message = str(exc)
+    lowered = message.lower()
+    if "timeout" in lowered or "timed out" in lowered:
+        return TransportTimeoutError(message)
+    if "rate" in lowered and "limit" in lowered:
+        return TransportRateLimitError(message)
+    if "connection" in lowered or "network" in lowered:
+        return TransportNetworkError(message)
+    return AgentLLMError(
+        f"dashscope transport error: {exc}",
+        category=AgentLLMErrorCategory.PROVIDER,
+    )
 
 
 # 截断文本至最大字符数并返回是否已截断

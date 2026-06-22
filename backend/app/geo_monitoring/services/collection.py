@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 TERMINAL_TASK_STATUSES = frozenset({"success", "failed", "cancelled"})
 CLAIMABLE_TASK_STATUSES = frozenset({"pending", "queued", "running"})
+_KEY_POOL_REDIS_UNSET = object()
 
 
 @dataclass(frozen=True)
@@ -113,14 +114,33 @@ def build_default_runtime(
     )
 
 
+# 为跨 worker 凭证协调创建 Redis 客户端；stub broker 测试环境跳过
+def _create_key_pool_redis_client(runtime_settings: Settings) -> Any | None:
+    if runtime_settings.DRAMATIQ_BROKER == "stub":
+        return None
+    from redis import Redis
+
+    return Redis.from_url(
+        runtime_settings.REDIS_URL,
+        decode_responses=True,
+        socket_connect_timeout=2,
+        socket_timeout=2,
+    )
+
+
 # 从配置构建各平台 API 密钥池
 def build_credential_key_pool(
     runtime_settings: Settings,
     *,
-    redis_client: Any | None = None,
+    redis_client: Any | None = _KEY_POOL_REDIS_UNSET,
 ) -> CredentialKeyPool:
+    resolved_redis = (
+        _create_key_pool_redis_client(runtime_settings)
+        if redis_client is _KEY_POOL_REDIS_UNSET
+        else redis_client
+    )
     pool = CredentialKeyPool(
-        redis_client,
+        resolved_redis,
         retry_base_seconds=runtime_settings.COLLECTION_RETRY_BASE_SECONDS,
     )
     _register_api_keys(pool, runtime_settings, "doubao", runtime_settings.DOUBAO_API_KEYS)
