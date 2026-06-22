@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -265,6 +266,26 @@ def test_agent_llm_provider_rejects_unknown_value():
         make_settings(AGENT_LLM_PROVIDER="unknown")
 
 
+def test_app_timezone_defaults_to_asia_shanghai(tmp_path):
+    settings = make_settings(REPORT_STORAGE_DIR=str(tmp_path))
+
+    assert settings.APP_TIMEZONE == "Asia/Shanghai"
+
+
+def test_app_timezone_rejects_invalid_value(tmp_path):
+    with pytest.raises(ValidationError, match="timezone is invalid"):
+        make_settings(REPORT_STORAGE_DIR=str(tmp_path), APP_TIMEZONE="Invalid/Zone")
+
+
+def test_configure_process_timezone_sets_env_and_returns_zoneinfo():
+    from app.core.timezone import configure_process_timezone
+
+    tz = configure_process_timezone("Asia/Shanghai")
+
+    assert tz.key == "Asia/Shanghai"
+    assert os.environ["TZ"] == "Asia/Shanghai"
+
+
 def test_env_example_uses_placeholders_without_real_connection_values():
     text = (Path(__file__).parents[2] / ".env.example").read_text(encoding="utf-8")
 
@@ -276,3 +297,4 @@ def test_env_example_uses_placeholders_without_real_connection_values():
     assert "ark-" not in text
     assert "sk-" not in text
     assert "AGENT_LLM_PROVIDER=openai_compatible" in text
+    assert "APP_TIMEZONE=Asia/Shanghai" in text

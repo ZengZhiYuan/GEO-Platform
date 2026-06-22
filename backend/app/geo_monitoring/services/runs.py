@@ -255,7 +255,10 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
     project = require_active_project(db, payload.project_id)
     prompt_set = _resolve_prompt_set(db, project.id, payload.prompt_set_id)
     prompts = _enabled_prompts(db, prompt_set.id)
-    platforms = _resolve_platforms(db, payload.platform_codes)
+    platform_codes = payload.platform_codes
+    if platform_codes is None and project.default_platform_codes:
+        platform_codes = list(project.default_platform_codes)
+    platforms = _resolve_platforms(db, platform_codes)
     platform_codes = [platform.platform_code for platform in platforms]
     task_count = len(prompts) * len(platforms)
     run = MonitorRun(

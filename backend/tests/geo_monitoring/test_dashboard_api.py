@@ -64,9 +64,96 @@ def test_project_dashboard_latest_summary(client, session_factory, analyzed_run)
     )
     body = response.json()
     assert body["code"] == 0
-    assert body["data"]["project_id"] == analyzed_run["project_id"]
-    assert body["data"]["latest_run"]["run_id"] == analyzed_run["run_id"]
-    assert len(body["data"]["platforms"]) == 1
+    data = body["data"]
+    assert data["project_id"] == analyzed_run["project_id"]
+    latest_run = data["latest_run"]
+    assert latest_run["run_id"] == analyzed_run["run_id"]
+    assert latest_run["platform_codes"] == ["qwen"]
+    assert len(data["platforms"]) == 1
+
+    platform = data["platforms"][0]
+    assert platform["platform_code"] == "qwen"
+    assert platform["platform_name"] == "qwen"
+    assert platform["collection"]["succeeded_tasks"] == 1
+    assert platform["analysis"]["valid_answer_count"] == 1
+
+    summary = data["summary"]
+    assert summary["scope"] == "all"
+    assert summary["valid_answer_count"] == 1
+    assert summary["brand_mention_rate"] is not None
+    assert any(item["metric_code"] == "brand_visibility" for item in summary["metrics"])
+    assert any(
+        item["metric_code"] == "brand_visibility" and item["platform_code"] == "qwen"
+        for item in platform["metrics"]
+    )
+
+
+@pytest.fixture
+def multi_platform_analyzed_run(client, session_factory, monkeypatch):
+    llm = FakeLLMClient()
+    monkeypatch.setattr(
+        "app.geo_monitoring.api.analysis.create_agent_llm_client",
+        lambda *_args, **_kwargs: llm,
+    )
+    with session_factory() as db:
+        seeded = _seed_run(db, platforms=("qwen", "deepseek"))
+    response = client.post(f"/api/geo-monitoring/runs/{seeded['run_id']}/analyze")
+    assert response.json()["code"] == 0
+    return seeded
+
+
+def test_project_dashboard_multi_platform_summary_and_breakdown(
+    client, multi_platform_analyzed_run
+):
+    project_id = multi_platform_analyzed_run["project_id"]
+    response = client.get(f"/api/geo-monitoring/projects/{project_id}/dashboard")
+    body = response.json()
+    assert body["code"] == 0
+    data = body["data"]
+
+    assert set(data["latest_run"]["platform_codes"]) == {"qwen", "deepseek"}
+    assert len(data["platforms"]) == 2
+    codes = {item["platform_code"] for item in data["platforms"]}
+    assert codes == {"qwen", "deepseek"}
+
+    summary = data["summary"]
+    assert summary["valid_answer_count"] == 2
+    assert summary["brand_mention_count"] == 2
+    assert summary["brand_mention_rate"] == "1.000000"
+
+    for platform in data["platforms"]:
+        assert platform["collection"]["succeeded_tasks"] == 1
+        assert platform["analysis"]["valid_answer_count"] == 1
+        assert platform["analysis"]["brand_mention_rate"] == "1.0000"
+
+
+def test_project_dashboard_filter_by_run_id(client, multi_platform_analyzed_run):
+    project_id = multi_platform_analyzed_run["project_id"]
+    run_id = multi_platform_analyzed_run["run_id"]
+    response = client.get(
+        f"/api/geo-monitoring/projects/{project_id}/dashboard",
+        params={"run_id": run_id},
+    )
+    body = response.json()
+    assert body["code"] == 0
+    assert body["data"]["latest_run"]["run_id"] == run_id
+
+
+def test_project_dashboard_collection_only_run(client, session_factory):
+    with session_factory() as db:
+        seeded = _seed_run(db, platforms=("qwen",), with_valid_answers=True)
+    response = client.get(
+        f"/api/geo-monitoring/projects/{seeded['project_id']}/dashboard"
+    )
+    body = response.json()
+    assert body["code"] == 0
+    data = body["data"]
+    assert data["latest_run"]["platform_codes"] == ["qwen"]
+    assert data["summary"] is None
+    platform = data["platforms"][0]
+    assert platform["collection"]["succeeded_tasks"] == 1
+    assert platform["analysis"] is None
+    assert platform["metrics"] == []
 
 
 def test_project_trends_filter_by_metric_and_platform(client, analyzed_run):

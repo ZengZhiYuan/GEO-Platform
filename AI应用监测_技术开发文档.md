@@ -1,11 +1,11 @@
 # AI 应用监测系统技术开发文档
 
-> 文档版本：V2.0
-> 更新时间：2026-06-16
-> 产品阶段：后端 MVP 实施架构
+> 文档版本：V2.1
+> 更新时间：2026-06-22
+> 产品阶段：后端 MVP 集成验证
 > 适用范围：本版本只规划 `backend` 目录下的 MVP 功能实现，`frontend` 目录暂不纳入开发、测试和验收
-> 当前代码基线：`main` 分支，已完成配置域和运行落库骨架
-> 数据库策略：保留 `geo_monitoring_0001`，后续只使用 Alembic 增量迁移
+> 当前代码基线：`mvp-integration` 分支，已实现配置域、采集、分析、调度、报告与 Docker 部署
+> 数据库策略：Alembic 增量迁移链 `geo_monitoring_0001` → `0005_monitor_setup`
 > 平台策略：仅接入厂商官方 API；没有合规官方 API 或未配置凭据的平台默认禁用
 > 本地运行环境：统一使用 `.env` 中配置的服务器 PostgreSQL、Redis、Nacos，不再要求本地 Docker 启动这些中间件
 
@@ -15,8 +15,8 @@
 
 本文档是 AI 应用监测平台的技术权威文档，用于统一以下内容：
 
-1. 当前仓库已经实现的能力；
-2. 后端 MVP 尚需建设的能力；
+1. 当前仓库已经实现的能力与运行闭环；
+2. 后续迭代或生产化尚需完善的能力；
 3. 目标架构、数据模型、状态机和接口契约；
 4. 平台采集、确定性指标、LangGraph Agent、调度和报告的工程边界；
 5. 环境变量、测试、部署、安全和验收要求。
@@ -36,6 +36,8 @@ docs/AI应用监测_MVP_Cursor实施任务V2.md
 ## 2. 产品目标与范围
 
 ### 2.1 后端 MVP 闭环
+
+以下链路已在当前代码中实现；生产环境仍需配置平台密钥、Agent LLM 与 Worker/Scheduler 进程。
 
 ```text
 监测项目与品牌配置
@@ -83,59 +85,93 @@ docs/AI应用监测_MVP_Cursor实施任务V2.md
 
 ```text
 backend/
-├─ alembic/
-│  └─ versions/20260615_0001-ai_monitoring_baseline.py
+├─ alembic/versions/
+│  ├─ 20260615_0001-ai_monitoring_baseline.py
+│  ├─ 20260615_0002-geo_monitoring_0002_collection.py
+│  ├─ 20260615_0003-geo_monitoring_0003_analysis_metrics.py
+│  ├─ 20260615_0004-geo_monitoring_0004_schedule_report.py
+│  └─ 20260622_0005-geo_monitoring_0005_monitor_setup.py
 ├─ app/
 │  ├─ api/router.py
-│  ├─ core/
-│  │  ├─ config.py
-│  │  ├─ database.py
-│  │  ├─ exceptions.py
-│  │  └─ response.py
+│  ├─ core/                       # config、database、logging、readiness、timezone
 │  ├─ geo_monitoring/
-│  │  ├─ api.py
+│  │  ├─ api/                     # 按域拆分的 FastAPI 路由
 │  │  ├─ models.py
 │  │  ├─ schemas.py
-│  │  └─ services/
-│  │     ├─ projects.py
-│  │     ├─ brands.py
-│  │     ├─ prompts.py
-│  │     ├─ platforms.py
-│  │     └─ runs.py
+│  │  ├─ repositories/
+│  │  ├─ services/                # 配置、采集、分析、调度、看板等
+│  │  ├─ adapters/                # 五平台官方 API Adapter 与 Key 池
+│  │  ├─ agents/                  # LangGraph 节点与 LLM 客户端
+│  │  ├─ analysis/                # 确定性指标计算
+│  │  ├─ reports/                 # Markdown/HTML 渲染与存储
+│  │  └─ templates/report/
+│  ├─ worker/actors/              # collection / analysis / report Dramatiq Actor
+│  ├─ scheduler/                  # APScheduler 独立进程
 │  ├─ models/base.py
-│  └─ workers/
-│     ├─ broker.py
-│     └─ worker.py
+│  └─ workers/broker.py           # Dramatiq broker 配置（兼容入口）
+├─ scripts/                       # API 全量测试、E2E 流水线测试脚本
 └─ tests/
 
-frontend/                         # 已存在管理端壳层，本版本不纳入开发、测试和验收
+Dockerfile                          # 同一镜像启动 api / worker / scheduler
+docker-compose.yml                  # 后端三类进程编排，中间件走 .env
+frontend/                           # 已存在管理端壳层，本版本不纳入开发、测试和验收
 ```
 
 ### 3.2 已实现能力
 
 | 领域 | 已实现内容 |
 | --- | --- |
-| 基础设施 | FastAPI、统一响应、SQLAlchemy、Alembic、PostgreSQL 配置、Redis/Dramatiq Broker |
-| 项目 | 创建、查询、更新、软删除、状态筛选 |
+| 基础设施 | FastAPI、统一响应、结构化日志、CORS、health/ready 探针、SQLAlchemy、Alembic、PostgreSQL、Redis/Dramatiq Broker、Nacos 可选就绪检查 |
+| 项目 | 创建、查询、更新、软删除、状态筛选、默认平台列表 |
 | 品牌 | 目标品牌、竞品、候选品牌和品牌别名 CRUD |
+| 核心词与词库 | 项目核心词 CRUD；全局 Prompt 词库查询 |
+| 监测设置 | 品牌/竞品/核心词/AI 问题/平台的一站式保存 |
 | Prompt | PromptSet 版本、草稿编辑、激活、归档、checksum、Prompt CRUD |
-| 平台 | 五个平台种子配置、查询和更新 |
-| 运行 | 创建 MonitorRun、选择激活 PromptSet、选择启用平台 |
-| 任务 | 在同一数据库事务内生成 Prompt×Platform QueryTask 笛卡尔积 |
-| 测试 | 后端模型、服务、API 边界、迁移和文档边界测试 |
+| 平台 | 五个平台种子配置、查询和更新；Adapter + Redis Key 池 |
+| 运行 | 创建 MonitorRun、扇出 QueryTask、Dramatiq 入队采集、聚合进度、取消、失败重试 |
+| 采集 | 官方 API 调用、回答/引用/品牌规则匹配入库、平台失败隔离与重试 |
+| 分析 | 采集终态后自动入队分析；LangGraph 多 Agent；确定性指标快照；手工重跑 |
+| 看板 | 项目最新分析汇总、同 PromptSet 版本趋势查询 |
+| 调度 | Schedule CRUD、启用/停用、立即触发；APScheduler 轮询同步 |
+| 报告 | Markdown/HTML 生成、元数据查询、按 ID 下载、删除 |
+| 部署 | Docker 单镜像三进程；报告持久卷；迁移与 smoke 流程 |
+| 测试 | 模型/服务/API/Adapter/Worker/Agent/调度/迁移测试；API 全量回归脚本 |
 
 说明：前端壳层属于当前仓库已有内容，但 V2 后端 MVP 不继续扩展、测试或验收 `frontend` 目录。
 
-### 3.3 当前 8 张业务表
+### 3.3 当前业务表（20 张）
 
-1. `geo_monitor_project`
+配置域（`0001` + `0005`）：
+
+1. `geo_monitor_project`（含 `default_platform_codes`）
 2. `geo_brand`
 3. `geo_brand_alias`
 4. `geo_prompt_set`
 5. `geo_prompt`
 6. `geo_ai_platform`
-7. `geo_monitor_run`
-8. `geo_query_task`
+7. `geo_core_keyword`
+8. `geo_prompt_library`
+
+运行与采集（`0001` + `0002`）：
+
+9. `geo_monitor_run`
+10. `geo_query_task`
+11. `geo_answer`
+12. `geo_answer_citation`
+13. `geo_answer_brand_result`
+
+分析与指标（`0003`，ORM 定义于 `services/analysis.py`）：
+
+14. `geo_agent_execution`
+15. `geo_platform_analysis`
+16. `geo_metric_snapshot`
+17. `geo_prompt_competitiveness`
+18. `geo_source_stat`
+
+调度与报告（`0004`，报告 ORM 于 `reports/storage.py`）：
+
+19. `geo_monitor_schedule`
+20. `geo_report`
 
 公共字段由 `BaseModel` 提供：
 
@@ -146,71 +182,77 @@ tenant_id, created_by, updated_by
 
 ### 3.4 当前 API 边界
 
-当前 OpenAPI 包含 17 个路径模板，其中业务前缀统一为 `/api/geo-monitoring`：
+业务前缀统一为 `/api/geo-monitoring`；兼容保留 `/api/v1/geo-monitoring` 同等路由。详细请求/响应字段见 `docs/API接口文档.md`。
 
 ```text
 GET    /api/health
+GET    /api/ready
+GET    /api/geo-monitoring/health
+GET    /api/geo-monitoring/ready
 
-GET    /api/geo-monitoring/platforms
-GET    /api/geo-monitoring/platforms/{platform_code}
-PUT    /api/geo-monitoring/platforms/{platform_code}
+# 项目 / 品牌 / 核心词 / Prompt / 词库 / 监测设置
+GET|POST|PUT|DELETE  .../projects、.../brands、.../brand-aliases
+GET|POST|PUT|DELETE  .../core-keywords
+GET|POST|PUT|DELETE  .../prompt-sets、.../prompts
+GET                .../prompt-library
+GET|PUT            .../monitor-setup
 
-GET    /api/geo-monitoring/projects
-POST   /api/geo-monitoring/projects
-GET    /api/geo-monitoring/projects/{project_id}
-PUT    /api/geo-monitoring/projects/{project_id}
-DELETE /api/geo-monitoring/projects/{project_id}
+# 平台
+GET|PUT            .../platforms、.../platforms/{platform_code}
 
-GET    /api/geo-monitoring/projects/{project_id}/brands
-POST   /api/geo-monitoring/projects/{project_id}/brands
-GET    /api/geo-monitoring/brands/{brand_id}
-PUT    /api/geo-monitoring/brands/{brand_id}
-DELETE /api/geo-monitoring/brands/{brand_id}
-GET    /api/geo-monitoring/brands/{brand_id}/aliases
-POST   /api/geo-monitoring/brands/{brand_id}/aliases
-PUT    /api/geo-monitoring/brand-aliases/{alias_id}
-DELETE /api/geo-monitoring/brand-aliases/{alias_id}
+# 运行与任务
+GET|POST           .../runs
+GET                .../runs/{run_id}
+POST               .../runs/{run_id}/cancel
+POST               .../runs/{run_id}/retry-failed
+GET                .../runs/{run_id}/query-tasks
+GET                .../runs/{run_id}/tasks          # query-tasks 别名
 
-GET    /api/geo-monitoring/projects/{project_id}/prompt-sets
-POST   /api/geo-monitoring/projects/{project_id}/prompt-sets
-GET    /api/geo-monitoring/prompt-sets/{prompt_set_id}
-PUT    /api/geo-monitoring/prompt-sets/{prompt_set_id}
-DELETE /api/geo-monitoring/prompt-sets/{prompt_set_id}
-POST   /api/geo-monitoring/prompt-sets/{prompt_set_id}/activate
-GET    /api/geo-monitoring/prompt-sets/{prompt_set_id}/prompts
-POST   /api/geo-monitoring/prompt-sets/{prompt_set_id}/prompts
-PUT    /api/geo-monitoring/prompts/{prompt_id}
-DELETE /api/geo-monitoring/prompts/{prompt_id}
+# 答案
+GET                .../runs/{run_id}/answers
+GET                .../answers/{answer_id}
 
-GET    /api/geo-monitoring/runs
-POST   /api/geo-monitoring/runs
-GET    /api/geo-monitoring/runs/{run_id}
-GET    /api/geo-monitoring/runs/{run_id}/query-tasks
+# 分析与看板
+POST               .../runs/{run_id}/analyze
+GET                .../runs/{run_id}/analysis
+GET                .../runs/{run_id}/agent-executions
+GET                .../projects/{project_id}/dashboard
+GET                .../projects/{project_id}/trends
+
+# 调度
+GET|POST           .../projects/{project_id}/schedules
+GET|PUT|DELETE     .../schedules/{schedule_id}
+POST               .../schedules/{schedule_id}/enable|disable|trigger
+
+# 报告
+POST               .../runs/{run_id}/reports
+GET                .../runs/{run_id}/reports
+GET|DELETE         .../reports/{report_id}
+GET                .../reports/{report_id}/download
 ```
 
-同一路径模板可承载多个 HTTP 方法，因此方法数量大于路径模板数量。
+尚未单独暴露、由服务层内聚的接口：
 
-### 3.5 当前运行创建语义
+- `POST /runs/{run_id}/enqueue`：已由 `POST /runs` 在事务提交后自动入队替代；
+- `GET /runs/{run_id}/metrics`：指标通过 `/analysis`、`/dashboard`、`/trends` 查询；
+- `POST /reports/{report_id}/retry`：当前通过删除后重新 `POST /runs/{run_id}/reports` 实现。
 
-`POST /runs` 当前只执行以下数据库行为：
+### 3.5 当前运行创建与流水线语义
+
+`POST /runs` 执行以下行为：
 
 1. 校验项目为 `active`；
 2. 获取指定或当前激活 PromptSet；
 3. 获取启用 Prompt；
-4. 获取指定或全部启用平台；
-5. 创建 `geo_monitor_run`；
-6. 创建 Prompt×Platform 的 `geo_query_task`；
-7. 提交事务。
+4. 获取请求指定、项目默认或全部启用平台；
+5. 在同一事务内创建 `geo_monitor_run` 与 Prompt×Platform 的 `geo_query_task`；
+6. 提交事务后将任务标记为 `queued` 并投递 Dramatiq `collection` 队列；
+7. Worker 调用官方 API，保存 Answer/Citation/BrandResult，更新 QueryTask 与 Run 聚合；
+8. 全部 QueryTask 进入终态且 Run 进入终态后，若 `analysis_status=skipped`，自动将分析任务入队到 `analysis` 队列；
+9. 分析 Worker 执行 LangGraph 与确定性指标计算，写入平台分析与快照表；
+10. 报告需通过 `POST /runs/{run_id}/reports` 显式触发（默认 `report_status=skipped`）。
 
-当前不会：
-
-- 向 Redis/Dramatiq 投递消息；
-- 调用任何平台 API；
-- 保存回答或引用；
-- 执行指标或 Agent 分析；
-- 生成报告。
-
-因此当前 `analysis_status` 和 `report_status` 固定为 `skipped`。
+新建运行默认 `analysis_status=skipped`、`report_status=skipped`；采集开始后 Run 进入 `collecting`，终态可为 `completed`、`partial_success`、`failed` 或 `cancelled`。
 
 ---
 
@@ -284,27 +326,25 @@ flowchart TB
 
 ### 5.1 迁移策略
 
-保留：
+当前已应用的迁移链：
 
 ```text
-geo_monitoring_0001
-```
-
-后续建议拆为：
-
-```text
+geo_monitoring_0001          # 配置域 + 运行骨架（8 表）
 geo_monitoring_0002_collection
 geo_monitoring_0003_analysis_metrics
 geo_monitoring_0004_schedule_report
+geo_monitoring_0005_monitor_setup
 ```
 
-禁止修改已经存在的 `0001` 来追加后端 MVP 表。原因：
+禁止修改已经存在的 revision 来追加表或字段。原因：
 
 - `0001` 已成为当前仓库和环境的共同基线；
 - 重写会破坏已应用数据库的迁移历史；
 - 增量迁移更容易测试、回滚和代码审查。
 
-### 5.2 `0002_collection` 表与字段
+后续新增能力须继续追加 `geo_monitoring_0006_*` 及更高版本 revision。
+
+### 5.2 `0002_collection` 表与字段（已实现）
 
 #### 修改 `geo_monitor_run`
 
@@ -382,7 +422,7 @@ geo_monitoring_0004_schedule_report
 | `sentiment` | 情感或倾向标签 |
 | `context_json` | 命中上下文、证据句和算法补充信息 |
 
-### 5.3 `0003_analysis_metrics` 表
+### 5.3 `0003_analysis_metrics` 表（已实现）
 
 #### `geo_agent_execution`
 
@@ -423,7 +463,7 @@ is_comparable, completeness_rate
 
 保存运行级和平台级 Domain 聚合结果、引用次数、品牌相关次数、占比与排名。
 
-### 5.4 `0004_schedule_report` 表
+### 5.4 `0004_schedule_report` 表（已实现）
 
 #### `geo_monitor_schedule`
 
@@ -456,6 +496,12 @@ pending | generating | completed | failed
 
 文件路径必须保存相对 `REPORT_STORAGE_DIR` 的相对路径，禁止把绝对服务器路径通过 API 返回。
 
+### 5.5 `0005_monitor_setup` 表与字段（已实现）
+
+- `geo_monitor_project.default_platform_codes`：项目默认采集平台列表；
+- `geo_core_keyword`：项目核心词；
+- `geo_prompt_library`：全局 Prompt 词库模板。
+
 ---
 
 ## 6. 环境变量契约
@@ -465,9 +511,12 @@ pending | generating | completed | failed
 ```env
 APP_ENV=dev
 APP_DEBUG=false
+APP_TIMEZONE=Asia/Shanghai
 DATABASE_URL=postgresql+psycopg2://<user>:<password>@<server-host>:5432/geo_platform
 REDIS_URL=redis://:<password>@<server-host>:6379/0
+DRAMATIQ_BROKER=redis
 
+NACOS_ENABLED=false
 NACOS_SERVER_ADDRESSES=<server-host>:8848
 NACOS_NAMESPACE=
 NACOS_GROUP=DEFAULT_GROUP
@@ -507,7 +556,7 @@ QWEN_MODEL=
 QWEN_API_KEYS=
 
 YUANBAO_ENABLED=false
-YUANBAO_BASE_URL=https://api.hunyuan.cloud.tencent.com/v1
+YUANBAO_BASE_URL=https://hunyuan.tencentcloudapi.com
 YUANBAO_MODEL=
 YUANBAO_CREDENTIALS_JSON=[]
 
@@ -537,6 +586,7 @@ KIMI_API_KEYS=
 AGENT_LLM_BASE_URL=
 AGENT_LLM_API_KEY=
 AGENT_LLM_MODEL=
+AGENT_LLM_PROVIDER=openai_compatible
 AGENT_LLM_TIMEOUT_SECONDS=90
 AGENT_LLM_MAX_ATTEMPTS=2
 ```
@@ -589,15 +639,14 @@ class PlatformResponse:
     latency_ms: int
 ```
 
-### 7.2 目标目录
+### 7.2 当前目录
 
 ```text
 backend/app/geo_monitoring/adapters/
 ├─ base.py
-├─ factory.py
+├─ registry.py                    # AdapterRegistry 构建与平台注册
 ├─ key_pool.py
-├─ openai_compatible.py
-├─ citation_normalizer.py
+├─ errors.py
 ├─ doubao.py
 ├─ qwen.py
 ├─ yuanbao.py
@@ -638,11 +687,13 @@ geo:key-cooldown:{platform_code}:{slot}
 ### 8.1 Actor
 
 ```text
-collect_query_task(query_task_id)
-aggregate_collection(run_id)
-analyze_run(run_id)
-generate_report(report_id)
+collect_query_task(query_task_id)     # collection 队列
+analyze_run(run_id)                   # analysis 队列
+generate_report_task(report_id)       # report 队列
+cleanup_expired_reports_task()        # report 队列（保留期清理，可选调度）
 ```
+
+Run 聚合在 `collection` 服务层 `on_query_task_terminal()` 内同步刷新，不单独暴露 `aggregate_collection` Actor。采集全部终态后由 `maybe_enqueue_run_analysis()` 幂等入队分析。
 
 ### 8.2 QueryTask 状态
 
@@ -916,97 +967,122 @@ REPORT_STORAGE_DIR/
 
 ---
 
-## 14. 目标 API
+## 14. 当前 API 与契约说明
 
-在保留现有 API 的基础上增加：
+第 3.4 节已列出全部已实现路由。本节补充与设计文档的差异及调用约定。
 
 ### 14.1 运行与采集
 
+已实现：
+
 ```text
-POST /api/geo-monitoring/runs/{run_id}/enqueue
+POST /api/geo-monitoring/runs                    # 创建并自动入队采集
 POST /api/geo-monitoring/runs/{run_id}/retry-failed
 POST /api/geo-monitoring/runs/{run_id}/cancel
 GET  /api/geo-monitoring/runs/{run_id}/answers
 GET  /api/geo-monitoring/answers/{answer_id}
 ```
 
-后端 MVP 可将 `POST /runs` 默认行为升级为“创建后提交采集任务”，但必须保留 Service 层 `create_run()` 与 `enqueue_run()` 的事务边界。
+`POST /runs` 在事务提交后调用 `enqueue_run_query_tasks()`，不再单独暴露 `/enqueue`。Service 层仍保持 `create_run()` 与入队逻辑分离，便于测试与调度复用。
 
 ### 14.2 分析与指标
+
+已实现：
 
 ```text
 POST /api/geo-monitoring/runs/{run_id}/analyze
 GET  /api/geo-monitoring/runs/{run_id}/analysis
-GET  /api/geo-monitoring/runs/{run_id}/metrics
+GET  /api/geo-monitoring/runs/{run_id}/agent-executions
 GET  /api/geo-monitoring/projects/{project_id}/dashboard
 GET  /api/geo-monitoring/projects/{project_id}/trends
 ```
 
+独立 `/metrics` 端点未实现；指标快照通过 `/analysis`、`/dashboard`、`/trends` 返回。采集全部完成后，Worker 会在 `analysis_status=skipped` 时自动入队分析。
+
 ### 14.3 调度
 
+已实现，并额外提供启用/停用：
+
 ```text
-GET    /api/geo-monitoring/projects/{project_id}/schedules
-POST   /api/geo-monitoring/projects/{project_id}/schedules
-GET    /api/geo-monitoring/schedules/{schedule_id}
-PUT    /api/geo-monitoring/schedules/{schedule_id}
-DELETE /api/geo-monitoring/schedules/{schedule_id}
-POST   /api/geo-monitoring/schedules/{schedule_id}/trigger
+GET|POST   /api/geo-monitoring/projects/{project_id}/schedules
+GET|PUT|DELETE /api/geo-monitoring/schedules/{schedule_id}
+POST       /api/geo-monitoring/schedules/{schedule_id}/enable
+POST       /api/geo-monitoring/schedules/{schedule_id}/disable
+POST       /api/geo-monitoring/schedules/{schedule_id}/trigger
 ```
 
 ### 14.4 报告
 
+已实现：
+
 ```text
-POST /api/geo-monitoring/runs/{run_id}/reports
-GET  /api/geo-monitoring/runs/{run_id}/reports
-GET  /api/geo-monitoring/reports/{report_id}
-GET  /api/geo-monitoring/reports/{report_id}/download
-POST /api/geo-monitoring/reports/{report_id}/retry
+POST   /api/geo-monitoring/runs/{run_id}/reports
+GET    /api/geo-monitoring/runs/{run_id}/reports
+GET    /api/geo-monitoring/reports/{report_id}
+GET    /api/geo-monitoring/reports/{report_id}/download
+DELETE /api/geo-monitoring/reports/{report_id}
 ```
+
+报告重试未单独暴露 `/retry` 端点；失败后可删除记录并重新 `POST /runs/{run_id}/reports`。
+
+### 14.5 监测设置与词库（`0005` 新增）
+
+```text
+GET|PUT  /api/geo-monitoring/projects/{project_id}/monitor-setup
+GET|POST|PUT|DELETE .../core-keywords
+GET      /api/geo-monitoring/prompt-library
+```
+
+统一响应：`{ "code": 0, "message": "success", "data": {} }`；分页 `data` 含 `items`、`total`、`page`、`page_size`。
 
 ---
 
-## 15. 后端目标模块
+## 15. 后端模块结构
 
 ```text
 backend/app/geo_monitoring/
-├─ api/                           # projects/brands/prompts/platforms/runs/answers/analysis/dashboard/schedules/reports
-├─ models.py                      # 基础模型及后续增量模型镜像
+├─ api/                           # 按域拆分：projects/brands/core_keywords/prompts/
+│                                 # prompt_library/monitor_setup/platforms/runs/
+│                                 # answers/analysis/dashboard/schedules/reports
+├─ models.py                      # 配置域、运行、采集、调度 ORM
 ├─ schemas.py                     # Pydantic 请求/响应契约
 ├─ repositories/                  # 数据库访问收敛层
 ├─ services/
-│  ├─ projects.py
-│  ├─ brands.py
-│  ├─ prompts.py
-│  ├─ platforms.py
-│  ├─ runs.py
-│  ├─ collection.py
-│  ├─ metrics.py
-│  ├─ analysis.py
-│  ├─ schedules.py
-│  └─ reports.py
-├─ adapters/
-├─ agents/
-│  ├─ schemas.py
-│  ├─ prompts.py
-│  ├─ nodes.py
-│  └─ graph.py
-├─ reports/
-│  ├─ renderer.py
-│  └─ storage.py
+│  ├─ projects.py / brands.py / prompts.py / platforms.py / runs.py
+│  ├─ collection.py               # 入队、Adapter 调用、Answer 持久化
+│  ├─ analysis.py                 # LangGraph 编排 + 分析表 ORM
+│  ├─ dashboard.py / schedules.py
+│  ├─ core_keywords.py / prompt_library.py / monitor_setup.py
+│  ├─ brand_matcher.py / competitor_scope.py / prompt_type_inference.py
+│  └─ answers.py
+├─ adapters/                      # base、registry、key_pool、五平台实现
+├─ agents/                        # graph、nodes、llm、schemas、prompts
+├─ analysis/                      # 确定性指标：brands、competitors、metrics、sources
+├─ reports/                       # renderer.py、storage.py（含 geo_report ORM）
 └─ templates/report/
 
 backend/app/worker/
+├─ broker.py
 └─ actors/
-   ├─ collection.py
-   ├─ analysis.py
-   └─ report.py
+   ├─ collection.py              # collect_query_task
+   ├─ analysis.py                # analyze_run、maybe_enqueue_run_analysis
+   └─ report.py                   # generate_report
 
 backend/app/scheduler/
-├─ main.py
-└─ jobs.py
+├─ main.py                        # BlockingScheduler 入口
+└─ jobs.py                        # sync_schedules、计划触发
+
+backend/app/workers/broker.py     # Dramatiq broker 配置（历史兼容路径）
 ```
 
-Worker 入口只负责导入并注册 Actor，不包含业务逻辑。若当前仓库仍使用 `backend/app/workers/worker.py` 作为入口，应在实现阶段保持兼容或在任务中显式迁移。
+Worker 启动命令（本地与 Docker 一致）：
+
+```powershell
+dramatiq app.worker.actors.collection app.worker.actors.analysis app.worker.actors.report `
+  -Q collection -Q analysis -Q report --processes 2 --threads 1
+```
+
+`backend/app/workers/worker.py` 仅 re-export broker，不再作为 Actor 注册入口。
 
 ---
 
@@ -1033,9 +1109,16 @@ V2 后端 MVP 不开发、测试或验收 `frontend` 目录。当前仓库中已
 ### 17.2 必跑命令
 
 ```powershell
-backend/.venv/Scripts/python -m pytest backend/tests -q
-backend/.venv/Scripts/python -m alembic -c backend/alembic.ini heads
-backend/.venv/Scripts/python -m alembic -c backend/alembic.ini upgrade head --sql
+backend/.venv/Scripts/python.exe -m pytest backend/tests -q
+backend/.venv/Scripts/alembic.exe -c backend/alembic.ini heads
+backend/.venv/Scripts/alembic.exe -c backend/alembic.ini upgrade head --sql
+```
+
+可选联调脚本（需本地 API + Worker 已启动，且 `.env` 指向可达中间件）：
+
+```powershell
+backend/.venv/Scripts/python.exe backend/scripts/run_api_full_test.py
+backend/.venv/Scripts/python.exe backend/scripts/run_e2e_pipeline_test.py
 ```
 
 涉及 Redis/Nacos 连接的 smoke test 只能使用 `.env` 中配置的服务器地址。CI 和单元测试仍以 mock/fake 为主，不依赖共享服务器状态。
@@ -1047,33 +1130,45 @@ backend/.venv/Scripts/python -m alembic -c backend/alembic.ini upgrade head --sq
 ### 18.1 本地进程
 
 ```powershell
-# PostgreSQL、Redis、Nacos
-# 已在服务器安装部署，连接信息来自本地 .env。
-# 本地默认不启动 PostgreSQL/Redis/Nacos Docker 容器。
+# PostgreSQL、Redis、Nacos：连接信息来自仓库根目录 .env，本地默认不启动 Docker 中间件。
 
-# API
-backend/.venv/Scripts/python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --app-dir backend
+# API（在 backend 目录，或设置 PYTHONPATH=/app/backend）
+cd backend
+.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-# Worker
-backend/.venv/Scripts/python -m dramatiq app.workers.worker --processes 1 --threads 8
+# Worker：须监听 collection / analysis / report 三队列
+.venv\Scripts\dramatiq.exe app.worker.actors.collection app.worker.actors.analysis app.worker.actors.report `
+  -Q collection -Q analysis -Q report --processes 2 --threads 1
 
-# Scheduler，仅一个实例
-backend/.venv/Scripts/python -m app.scheduler.main
+# Scheduler：.env 中 SCHEDULER_ENABLED=true，仅单实例
+.venv\Scripts\python.exe -m app.scheduler.main
 ```
 
-### 18.2 发布顺序
+### 18.2 Docker Compose 部署
 
-1. 备份数据库；
-2. 发布代码但保持新平台和 Scheduler 禁用；
-3. 执行 Alembic 迁移；
-4. 启动 API；
-5. 启动 Worker；
-6. 验证 PostgreSQL、Redis、Nacos ready；
-7. 逐个平台启用；
-8. 执行小规模 smoke run；
-9. 启动 Scheduler；
-10. 启用报告生成；
-11. 执行 50×5 验收运行。
+仓库根目录 `docker-compose.yml` 使用同一镜像 `geo-platform-backend:${APP_IMAGE_TAG:-local}` 启动三类服务：
+
+| 服务 | 命令 | 说明 |
+| --- | --- | --- |
+| `api` | `uvicorn app.main:app --host 0.0.0.0 --port 8000` | 暴露 `${BACKEND_PORT:-8000}`，healthcheck 探测 `/api/geo-monitoring/health` |
+| `worker` | `dramatiq ... -Q collection -Q analysis -Q report` | 进程数 `${WORKER_PROCESSES:-2}`，线程 `${WORKER_THREADS:-1}` |
+| `scheduler` | `python -m app.scheduler.main` | 容器内 `SCHEDULER_ENABLED=true` |
+
+PostgreSQL、Redis、Nacos 不在 compose 中启动，统一由 `.env` 指向服务器服务。报告目录挂载卷 `reports_data` → 容器内 `/app/backend/data/reports`。
+
+### 18.3 发布顺序
+
+1. 备份数据库与报告目录；
+2. `docker compose build`；
+3. 执行 Alembic 迁移：`docker compose run --rm api python -m alembic -c backend/alembic.ini upgrade head`；
+4. 先启动 `worker`、`scheduler`，再启动 `api`；
+5. 验证 `/api/geo-monitoring/health` 与 `/ready`；
+6. 在 `.env` 或 Nacos 中逐个启用平台 `*_ENABLED=true` 并配置密钥；
+7. 执行小规模 smoke run（创建项目 → 创建运行 → 等待采集/分析 → 生成并下载报告）；
+8. 确认 Scheduler 计划正常触发；
+9. 按需执行 50×启用平台规模验收。
+
+应用回滚优先回滚镜像，不自动 downgrade 数据库。Nacos 不可用时按 `NACOS_ENABLED` 策略选择本地 `.env` 兜底或 ready fail fast。
 
 ---
 
@@ -1110,20 +1205,18 @@ status, error_code
 
 ## 20. 后端 MVP 验收标准
 
-1. 保留现有 8 张表并通过增量迁移新增后端 MVP 表；
-2. 至少一个具备官方凭据的平台完成真实采集闭环；
-3. 其余未配置平台默认禁用，不影响系统启动；
-4. 50×启用平台任务能够稳定投递、重试、聚合和查询；
-5. 回答、引用和脱敏原始响应可追溯；
-6. 品牌提及、首推、竞品、来源和完整度由程序计算；
-7. LangGraph 输出通过 Schema 校验，且不能修改确定性指标；
-8. 平台失败时运行可进入 `partial_success`；
-9. 趋势只比较相同 PromptSet 版本；
-10. APScheduler 不重复创建同一计划时间的运行；
-11. Markdown/HTML 报告可生成、查询和下载；
-12. API、worker、scheduler 可独立启动并完成后端闭环；
-13. 后端测试、迁移验证和部署配置验证通过；
-14. 日志、数据库和 API 响应中不存在明文密钥。
+1. Alembic 迁移链 `0001`–`0005` 可升级，20 张业务表与 ORM 一致；
+2. 至少一个配置官方凭据的平台可完成真实采集闭环（其余平台默认禁用不影响启动）；
+3. `POST /runs` 创建后任务可稳定入队、重试、聚合，Run 终态支持 `partial_success`；
+4. 回答、引用、脱敏原始响应与规则品牌匹配可追溯；
+5. 品牌提及、首推、竞品、来源和完整度由程序计算，LLM 不得覆盖数值指标；
+6. LangGraph 输出通过 Schema 校验，Agent 执行可审计（`/agent-executions`）；
+7. 采集终态后自动入队分析；看板与趋势仅比较相同 PromptSet 版本；
+8. APScheduler 单实例运行，计划触发具备防重复机制；
+9. Markdown/HTML 报告可生成、查询和按 ID 下载；
+10. API、Worker（三队列）、Scheduler 可独立或 Docker 编排启动；
+11. pytest 与迁移 SQL 验证通过；可选 API 全量回归脚本可用；
+12. 日志、数据库和 API 响应中不存在明文密钥。
 
 ---
 

@@ -142,6 +142,7 @@ class ProjectOut(BaseModel):
     official_domain: str | None
     report_title: str | None
     report_subtitle: str | None
+    default_platform_codes: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -298,6 +299,7 @@ class PromptCreate(BaseModel):
     prompt_type: str = Field(default="generic", max_length=50)
     scene_tag: str | None = Field(default=None, max_length=100)
     contains_brand: bool = False
+    core_keyword_id: int | None = Field(default=None, ge=1)
     enabled: bool = True
     sort_order: int = 0
 
@@ -320,6 +322,7 @@ class PromptUpdate(BaseModel):
     prompt_type: str | None = Field(default=None, max_length=50)
     scene_tag: str | None = Field(default=None, max_length=100)
     contains_brand: bool | None = None
+    core_keyword_id: int | None = Field(default=None, ge=1)
     enabled: bool | None = None
     sort_order: int | None = None
 
@@ -346,6 +349,7 @@ class PromptOut(BaseModel):
     prompt_type: str
     scene_tag: str | None
     contains_brand: bool
+    core_keyword_id: int | None = None
     enabled: bool
     sort_order: int
     content_hash: str | None
@@ -607,3 +611,141 @@ class PaginatedResponse(BaseModel, Generic[T]):
     total: int
     page: int
     page_size: int
+
+
+class CoreKeywordCreate(BaseModel):
+    keyword: str = Field(max_length=100)
+    description: str | None = None
+    sort_order: int = 0
+    enabled: bool = True
+
+    @field_validator("keyword")
+    @classmethod
+    def strip_keyword(cls, value: str) -> str:
+        return _strip_required(value)
+
+    @field_validator("description")
+    @classmethod
+    def strip_description(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class CoreKeywordUpdate(BaseModel):
+    keyword: str | None = Field(default=None, max_length=100)
+    description: str | None = None
+    sort_order: int | None = None
+    enabled: bool | None = None
+
+    @field_validator("keyword")
+    @classmethod
+    def strip_keyword(cls, value: str | None) -> str | None:
+        return _strip_required(value) if value is not None else None
+
+    @field_validator("description")
+    @classmethod
+    def strip_description(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class CoreKeywordOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    keyword: str
+    description: str | None
+    sort_order: int
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class PromptLibraryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    prompt_code: str
+    prompt_text: str
+    prompt_type: str
+    industry: str | None
+    scene_tag: str | None
+    default_core_keyword: str | None
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class MonitorSetupBrandInput(BaseModel):
+    brand_name: str = Field(max_length=255)
+    official_domain: str | None = Field(default=None, max_length=255)
+    description: str | None = None
+    brand_words: list[str] = Field(default_factory=list)
+
+    @field_validator("brand_name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        return _strip_required(value)
+
+    @field_validator("official_domain", "description")
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+    @field_validator("brand_words")
+    @classmethod
+    def normalize_words(cls, value: list[str]) -> list[str]:
+        return list(dict.fromkeys(item.strip() for item in value if item.strip()))
+
+
+class MonitorSetupCompetitorInput(BaseModel):
+    brand_name: str = Field(max_length=255)
+    competitor_words: list[str] = Field(default_factory=list)
+
+    @field_validator("brand_name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        return _strip_required(value)
+
+    @field_validator("competitor_words")
+    @classmethod
+    def normalize_words(cls, value: list[str]) -> list[str]:
+        return list(dict.fromkeys(item.strip() for item in value if item.strip()))
+
+
+class MonitorSetupCoreKeywordInput(BaseModel):
+    keyword: str = Field(max_length=100)
+    description: str | None = None
+    sort_order: int = 0
+    enabled: bool = True
+
+    @field_validator("keyword")
+    @classmethod
+    def strip_keyword(cls, value: str) -> str:
+        return _strip_required(value)
+
+
+class MonitorSetupQuestionInput(BaseModel):
+    core_keyword: str | None = Field(default=None, max_length=100)
+    prompt_text: str | None = None
+    prompt_type: str | None = Field(default=None, max_length=50)
+    prompt_code: str | None = Field(default=None, max_length=64)
+    library_prompt_code: str | None = Field(default=None, max_length=64)
+
+    @field_validator("core_keyword", "prompt_type", "prompt_code", "library_prompt_code")
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class MonitorSetupSave(BaseModel):
+    brand: MonitorSetupBrandInput | None = None
+    competitors: list[MonitorSetupCompetitorInput] = Field(default_factory=list)
+    core_keywords: list[MonitorSetupCoreKeywordInput] = Field(default_factory=list)
+    ai_questions: list[MonitorSetupQuestionInput] = Field(default_factory=list)
+    selected_platform_codes: list[str] = Field(default_factory=list)
+    activate_prompt_set: bool = False
+
+    @field_validator("selected_platform_codes")
+    @classmethod
+    def normalize_platform_codes(cls, value: list[str]) -> list[str]:
+        return list(dict.fromkeys(code.strip() for code in value if code.strip()))

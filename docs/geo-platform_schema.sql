@@ -580,5 +580,65 @@ CREATE INDEX ix_geo_report_project_run ON geo_report (project_id, run_id);
 
 UPDATE alembic_version SET version_num='geo_monitoring_0004' WHERE alembic_version.version_num = 'geo_monitoring_0003';
 
+-- Running upgrade geo_monitoring_0004 -> geo_monitoring_0005
+
+ALTER TABLE geo_monitor_project ADD COLUMN default_platform_codes JSONB DEFAULT '[]'::jsonb NOT NULL;
+
+CREATE TABLE geo_core_keyword (
+    id BIGSERIAL NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    is_deleted BOOLEAN DEFAULT false NOT NULL,
+    tenant_id BIGINT,
+    created_by BIGINT,
+    updated_by BIGINT,
+    project_id BIGINT NOT NULL,
+    keyword VARCHAR(100) NOT NULL,
+    description TEXT,
+    sort_order INTEGER DEFAULT '0' NOT NULL,
+    enabled BOOLEAN DEFAULT true NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_geo_core_keyword_project_keyword UNIQUE (project_id, keyword),
+    FOREIGN KEY(project_id) REFERENCES geo_monitor_project (id) ON DELETE CASCADE
+);
+
+CREATE INDEX ix_geo_core_keyword_project_sort ON geo_core_keyword (project_id, sort_order);
+
+CREATE TABLE geo_prompt_library (
+    id BIGSERIAL NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    is_deleted BOOLEAN DEFAULT false NOT NULL,
+    tenant_id BIGINT,
+    created_by BIGINT,
+    updated_by BIGINT,
+    prompt_code VARCHAR(64) NOT NULL,
+    prompt_text TEXT NOT NULL,
+    prompt_type VARCHAR(50) DEFAULT 'generic' NOT NULL,
+    industry VARCHAR(100),
+    scene_tag VARCHAR(100),
+    default_core_keyword VARCHAR(100),
+    enabled BOOLEAN DEFAULT true NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_geo_prompt_library_code UNIQUE (prompt_code)
+);
+
+CREATE INDEX ix_geo_prompt_library_industry_enabled ON geo_prompt_library (industry, enabled);
+
+ALTER TABLE geo_prompt ADD COLUMN core_keyword_id BIGINT;
+
+ALTER TABLE geo_prompt ADD CONSTRAINT fk_geo_prompt_core_keyword_id FOREIGN KEY(core_keyword_id) REFERENCES geo_core_keyword (id) ON DELETE SET NULL;
+
+INSERT INTO geo_prompt_library (
+    prompt_code, prompt_text, prompt_type, industry, scene_tag, default_core_keyword, enabled, is_deleted
+) VALUES
+    ('LIB_RECOMMEND_001', '推荐国内有哪些值得看的文旅演艺项目？', 'recommendation', '文旅演艺', '推荐', '文旅演艺', true, false),
+    ('LIB_COMPARE_001', '宋城演艺和只有河南·戏剧幻城哪个更值得看？', 'comparison', '文旅演艺', '对比', '文旅演艺', true, false),
+    ('LIB_VISIBILITY_001', '介绍一下只有河南·戏剧幻城这个品牌。', 'brand_visibility', '文旅演艺', '品牌认知', '只有河南', true, false);
+
+UPDATE alembic_version SET version_num='geo_monitoring_0005' WHERE alembic_version.version_num = 'geo_monitoring_0004';
+
 COMMIT;
 
