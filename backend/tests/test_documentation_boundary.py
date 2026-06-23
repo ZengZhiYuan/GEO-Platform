@@ -12,12 +12,18 @@ def test_docs_contains_only_approved_documents():
     }
 
     assert files == {
+        "docs/API接口文档.md",
+        "docs/API全量接口测试报告.md",
         "docs/API测试文档.md",
         "docs/AI应用监测_MVP_Cursor实施任务.md",
         "docs/AI应用监测_MVP_Cursor实施任务V2.md",
         "docs/AI应用监测_MVP_V2_Task索引.md",
+        "docs/AI应用监测平台操作手册.md",
         "docs/PostgreSQL建表操作文档.md",
+        "docs/PostgreSQL远程建表操作文档_无需部署代码.md",
+        "docs/geo-platform_schema.sql",
         "docs/采集任务生命周期说明.md",
+        "docs/端到端流水线测试报告.md",
         "docs/superpowers/specs/2026-06-15-ai-monitoring-domain-replacement-design.md",
         "docs/superpowers/plans/2026-06-15-ai-monitoring-domain-replacement-plan.md",
     }
@@ -31,8 +37,8 @@ def test_monitoring_documents_match_current_delivery_scope():
         ROOT / "docs" / "AI应用监测_MVP_Cursor实施任务.md"
     ).read_text(encoding="utf-8")
 
-    assert "V2.0" in technical_document
-    assert "geo_monitoring_0004" in technical_document
+    assert "V2.1" in technical_document
+    assert "geo_monitoring_0005" in technical_document
     assert "官方 API" in technical_document
     assert "REPORT_STORAGE_DIR" in technical_document
 

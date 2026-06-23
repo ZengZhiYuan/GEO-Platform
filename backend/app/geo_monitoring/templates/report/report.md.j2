@@ -6,16 +6,43 @@
 **运行编号:** {{ run.run_no }}  
 **Prompt 集版本:** {{ run.prompt_set_version }}  
 **目标品牌:** {{ target_brand_name }}  
+**分析状态:** {{ run.analysis_status }}  
 **有效回答数:** {{ run.valid_answer_count }}  
 **数据完整率:** {{ run.data_completeness_rate }}
 
-## 项目摘要
+## 整体表现诊断
 
-- 行业: {{ project.industry }}
-- 官方域名: {{ project.official_domain or "—" }}
-- 分析状态: {{ run.analysis_status }}
+{{ diagnosis.summary }}
 
-## 平台指标
+- 综合得分: {{ diagnosis.overall_score }}/100
+- 诊断等级: {{ diagnosis.level }}
+- 优化建议数: {{ diagnosis.recommendation_count }}
+
+### 核心优势点
+
+{% for item in diagnosis.strengths %}
+- {{ item }}
+{% else %}
+- 暂无可归纳的优势点。
+{% endfor %}
+
+### 核心问题点
+
+{% for item in diagnosis.risks %}
+- {{ item }}
+{% else %}
+- 暂无明显问题点。
+{% endfor %}
+
+## 平台品牌得分
+
+{% for item in platform_scoreboard %}
+- {{ item.platform_code }}: 综合得分 {{ item.score }}/100，品牌提及率 {{ item.brand_mention_percent }}，Top1(首位)提及率 {{ item.brand_top1_percent }}，Top3(首屏)提及率 {{ item.brand_top3_percent }}，平均排名 {{ item.avg_rank_label }}，{{ item.sentiment_label }}
+{% else %}
+- 暂无平台分析数据。
+{% endfor %}
+
+## 平台指标明细
 
 {% for platform in platforms %}
 ### {{ platform.platform_code }}
@@ -33,38 +60,62 @@
 
 {% endfor %}
 
+## 问题场景表现
+
+{% for item in prompt_scene_cards %}
+- [{{ item.platform_code }}] {{ item.prompt_text or ("Prompt " ~ item.prompt_id) }}: 竞争力 {{ item.score }}/100，{{ item.rank_label }}
+{% else %}
+- 暂无 Prompt 竞争力数据。
+{% endfor %}
+
 ## 竞品差距
 
 {% for platform in platforms %}
 ### {{ platform.platform_code }}
 
 {% for competitor in platform.top_competitors %}
-- {{ competitor.get("brand_name", competitor) }}: 提及 {{ competitor.get("mention_count", "—") }}
+- {{ competitor.get("brand_name", competitor) }}: 提及 {{ competitor.get("mention_answer_count", competitor.get("mention_count", "—")) }}，可见度 {{ competitor.get("visibility_rate", "—") }}
 {% else %}
-- 暂无竞品数据
+- 暂无竞品数据。
 {% endfor %}
 
 {% endfor %}
 
-## Prompt 表现
+## 引用来源分析
 
-{% for platform in platforms %}
-### {{ platform.platform_code }}
+### 信源类型分布
 
-{% for item in platform.prompt_competitiveness_summary %}
-- Prompt {{ item.get("prompt_id", "—") }}: 竞争力 {{ item.get("competitiveness_score", "—") }}
+{% for item in source_type_distribution %}
+- {{ item.label }}: {{ item.share_percent }}，引用 {{ item.citation_count }} 次
 {% else %}
-- 暂无 Prompt 竞争力数据
+- 暂无来源类型分布。
 {% endfor %}
 
-{% endfor %}
-
-## 来源统计
+### 来源统计
 
 {% for source in sources %}
 - [{{ source.platform_code or "all" }}] {{ source.domain }}: 引用 {{ source.citation_count }}，占比 {{ source.share_rate }}
 {% else %}
-- 暂无来源统计
+- 暂无来源统计。
+{% endfor %}
+
+## 高权重来源内容追踪
+
+{% for source in top_source_cards %}
+### {{ loop.index }}. {{ source.source_name }}
+
+- 域名: {{ source.domain }}
+- 信源类型: {{ source.source_type }}
+- 引用次数: {{ source.citation_count }}
+- 引用占比: {{ source.share_percent }}
+- 关联平台: {{ source.platforms | join("、") if source.platforms else "—" }}
+- 关联问题: {{ source.prompts | join("；") if source.prompts else "—" }}
+{% for example in source.examples %}
+- 示例链接: {{ example.title }} {{ example.url }}
+{% endfor %}
+
+{% else %}
+暂无可追踪的高权重来源。
 {% endfor %}
 
 ## Agent 洞察
@@ -72,13 +123,27 @@
 {% for insight in agent_insights %}
 - {{ insight.agent_code }} ({{ insight.platform_code or "global" }}): {{ insight.output_json }}
 {% else %}
-- 暂无 Agent 洞察
+- 暂无 Agent 洞察。
+{% endfor %}
+
+## 优化建议
+
+{% for item in action_recommendations %}
+### {{ loop.index }}. {{ item.title }}
+
+- 建议依据: {{ item.basis }}
+- 建议动作: {{ item.action }}
+
+{% else %}
+暂无优化建议。
 {% endfor %}
 
 ## 原始回答摘录
 
 {% for answer in answers %}
 ### {{ answer.platform_code }} / Prompt {{ answer.prompt_id }}
+
+**问题:** {{ answer.prompt_text }}
 
 {{ answer.raw_text }}
 

@@ -348,7 +348,9 @@ docker compose up -d worker scheduler
 docker compose up -d api
 ```
 
-`docker-compose.yml` 中 Worker 默认监听 `collection`、`analysis`、`report` 三个队列；Scheduler 容器内设置 `SCHEDULER_ENABLED=true`。全量接口回归可使用 `backend/scripts/run_api_full_test.py`（需 API 与 Worker 已启动）。
+发布顺序要求：先完成镜像构建与数据库迁移，再启动 worker/scheduler，最后切换 API，避免 API 先接流量但后台队列尚未就绪。
+
+`docker-compose.yml` 中 Worker 默认监听 `collection`、`analysis`、`report` 三个队列；Scheduler 容器内设置 `SCHEDULER_ENABLED=true`。上线 smoke test 覆盖 health、ready、创建测试项目、mock 运行和报告下载；全量接口回归可使用 `backend/scripts/run_api_full_test.py`（需 API 与 Worker 已启动）。
 
 回滚规则：应用回滚优先回滚镜像，不自动 downgrade 数据库；报告目录回滚只恢复元数据一致的备份；平台异常时设置 `*_ENABLED=false` 并重启 worker。
 
