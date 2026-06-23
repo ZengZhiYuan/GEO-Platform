@@ -106,6 +106,8 @@ class PlatformMetricsOutput:
     platform_code: str
     valid_answer_count: int
     brand_visibility: RateMetric
+    brand_top1_mention_rate: RateMetric
+    brand_top3_mention_rate: RateMetric
     citation_rate: RateMetric
     recommendation: RecommendationMetric
     source_coverage: RateMetric

@@ -38,6 +38,15 @@ def _decimal(value: Decimal | None) -> str:
     return str(value)
 
 
+def _summary_metric_rate(row: PlatformAnalysis, metric_code: str) -> str:
+    metrics = ((row.summary_json or {}).get("metrics") or {})
+    metric = metrics.get(metric_code) or {}
+    value = metric.get("rate")
+    if value is None:
+        return "0.0000"
+    return str(Decimal(str(value)).quantize(Decimal("0.0001")))
+
+
 # 聚合运行、平台分析、来源统计与回答数据，构建报告渲染上下文。
 def build_report_context(db: Session, run_id: int) -> dict[str, Any]:
     base = load_run_context(db, run_id)
@@ -132,6 +141,16 @@ def build_report_context(db: Session, run_id: int) -> dict[str, Any]:
                 "brand_first_rate": _decimal(row.brand_first_rate),
                 "brand_first_among_mentions_rate": _decimal(
                     row.brand_first_among_mentions_rate
+                ),
+                "brand_top1_mention_rate": _summary_metric_rate(
+                    row,
+                    "brand_top1_mention_rate",
+                )
+                if row.summary_json
+                else _decimal(row.brand_first_rate),
+                "brand_top3_mention_rate": _summary_metric_rate(
+                    row,
+                    "brand_top3_mention_rate",
                 ),
                 "top_competitors": row.top_competitors or [],
                 "top_sources": row.top_sources or [],

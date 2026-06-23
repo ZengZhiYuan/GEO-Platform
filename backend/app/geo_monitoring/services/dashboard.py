@@ -25,6 +25,24 @@ def _decimal_str(value: Decimal | None) -> str:
     return str(value)
 
 
+def _summary_metric(row: PlatformAnalysis, metric_code: str) -> dict[str, Any]:
+    metrics = ((row.summary_json or {}).get("metrics") or {})
+    return metrics.get(metric_code) or {}
+
+
+def _summary_metric_count(row: PlatformAnalysis, metric_code: str) -> int:
+    metric = _summary_metric(row, metric_code)
+    return int(metric.get("numerator") or 0)
+
+
+def _summary_metric_rate(row: PlatformAnalysis, metric_code: str) -> str:
+    metric = _summary_metric(row, metric_code)
+    value = metric.get("rate")
+    if value is None:
+        return "0.0000"
+    return str(Decimal(str(value)).quantize(Decimal("0.0001")))
+
+
 def _rate_metric_payload(
     *,
     metric_code: str,
@@ -53,6 +71,25 @@ def _platform_analysis_payload(row: PlatformAnalysis) -> dict[str, Any]:
         "brand_first_count": row.brand_first_count,
         "brand_first_rate": str(row.brand_first_rate),
         "brand_first_among_mentions_rate": str(row.brand_first_among_mentions_rate),
+        "brand_top1_mention_count": _summary_metric_count(
+            row,
+            "brand_top1_mention_rate",
+        )
+        or row.brand_first_count,
+        "brand_top1_mention_rate": _summary_metric_rate(
+            row,
+            "brand_top1_mention_rate",
+        )
+        if row.summary_json
+        else str(row.brand_first_rate),
+        "brand_top3_mention_count": _summary_metric_count(
+            row,
+            "brand_top3_mention_rate",
+        ),
+        "brand_top3_mention_rate": _summary_metric_rate(
+            row,
+            "brand_top3_mention_rate",
+        ),
         "top_competitors": row.top_competitors,
         "top_sources": row.top_sources,
         "prompt_competitiveness_summary": row.prompt_competitiveness_summary,
@@ -175,6 +212,11 @@ def _aggregate_analysis_summary(rows: list[PlatformAnalysis]) -> dict[str, Any] 
     valid = sum(row.valid_answer_count for row in rows)
     mentions = sum(row.brand_mention_count for row in rows)
     first = sum(row.brand_first_count for row in rows)
+    top1 = sum(
+        _summary_metric_count(row, "brand_top1_mention_rate") or row.brand_first_count
+        for row in rows
+    )
+    top3 = sum(_summary_metric_count(row, "brand_top3_mention_rate") for row in rows)
     if valid > 0:
         completeness = sum(
             row.data_completeness_rate * row.valid_answer_count for row in rows
@@ -189,6 +231,10 @@ def _aggregate_analysis_summary(rows: list[PlatformAnalysis]) -> dict[str, Any] 
         "brand_mention_rate": _decimal_str(compute_rate(mentions, valid)),
         "brand_first_count": first,
         "brand_first_rate": _decimal_str(compute_rate(first, valid)),
+        "brand_top1_mention_count": top1,
+        "brand_top1_mention_rate": _decimal_str(compute_rate(top1, valid)),
+        "brand_top3_mention_count": top3,
+        "brand_top3_mention_rate": _decimal_str(compute_rate(top3, valid)),
         "data_completeness_rate": _decimal_str(
             completeness.quantize(Decimal("0.0001"))
         ),

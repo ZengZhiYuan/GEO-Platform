@@ -24,6 +24,8 @@
 - 数据完整率: {{ platform.data_completeness_rate }}
 - 品牌提及率: {{ platform.brand_mention_rate }}
 - 品牌首位率: {{ platform.brand_first_rate }}
+- Top1(首位)提及率: {{ platform.brand_top1_mention_rate }}
+- Top3(首屏)提及率: {{ platform.brand_top3_mention_rate }}
 
 {% if platform.summary_json %}
 **洞察摘要:** {{ platform.summary_json.get("platform_summary", "") }}

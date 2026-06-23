@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Path, Query
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -18,7 +20,22 @@ from app.geo_monitoring.services.analysis import (
 )
 from app.geo_monitoring.services.runs import get_run
 
-router = APIRouter()
+router = APIRouter()
+
+
+def _summary_rate(row: PlatformAnalysis, metric_code: str) -> str:
+    metrics = ((row.summary_json or {}).get("metrics") or {})
+    metric = metrics.get(metric_code) or {}
+    value = metric.get("rate")
+    if value is None:
+        return "0.0000"
+    return str(Decimal(str(value)).quantize(Decimal("0.0001")))
+
+
+def _summary_count(row: PlatformAnalysis, metric_code: str) -> int:
+    metrics = ((row.summary_json or {}).get("metrics") or {})
+    metric = metrics.get(metric_code) or {}
+    return int(metric.get("numerator") or 0)
 
 
 # 将平台分析 ORM 行序列化为 API 响应字段
@@ -32,7 +49,18 @@ def _platform_analysis_payload(row: PlatformAnalysis) -> dict:
         "brand_mention_rate": str(row.brand_mention_rate),
         "brand_first_count": row.brand_first_count,
         "brand_first_rate": str(row.brand_first_rate),
-        "brand_first_among_mentions_rate": str(row.brand_first_among_mentions_rate),
+        "brand_first_among_mentions_rate": str(row.brand_first_among_mentions_rate),
+
+        "brand_top1_mention_count": _summary_count(row, "brand_top1_mention_rate")
+        or row.brand_first_count,
+
+        "brand_top1_mention_rate": _summary_rate(row, "brand_top1_mention_rate")
+        if row.summary_json
+        else str(row.brand_first_rate),
+
+        "brand_top3_mention_count": _summary_count(row, "brand_top3_mention_rate"),
+
+        "brand_top3_mention_rate": _summary_rate(row, "brand_top3_mention_rate"),
         "top_competitors": row.top_competitors,
         "top_sources": row.top_sources,
         "prompt_competitiveness_summary": row.prompt_competitiveness_summary,

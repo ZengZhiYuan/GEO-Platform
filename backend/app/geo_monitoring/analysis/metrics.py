@@ -78,6 +78,42 @@ def compute_brand_visibility(
     )
 
 
+# 计算目标品牌在有效回答中的相对提及排名
+def _brand_rank(answer: AnswerInput, brand_id: int) -> int | None:
+    mentioned = [
+        mention
+        for mention in answer.brand_mentions
+        if mention.is_mentioned and mention.first_position is not None
+    ]
+    mentioned.sort(key=lambda item: (item.first_position or 0, item.brand_id))
+    for index, mention in enumerate(mentioned, start=1):
+        if mention.brand_id == brand_id:
+            return index
+    return None
+
+
+# 计算目标品牌出现在指定 Top N 排名内的有效回答占比
+def compute_brand_rank_rate(
+    answers: list[AnswerInput],
+    *,
+    target_brand_id: int,
+    max_rank: int,
+) -> RateMetric:
+    valid_answers = filter_valid_answers(answers)
+    numerator = sum(
+        1
+        for answer in valid_answers
+        if (rank := _brand_rank(answer, target_brand_id)) is not None
+        and rank <= max_rank
+    )
+    denominator = len(valid_answers)
+    return RateMetric(
+        numerator=numerator,
+        denominator=denominator,
+        rate=compute_rate(numerator, denominator),
+    )
+
+
 # 计算含有效引用的回答占比（引用率）
 def compute_citation_rate(answers: list[AnswerInput]) -> RateMetric:
     from app.geo_monitoring.analysis.sources import is_valid_citation
@@ -210,6 +246,16 @@ def compute_platform_metrics(
         scoped,
         target_brand_id=target_brand_id,
     )
+    brand_top1_mention_rate = compute_brand_rank_rate(
+        scoped,
+        target_brand_id=target_brand_id,
+        max_rank=1,
+    )
+    brand_top3_mention_rate = compute_brand_rank_rate(
+        scoped,
+        target_brand_id=target_brand_id,
+        max_rank=3,
+    )
     citation_rate = compute_citation_rate(scoped)
     recommendation = compute_recommendation_rate(
         scoped,
@@ -253,6 +299,8 @@ def compute_platform_metrics(
         platform_code=platform_code,
         valid_answer_count=len(valid_answers),
         brand_visibility=brand_visibility,
+        brand_top1_mention_rate=brand_top1_mention_rate,
+        brand_top3_mention_rate=brand_top3_mention_rate,
         citation_rate=citation_rate,
         recommendation=recommendation,
         source_coverage=source_coverage,
