@@ -9,6 +9,8 @@ name: geo-platform-backend
 x-backend-common: &backend-common
   env_file:
     - .env
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   environment:
     - APP_ENV=${APP_ENV:-prod}
     - APP_DEBUG=${APP_DEBUG:-false}
