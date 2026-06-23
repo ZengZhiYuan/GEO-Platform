@@ -118,32 +118,6 @@ GET /api/geo-monitoring/reports/{report_id}/download
 
 PDF 下载响应的 `Content-Type` 为 `application/pdf`。报告文件写入 `REPORT_STORAGE_DIR`，Docker 部署时写入持久卷 `geo_platform_reports_data`。
 
-## Navicat 需要执行的 SQL
-
-如果服务器 PostgreSQL 已经是旧版本库，且你准备用本地 Navicat 直接升级本次 PDF 报告能力，执行：
-
-[scripts/upgrade_geo_report_pdf_format_navicat.sql](./scripts/upgrade_geo_report_pdf_format_navicat.sql)
-
-它只做三件事：
-
-1. 检查当前库存在 `alembic_version` 和 `geo_report`。
-2. 将 `geo_report.format` 约束更新为 `md / html / pdf`。
-3. 将 `alembic_version` 从 `geo_monitoring_0005` 更新到 `geo_monitoring_0006`。
-
-执行后验收结果应为：
-
-```sql
-SELECT version_num FROM public.alembic_version;
--- geo_monitoring_0006
-```
-
-以及 `ck_geo_report_format` 约束包含：
-
-```text
-format IN ('md', 'html', 'pdf')
-```
-
-空库初始化请使用 [docs/geo-platform_schema.sql](./docs/geo-platform_schema.sql)。已有数据的库不要重复执行全量建表 SQL。
 
 ## Docker Compose 部署
 
@@ -153,19 +127,43 @@ format IN ('md', 'html', 'pdf')
 
 发布前先备份数据库和报告目录，确认 `.env` 中 PostgreSQL、Redis、Nacos、平台 Key 和 Agent LLM Key 都指向目标环境。
 
-```bash
-cp .env.example .env
-# 修改 .env，填入服务器 PostgreSQL / Redis / Nacos / 平台 Key / Agent LLM Key
+先判断本次 `git pull` 拉到了什么：
 
+| 变更类型 | 需要做什么 |
+| --- | --- |
+| 只改 README / docs / 注释 | 不需要重启服务；`git pull` 后即可 |
+| 改了后端 Python 代码、模板、依赖或 Dockerfile | 需要 `docker compose build`，并重新创建 API、Worker、Scheduler |
+| 新增/修改 Alembic migration | 需要执行 `alembic upgrade head` |
+| 只改 `.env` 平台 Key 或开关 | 通常重启受影响服务；平台采集配置优先重启 `worker`，API 配置变更重启 `api` |
+
+无需 `docker compose down`，不要删除 volume，也不要重启 PostgreSQL / Redis / Nacos。
+
+```bash
+# 1. 进入服务器项目目录，拉取最新代码
+cd /opt/geo-platform
+git pull origin main
+
+# 2. 校验 compose 与 .env
 docker compose config --quiet
+
+# 3. 构建新镜像。后端代码、requirements.txt、Dockerfile 任一变化都要执行
 docker compose build
+
+# 4. 暂停后台任务，避免迁移期间旧 worker 继续消费任务
+docker compose stop worker scheduler
+
+# 5. 执行数据库迁移。若没有新 migration，此命令会显示 already up to date
 docker compose run --rm api python -m alembic -c backend/alembic.ini upgrade head
+
+# 6. 先启动后台，再启动/切换 API
 docker compose up -d worker scheduler
 docker compose up -d api
+
+# 7. 查看状态
 docker compose ps
 ```
 
-发布顺序固定为：先构建镜像和执行迁移，再启动 worker/scheduler，最后切换 API。上线 smoke test 至少覆盖 health、ready、创建测试项目、mock 运行和报告下载。
+发布顺序固定为：先构建镜像，暂停后台任务，执行迁移，再启动 worker/scheduler，最后切换 API。上线 smoke test 至少覆盖 health、ready、创建测试项目、mock 运行和报告下载。
 
 回滚时应用回滚优先回滚镜像，不自动 downgrade 数据库；只有确认迁移可逆且不会影响数据时才考虑数据库回退。某个平台异常时，把对应 `*_ENABLED=false` 后重启 worker；Nacos 不可用且允许本地配置兜底时，设置 `NACOS_ENABLED=false` 后重启服务。
 
@@ -242,6 +240,7 @@ geo_monitoring_0001
 SELECT version_num FROM public.alembic_version;
 ```
 
+空库初始化请使用 [docs/geo-platform_schema.sql](./docs/geo-platform_schema.sql)。已有数据的库不要重复执行全量建表 SQL。
 生产库升级前先备份。应用回滚优先回滚镜像/代码，不要自动 downgrade 数据库，除非已经确认迁移可逆且不会影响现有业务数据。
 
 ## 文档入口
