@@ -604,7 +604,7 @@ REDIS_URL=redis://:<redis-password>@<redis-host>:6379/0
 |------|------|
 | project_id / run_id | 项目与运行 |
 | status | pending / generating / completed / failed |
-| format | 报告格式：md / html |
+| format | 报告格式：md / html / pdf |
 | file_name | 文件名 |
 | relative_storage_path | 相对存储路径 |
 | file_size | 文件大小（字节） |

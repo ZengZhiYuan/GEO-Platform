@@ -2,102 +2,498 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>{{ html_escape(project.report_title) }}</title>
+  <title>{{ project.report_title }}</title>
   <style>
-    body { font-family: sans-serif; margin: 2rem; color: #222; }
-    h1, h2, h3 { color: #111; }
-    table { border-collapse: collapse; width: 100%; margin-bottom: 1.5rem; }
-    th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
-    pre { background: #f7f7f7; padding: 1rem; overflow-x: auto; white-space: pre-wrap; }
-    .meta { color: #555; margin-bottom: 1rem; }
+    @page { size: A4; margin: 18mm 16mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #f6f7fb;
+      color: #263247;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      font-size: 13px;
+      line-height: 1.65;
+    }
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto 18px;
+      padding: 18mm 16mm;
+      background: #fff;
+      border: 1px solid #e8ecf4;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid #dfe5f0;
+      color: #73819a;
+      font-weight: 700;
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 {
+      margin-bottom: 8px;
+      color: #1e2636;
+      font-size: 28px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    h2 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 28px 0 14px;
+      color: #1f2937;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+    h2::before {
+      content: "";
+      width: 4px;
+      height: 18px;
+      background: #6d4cff;
+      border-radius: 2px;
+    }
+    h3 {
+      margin-bottom: 8px;
+      color: #2f3a4d;
+      font-size: 14px;
+      letter-spacing: 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 18px;
+    }
+    th, td {
+      padding: 9px 12px;
+      border-bottom: 1px solid #edf0f6;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      color: #7b88a1;
+      font-size: 12px;
+      font-weight: 700;
+      background: #f8f9fc;
+    }
+    tr:nth-child(even) td { background: #fbfcff; }
+    pre {
+      margin: 8px 0 18px;
+      padding: 12px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      background: #f8fafc;
+      border: 1px solid #e6ebf3;
+      border-radius: 8px;
+      color: #334155;
+      font-family: "Microsoft YaHei", sans-serif;
+    }
+    .hero {
+      margin-top: 22px;
+      padding: 22px;
+      border: 1px solid #ded8ff;
+      border-radius: 8px;
+      background: #fbfaff;
+    }
+    .subtitle { color: #718096; }
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .metric {
+      padding: 12px;
+      border: 1px solid #e7ebf2;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .metric-label {
+      color: #748198;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .metric-value {
+      margin-top: 4px;
+      color: #1f2937;
+      font-size: 18px;
+      font-weight: 800;
+    }
+    .summary-box {
+      margin: 16px 0;
+      padding: 15px 16px;
+      border-radius: 8px;
+      background: #f8fafc;
+      border: 1px solid #edf1f7;
+      font-weight: 700;
+    }
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin: 14px 0 22px;
+    }
+    .panel {
+      border: 1px solid #e4e9f2;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .panel-title {
+      padding: 10px 14px;
+      border-bottom: 1px solid #edf1f7;
+      font-weight: 800;
+    }
+    .panel.good { border-color: #c9ecd8; background: #fbfffd; }
+    .panel.good .panel-title { color: #149451; background: #f3fbf6; }
+    .panel.warn { border-color: #ffd6d1; background: #fffafa; }
+    .panel.warn .panel-title { color: #e5483f; background: #fff4f2; }
+    .panel ul { margin: 0; padding: 12px 18px 14px 30px; }
+    .panel li { margin-bottom: 7px; }
+    .score-line {
+      display: grid;
+      grid-template-columns: 150px 1fr 56px;
+      gap: 12px;
+      align-items: center;
+      min-width: 420px;
+    }
+    .bar {
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #ede7ff;
+    }
+    .bar span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: #7b4dff;
+    }
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 10px 0 4px;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 3px 10px;
+      border: 1px solid #ded4ff;
+      border-radius: 999px;
+      color: #6c38ff;
+      background: #fbf8ff;
+      font-weight: 700;
+      font-size: 12px;
+    }
+    .scene-grid, .recommend-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .scene-card, .source-card, .recommend-card {
+      padding: 13px 14px;
+      border: 1px solid #e5eaf3;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .scene-card.good { border-color: #ccebd9; background: #fbfffd; }
+    .scene-card.weak { border-color: #ffd8d2; background: #fffafa; }
+    .scene-card .headline,
+    .source-card .headline,
+    .recommend-card .headline {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-weight: 800;
+    }
+    .muted { color: #78869d; }
+    .source-card {
+      margin-bottom: 10px;
+      break-inside: avoid;
+    }
+    .source-main {
+      display: grid;
+      grid-template-columns: 1fr 88px;
+      gap: 12px;
+      align-items: start;
+    }
+    .count-box {
+      padding: 9px;
+      border: 1px solid #dacfff;
+      border-radius: 8px;
+      color: #6c38ff;
+      background: #f7f2ff;
+      text-align: center;
+      font-weight: 800;
+    }
+    .count-box span {
+      display: block;
+      color: #7b8496;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .section-note {
+      margin: -4px 0 14px;
+      color: #7f8aa0;
+    }
+    .print-break { break-before: page; }
+    @media print {
+      body { background: #fff; }
+      .page { margin: 0; border: 0; width: auto; min-height: auto; }
+    }
   </style>
 </head>
 <body>
-  <h1>{{ html_escape(project.report_title) }}</h1>
-  {% if project.report_subtitle %}
-  <p class="meta">{{ html_escape(project.report_subtitle) }}</p>
-  {% endif %}
-  <p class="meta">
-    运行编号: {{ html_escape(run.run_no) }} |
-    Prompt 集版本: {{ html_escape(run.prompt_set_version) }} |
-    目标品牌: {{ html_escape(target_brand_name) }}
-  </p>
+  <main class="page">
+    <header>
+      <div>{{ project.name }} GEO 品牌诊断报告</div>
+      <div>运行编号 {{ run.run_no }}</div>
+    </header>
 
-  <h2>项目摘要</h2>
-  <ul>
-    <li>行业: {{ html_escape(project.industry) }}</li>
-    <li>官方域名: {{ html_escape(project.official_domain or "—") }}</li>
-    <li>有效回答数: {{ run.valid_answer_count }}</li>
-    <li>数据完整率: {{ run.data_completeness_rate }}</li>
-  </ul>
+    <section class="hero">
+      <h1>{{ project.report_title }}</h1>
+      {% if project.report_subtitle %}
+      <p class="subtitle">{{ project.report_subtitle }}</p>
+      {% endif %}
+      <div class="summary-box">{{ diagnosis.summary }}</div>
+      <div class="meta">
+        <div class="metric">
+          <div class="metric-label">综合得分</div>
+          <div class="metric-value">{{ diagnosis.overall_score }}</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">诊断等级</div>
+          <div class="metric-value">{{ diagnosis.level }}</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">目标品牌</div>
+          <div class="metric-value">{{ target_brand_name }}</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">有效回答</div>
+          <div class="metric-value">{{ run.valid_answer_count }}</div>
+        </div>
+      </div>
+    </section>
 
-  <h2>平台指标</h2>
-  {% for platform in platforms %}
-  <h3>{{ html_escape(platform.platform_code) }}</h3>
-  <table>
-    <tr><th>指标</th><th>值</th></tr>
-    <tr><td>有效回答</td><td>{{ platform.valid_answer_count }}</td></tr>
-    <tr><td>数据完整率</td><td>{{ platform.data_completeness_rate }}</td></tr>
-    <tr><td>品牌提及率</td><td>{{ platform.brand_mention_rate }}</td></tr>
-    <tr><td>品牌首位率</td><td>{{ platform.brand_first_rate }}</td></tr>
-  </table>
-  {% if platform.summary_json %}
-  <p>{{ html_escape(platform.summary_json.get("platform_summary", "")) }}</p>
-  {% endif %}
-  {% endfor %}
+    <h2>整体表现诊断</h2>
+    <div class="split">
+      <section class="panel good">
+        <div class="panel-title">核心优势点</div>
+        <ul>
+          {% for item in diagnosis.strengths %}
+          <li>{{ item }}</li>
+          {% else %}
+          <li>暂无可归纳的优势点。</li>
+          {% endfor %}
+        </ul>
+      </section>
+      <section class="panel warn">
+        <div class="panel-title">核心问题点</div>
+        <ul>
+          {% for item in diagnosis.risks %}
+          <li>{{ item }}</li>
+          {% else %}
+          <li>暂无明显问题点。</li>
+          {% endfor %}
+        </ul>
+      </section>
+    </div>
 
-  <h2>竞品差距</h2>
-  {% for platform in platforms %}
-  <h3>{{ html_escape(platform.platform_code) }}</h3>
-  <ul>
-    {% for competitor in platform.top_competitors %}
-    <li>{{ html_escape(competitor.get("brand_name") or competitor|string) }}</li>
-    {% else %}
-    <li>暂无竞品数据</li>
+    <h2>平台品牌得分</h2>
+    <p class="section-note">综合得分由品牌提及、首位表现、Top3 覆盖和数据完整度派生，用于快速比较各 AI 平台的可见度表现。</p>
+    <table>
+      <thead>
+        <tr>
+          <th>AI 平台</th>
+          <th>综合得分</th>
+          <th>品牌提及率</th>
+          <th>Top1(首位)提及率</th>
+          <th>Top3(首屏)提及率</th>
+          <th>平均排名</th>
+          <th>情感/可见倾向</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in platform_scoreboard %}
+        <tr>
+          <td><strong>{{ item.platform_code }}</strong></td>
+          <td>
+            <div class="score-line">
+              <span>{{ item.score }}/100</span>
+              <div class="bar"><span style="width: {{ item.score_width }}%;"></span></div>
+              <span>{{ item.valid_answer_count }} 条</span>
+            </div>
+          </td>
+          <td>{{ item.brand_mention_percent }}</td>
+          <td>{{ item.brand_top1_percent }}</td>
+          <td>{{ item.brand_top3_percent }}</td>
+          <td>{{ item.avg_rank_label }}</td>
+          <td>{{ item.sentiment_label }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7">暂无平台分析数据。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h2>问题场景表现</h2>
+    <div class="scene-grid">
+      {% for item in prompt_scene_cards %}
+      <section class="scene-card {{ item.tone }}">
+        <div class="headline">
+          <span>{{ item.prompt_text or ("Prompt " ~ item.prompt_id) }}</span>
+          <span>{{ item.score }}/100</span>
+        </div>
+        <div class="bar"><span style="width: {{ item.score_width }}%;"></span></div>
+        <p class="muted">{{ item.platform_code }} · {{ item.rank_label }}</p>
+      </section>
+      {% else %}
+      <section class="scene-card">暂无 Prompt 竞争力数据。</section>
+      {% endfor %}
+    </div>
+
+    <h2>平台指标明细</h2>
+    {% for platform in platforms %}
+    <h3>{{ platform.platform_code }}</h3>
+    <table>
+      <tr><th>指标</th><th>值</th></tr>
+      <tr><td>有效回答</td><td>{{ platform.valid_answer_count }}</td></tr>
+      <tr><td>数据完整率</td><td>{{ platform.data_completeness_rate }}</td></tr>
+      <tr><td>品牌提及率</td><td>{{ platform.brand_mention_rate }}</td></tr>
+      <tr><td>品牌首位率</td><td>{{ platform.brand_first_rate }}</td></tr>
+      <tr><td>Top1(首位)提及率</td><td>{{ platform.brand_top1_mention_rate }}</td></tr>
+      <tr><td>Top3(首屏)提及率</td><td>{{ platform.brand_top3_mention_rate }}</td></tr>
+    </table>
+    {% if platform.summary_json %}
+    <div class="summary-box">{{ platform.summary_json.get("platform_summary", "") }}</div>
+    {% endif %}
     {% endfor %}
-  </ul>
-  {% endfor %}
 
-  <h2>Prompt 表现</h2>
-  {% for platform in platforms %}
-  <h3>{{ html_escape(platform.platform_code) }}</h3>
-  <ul>
-    {% for item in platform.prompt_competitiveness_summary %}
-    <li>Prompt {{ item.get("prompt_id", "—") }}: 竞争力 {{ item.get("competitiveness_score", "—") }}</li>
-    {% else %}
-    <li>暂无 Prompt 竞争力数据</li>
+    <h2>竞品差距</h2>
+    {% for platform in platforms %}
+    <h3>{{ platform.platform_code }}</h3>
+    <div class="tag-list">
+      {% for competitor in platform.top_competitors %}
+      <span class="tag">{{ competitor.get("brand_name") or competitor|string }} · 提及 {{ competitor.get("mention_answer_count", competitor.get("mention_count", "—")) }}</span>
+      {% else %}
+      <span class="tag">暂无竞品数据</span>
+      {% endfor %}
+    </div>
     {% endfor %}
-  </ul>
-  {% endfor %}
 
-  <h2>来源统计</h2>
-  <table>
-    <tr><th>平台</th><th>域名</th><th>引用数</th><th>占比</th></tr>
-    {% for source in sources %}
-    <tr>
-      <td>{{ html_escape(source.platform_code or "all") }}</td>
-      <td>{{ html_escape(source.domain) }}</td>
-      <td>{{ source.citation_count }}</td>
-      <td>{{ source.share_rate }}</td>
-    </tr>
+    <h2>引用来源分析</h2>
+    <div class="split">
+      <section class="panel">
+        <div class="panel-title">信源类型分布</div>
+        <table>
+          <tr><th>类型</th><th>占比</th><th>引用次数</th></tr>
+          {% for item in source_type_distribution %}
+          <tr>
+            <td>{{ item.label }}</td>
+            <td>
+              <div class="score-line">
+                <span>{{ item.share_percent }}</span>
+                <div class="bar"><span style="width: {{ item.share_width }}%;"></span></div>
+                <span></span>
+              </div>
+            </td>
+            <td>{{ item.citation_count }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3">暂无来源类型分布。</td></tr>
+          {% endfor %}
+        </table>
+      </section>
+      <section class="panel">
+        <div class="panel-title">来源统计</div>
+        <table>
+          <tr><th>平台</th><th>域名</th><th>引用</th><th>占比</th></tr>
+          {% for source in sources[:8] %}
+          <tr>
+            <td>{{ source.platform_code or "all" }}</td>
+            <td>{{ source.domain }}</td>
+            <td>{{ source.citation_count }}</td>
+            <td>{{ source.share_rate }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4">暂无来源统计。</td></tr>
+          {% endfor %}
+        </table>
+      </section>
+    </div>
+
+    <h2>高权重来源内容追踪</h2>
+    {% for source in top_source_cards %}
+    <section class="source-card">
+      <div class="source-main">
+        <div>
+          <div class="headline">
+            <span>{{ loop.index }}. {{ source.source_name }}</span>
+            <span>{{ source.source_type }}</span>
+          </div>
+          <p class="muted">{{ source.domain }} · 引用占比 {{ source.share_percent }}</p>
+          <div class="tag-list">
+            {% for prompt in source.prompts %}
+            <span class="tag">{{ prompt }}</span>
+            {% endfor %}
+          </div>
+          <div class="tag-list">
+            {% for platform in source.platforms %}
+            <span class="tag">{{ platform }}</span>
+            {% endfor %}
+          </div>
+          {% for example in source.examples %}
+          <p class="muted">{{ example.title }} {{ example.url }}</p>
+          {% endfor %}
+        </div>
+        <div class="count-box">{{ source.citation_count }}<span>引用次数</span></div>
+      </div>
+    </section>
     {% else %}
-    <tr><td colspan="4">暂无来源统计</td></tr>
+    <section class="source-card">暂无可追踪的高权重来源。</section>
     {% endfor %}
-  </table>
 
-  <h2>Agent 洞察</h2>
-  <ul>
-    {% for insight in agent_insights %}
-    <li>{{ html_escape(insight.agent_code) }} ({{ html_escape(insight.platform_code or "global") }})</li>
-    {% else %}
-    <li>暂无 Agent 洞察</li>
+    <h2>优化建议</h2>
+    <div class="recommend-grid">
+      {% for item in action_recommendations %}
+      <section class="recommend-card">
+        <div class="headline">{{ loop.index }}. {{ item.title }}</div>
+        <p><strong>建议依据:</strong> {{ item.basis }}</p>
+        <p><strong>建议动作:</strong> {{ item.action }}</p>
+      </section>
+      {% else %}
+      <section class="recommend-card">暂无优化建议。</section>
+      {% endfor %}
+    </div>
+
+    <h2>Agent 洞察</h2>
+    <table>
+      <tr><th>平台</th><th>Agent</th><th>模型</th><th>输出</th></tr>
+      {% for insight in agent_insights %}
+      <tr>
+        <td>{{ insight.platform_code or "global" }}</td>
+        <td>{{ insight.agent_code }}</td>
+        <td>{{ insight.model_name or "—" }}</td>
+        <td>{{ insight.output_json }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">暂无 Agent 洞察。</td></tr>
+      {% endfor %}
+    </table>
+
+    <h2>原始回答摘录</h2>
+    {% for answer in answers %}
+    <h3>{{ answer.platform_code }} / Prompt {{ answer.prompt_id }}</h3>
+    <p class="muted">{{ answer.prompt_text }}</p>
+    <pre>{{ answer.raw_text_html | safe }}</pre>
     {% endfor %}
-  </ul>
-
-  <h2>原始回答摘录</h2>
-  {% for answer in answers %}
-  <h3>{{ html_escape(answer.platform_code) }} / Prompt {{ answer.prompt_id }}</h3>
-  <pre>{{ answer.raw_text_html | safe }}</pre>
-  {% endfor %}
+  </main>
 </body>
 </html>

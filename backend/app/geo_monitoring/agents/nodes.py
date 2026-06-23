@@ -33,7 +33,11 @@ from app.geo_monitoring.analysis.dto import (
     CitationInput,
     PlatformMetricsOutput,
 )
-from app.geo_monitoring.analysis.metrics import compute_platform_metrics, filter_valid_answers
+from app.geo_monitoring.analysis.metrics import (
+    compute_platform_metrics,
+    compute_rate,
+    filter_valid_answers,
+)
 from app.geo_monitoring.models import MonitorRun
 from app.geo_monitoring.services.analysis import (
     AgentExecution,
@@ -472,6 +476,8 @@ def _deserialize_platform_metrics(payload: dict[str, Any]) -> PlatformMetricsOut
         platform_code=payload["platform_code"],
         valid_answer_count=int(payload["valid_answer_count"]),
         brand_visibility=_rate(payload["brand_visibility"]),
+        brand_top1_mention_rate=_rate(payload["brand_top1_mention_rate"]),
+        brand_top3_mention_rate=_rate(payload["brand_top3_mention_rate"]),
         citation_rate=_rate(payload["citation_rate"]),
         recommendation=RecommendationMetric(
             numerator=int(recommendation["numerator"]),
@@ -677,10 +683,10 @@ def _upsert_platform_analysis(
         )
     ).scalar_one_or_none()
 
-    target_first_count = sum(
-        1
-        for row in metrics.prompt_competitiveness_rows
-        if row.target_first is True
+    target_first_count = metrics.brand_top1_mention_rate.numerator
+    brand_first_among_mentions_rate = compute_rate(
+        target_first_count,
+        metrics.brand_visibility.numerator,
     )
     payload = {
         "run_id": run_id,
@@ -690,10 +696,8 @@ def _upsert_platform_analysis(
         "brand_mention_count": metrics.brand_visibility.numerator,
         "brand_mention_rate": _decimal(metrics.brand_visibility.rate),
         "brand_first_count": target_first_count,
-        "brand_first_rate": _decimal(
-            metrics.brand_visibility.rate if target_first_count else Decimal("0")
-        ),
-        "brand_first_among_mentions_rate": _decimal(metrics.brand_visibility.rate),
+        "brand_first_rate": _decimal(metrics.brand_top1_mention_rate.rate),
+        "brand_first_among_mentions_rate": _decimal(brand_first_among_mentions_rate),
         "top_competitors": serialize_state({"rows": metrics.top_competitors})["rows"],
         "top_sources": serialize_state({"rows": metrics.source_stats})["rows"],
         "prompt_competitiveness_summary": serialize_state(
@@ -848,6 +852,8 @@ def _upsert_metric_snapshots(
 ) -> None:
     metric_rows: dict[str, Any] = {
         "brand_visibility": metrics.brand_visibility,
+        "brand_top1_mention_rate": metrics.brand_top1_mention_rate,
+        "brand_top3_mention_rate": metrics.brand_top3_mention_rate,
         "citation_rate": metrics.citation_rate,
         "source_coverage": metrics.source_coverage,
     }

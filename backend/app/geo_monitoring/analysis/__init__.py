@@ -29,6 +29,7 @@ from app.geo_monitoring.analysis.dto import (
     SourceStatRow,
 )
 from app.geo_monitoring.analysis.metrics import (
+    compute_brand_rank_rate,
     compute_brand_visibility,
     compute_citation_rate,
     compute_platform_metrics,
@@ -62,6 +63,7 @@ __all__ = [
     "compute_brand_mention_count",
     "compute_brand_mention_rate",
     "compute_brand_metrics_rows",
+    "compute_brand_rank_rate",
     "compute_brand_score",
     "compute_brand_visibility",
     "compute_brand_visibility_for_brand",

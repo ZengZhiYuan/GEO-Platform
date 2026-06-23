@@ -7,7 +7,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.response import paginate, success
 from app.geo_monitoring.reports.storage import (
@@ -25,6 +25,7 @@ router = APIRouter()
 _CONTENT_TYPES = {
     "md": "text/markdown; charset=utf-8",
     "html": "text/html; charset=utf-8",
+    "pdf": "application/pdf",
 }
 
 
@@ -53,7 +54,7 @@ def _report_payload(report: GeoReport) -> dict:
 
 # 基于配置创建报告文件存储实例
 def _storage() -> ReportStorage:
-    return ReportStorage(settings.REPORT_STORAGE_DIR)
+    return ReportStorage(get_settings().REPORT_STORAGE_DIR)
 
 
 @router.post("/runs/{run_id}/reports", summary="创建并生成监测报告")

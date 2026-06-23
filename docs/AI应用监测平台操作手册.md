@@ -596,7 +596,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/runs" \
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/{run_id}/reports" \
   -H "Content-Type: application/json" \
-  -d '{"formats": ["md", "html"]}'
+  -d '{"formats": ["md", "html", "pdf"]}'
 ```
 
 **响应示例：**
@@ -811,7 +811,7 @@ curl -X POST .../runs/16/analyze
 curl .../projects/1/dashboard?run_id=16
 
 # 7. 生成并下载报告
-curl -X POST .../runs/16/reports -d '{"formats":["md","html"]}'
+curl -X POST .../runs/16/reports -d '{"formats":["md","html","pdf"]}'
 curl -O -J .../reports/9/download
 ```
 

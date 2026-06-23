@@ -21,6 +21,11 @@ def test_relative_path_uses_project_run_report_pattern(report_storage):
     assert path == "7/42/99.md"
 
 
+def test_relative_path_supports_pdf_extension(report_storage):
+    path = report_storage.build_relative_path(project_id=7, run_id=42, report_id=99, ext="pdf")
+    assert path == "7/42/99.pdf"
+
+
 def test_resolve_path_rejects_traversal(report_storage):
     with pytest.raises(PathTraversalError):
         report_storage.resolve_path("../../etc/passwd")

@@ -43,6 +43,8 @@ def test_get_run_analysis(client, analyzed_run):
     assert platform["platform_code"] == "qwen"
     assert platform["valid_answer_count"] == 1
     assert platform["brand_mention_rate"] is not None
+    assert platform["brand_top1_mention_rate"] == "1.0000"
+    assert platform["brand_top3_mention_rate"] == "1.0000"
 
 
 def test_get_agent_executions(client, analyzed_run):
@@ -81,9 +83,24 @@ def test_project_dashboard_latest_summary(client, session_factory, analyzed_run)
     assert summary["scope"] == "all"
     assert summary["valid_answer_count"] == 1
     assert summary["brand_mention_rate"] is not None
+    assert summary["brand_top1_mention_rate"] == "1.000000"
+    assert summary["brand_top3_mention_rate"] == "1.000000"
     assert any(item["metric_code"] == "brand_visibility" for item in summary["metrics"])
     assert any(
+        item["metric_code"] == "brand_top1_mention_rate"
+        for item in summary["metrics"]
+    )
+    assert any(
+        item["metric_code"] == "brand_top3_mention_rate"
+        for item in summary["metrics"]
+    )
+    assert any(
         item["metric_code"] == "brand_visibility" and item["platform_code"] == "qwen"
+        for item in platform["metrics"]
+    )
+    assert any(
+        item["metric_code"] == "brand_top3_mention_rate"
+        and item["platform_code"] == "qwen"
         for item in platform["metrics"]
     )
 
@@ -120,11 +137,17 @@ def test_project_dashboard_multi_platform_summary_and_breakdown(
     assert summary["valid_answer_count"] == 2
     assert summary["brand_mention_count"] == 2
     assert summary["brand_mention_rate"] == "1.000000"
+    assert summary["brand_top1_mention_count"] == 2
+    assert summary["brand_top1_mention_rate"] == "1.000000"
+    assert summary["brand_top3_mention_count"] == 2
+    assert summary["brand_top3_mention_rate"] == "1.000000"
 
     for platform in data["platforms"]:
         assert platform["collection"]["succeeded_tasks"] == 1
         assert platform["analysis"]["valid_answer_count"] == 1
         assert platform["analysis"]["brand_mention_rate"] == "1.0000"
+        assert platform["analysis"]["brand_top1_mention_rate"] == "1.0000"
+        assert platform["analysis"]["brand_top3_mention_rate"] == "1.0000"
 
 
 def test_project_dashboard_filter_by_run_id(client, multi_platform_analyzed_run):

@@ -48,8 +48,21 @@ def make_answer(
     )
 
 
-def mention(brand_id: int, *, mentioned: bool = True) -> BrandMentionInput:
-    return BrandMentionInput(brand_id=brand_id, is_mentioned=mentioned)
+def mention(
+    brand_id: int,
+    *,
+    mentioned: bool = True,
+    mention_count: int = 1,
+    first_position: int | None = 0,
+    sentiment: str | None = None,
+) -> BrandMentionInput:
+    return BrandMentionInput(
+        brand_id=brand_id,
+        is_mentioned=mentioned,
+        mention_count=mention_count if mentioned else 0,
+        first_position=first_position if mentioned else None,
+        sentiment=sentiment,
+    )
 
 
 def citation(

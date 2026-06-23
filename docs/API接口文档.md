@@ -359,7 +359,7 @@
 | `project_id` | integer | 项目 ID |
 | `run_id` | integer | 运行 ID |
 | `status` | string | 报告状态 |
-| `format` | string | `md` / `html` |
+| `format` | string | `md` / `html` / `pdf` |
 | `file_name` | string | 文件名 |
 | `relative_storage_path` | string | 相对存储路径 |
 | `file_size` | integer/null | 文件大小（字节） |
@@ -1673,7 +1673,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/trends" \
 
 | 字段 | 类型 | 必填 | 默认 | 说明 |
 | --- | --- | --- | --- | --- |
-| `formats` | string[] | 否 | `["md","html"]` | 仅支持 `md`、`html`，自动去重 |
+| `formats` | string[] | 否 | `["md","html"]` | 支持 `md`、`html`、`pdf`，自动去重 |
 
 **出参 `data` 字段：**
 
@@ -1689,7 +1689,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/trends" \
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
   -H "Content-Type: application/json" \
-  -d '{"formats": ["md", "html"]}'
+  -d '{"formats": ["md", "html", "pdf"]}'
 ```
 
 ---
@@ -1736,7 +1736,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 
 | 响应头 | 说明 |
 | --- | --- |
-| `Content-Type` | `text/markdown; charset=utf-8` 或 `text/html; charset=utf-8` |
+| `Content-Type` | `text/markdown; charset=utf-8`、`text/html; charset=utf-8` 或 `application/pdf` |
 | `Content-Disposition` | `attachment; filename="<file_name>"` |
 
 **常见错误：** 报告未生成完成 HTTP `409`，`code=40921`

@@ -984,35 +984,43 @@ def test_reports(client: httpx.Client, ctx: TestContext) -> None:
         f"{GEO}/runs/{ctx.run_id}/reports",
         json_body={"formats": ["pdf"]},
     )
-    fmt_code = json_code(body)
-    if fmt_code == 40920:
+    pdf_code = json_code(body)
+    if pdf_code == 40920:
         record(
             ctx,
             section=section,
-            name="13.2 不支持报告格式",
+            name="13.2 生成PDF报告",
             method="POST",
             url=f"{GEO}/runs/{{id}}/reports",
             params="formats=pdf",
-            expected="code=40060，或分析未完成时先返回40920",
+            expected="code=0，或分析未完成时先返回40920",
             passed=True,
             http_status=status,
-            response_code=fmt_code,
+            response_code=pdf_code,
             message=json_msg(body),
-            detail="分析未完成，格式校验未触发",
+            detail="分析未完成，PDF生成未触发",
             duration_ms=elapsed,
         )
     else:
-        assert_json_fail(
+        reports = json_data(body).get("reports", []) if isinstance(json_data(body), dict) else []
+        passed = status == 200 and pdf_code == 0 and any(
+            item.get("format") == "pdf" and item.get("status") == "completed"
+            for item in reports
+        )
+        record(
             ctx,
             section=section,
-            name="13.2 不支持报告格式",
+            name="13.2 生成PDF报告",
             method="POST",
             url=f"{GEO}/runs/{{id}}/reports",
             params="formats=pdf",
-            status=status,
-            body=body,
-            elapsed=elapsed,
-            expected_code=40060,
+            expected="code=0, pdf report completed",
+            passed=passed,
+            http_status=status,
+            response_code=pdf_code,
+            message=json_msg(body),
+            detail=str(reports[:1]),
+            duration_ms=elapsed,
         )
 
 

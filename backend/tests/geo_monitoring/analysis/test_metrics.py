@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 
 from app.geo_monitoring.analysis.metrics import (
+    compute_brand_rank_rate,
     compute_brand_visibility,
     compute_citation_rate,
     compute_platform_metrics,
@@ -91,6 +92,60 @@ def test_brand_visibility_uses_only_valid_answers():
     assert result.numerator == 1
     assert result.denominator == 1
     assert result.rate == Decimal("1")
+
+
+def test_compute_brand_rank_rate_counts_top1_and_top3_valid_answers():
+    answers = [
+        make_answer(
+            answer_id=1,
+            brand_mentions=(
+                mention(TARGET_BRAND_ID, first_position=0),
+                mention(COMPETITOR_A_ID, first_position=12),
+            ),
+        ),
+        make_answer(
+            answer_id=2,
+            brand_mentions=(
+                mention(COMPETITOR_A_ID, first_position=0),
+                mention(TARGET_BRAND_ID, first_position=8),
+            ),
+        ),
+        make_answer(
+            answer_id=3,
+            brand_mentions=(
+                mention(COMPETITOR_A_ID, first_position=0),
+                mention(3, first_position=3),
+                mention(TARGET_BRAND_ID, first_position=20),
+            ),
+        ),
+        make_answer(
+            answer_id=4,
+            brand_mentions=(mention(COMPETITOR_A_ID, first_position=0),),
+        ),
+        make_answer(
+            answer_id=5,
+            task_status="failed",
+            brand_mentions=(mention(TARGET_BRAND_ID, first_position=0),),
+        ),
+    ]
+
+    top1 = compute_brand_rank_rate(
+        answers,
+        target_brand_id=TARGET_BRAND_ID,
+        max_rank=1,
+    )
+    top3 = compute_brand_rank_rate(
+        answers,
+        target_brand_id=TARGET_BRAND_ID,
+        max_rank=3,
+    )
+
+    assert top1.numerator == 1
+    assert top1.denominator == 4
+    assert top1.rate == Decimal("0.25")
+    assert top3.numerator == 3
+    assert top3.denominator == 4
+    assert top3.rate == Decimal("0.75")
 
 
 @pytest.mark.parametrize(
@@ -239,5 +294,7 @@ def test_compute_platform_metrics_is_idempotent():
     assert first == second
     assert first.valid_answer_count == 2
     assert first.brand_visibility.numerator == 1
+    assert first.brand_top1_mention_rate.numerator == 1
+    assert first.brand_top3_mention_rate.numerator == 1
     assert first.citation_rate.numerator == 1
     assert first.competitor_advantage_gap == Decimal("-0.5")
