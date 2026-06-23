@@ -47,6 +47,35 @@ def test_create_list_and_download_report(client, analyzed_run, tmp_path, monkeyp
     assert download_resp.content
 
 
+def test_create_and_download_pdf_report(client, analyzed_run, tmp_path, monkeypatch):
+    monkeypatch.setenv("REPORT_STORAGE_DIR", str(tmp_path))
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+
+    create_resp = client.post(
+        f"/api/geo-monitoring/runs/{analyzed_run['run_id']}/reports",
+        json={"formats": ["pdf"]},
+    )
+    body = create_resp.json()
+    assert body["code"] == 0
+    [report] = body["data"]["reports"]
+    assert report["status"] == "completed"
+    assert report["format"] == "pdf"
+    assert report["file_name"].endswith(".pdf")
+    assert report["relative_storage_path"].endswith(".pdf")
+    assert report["file_size"] > 100
+    assert report["checksum"]
+    assert (tmp_path / report["relative_storage_path"]).exists()
+
+    download_resp = client.get(
+        f"/api/geo-monitoring/reports/{report['id']}/download"
+    )
+    assert download_resp.status_code == 200
+    assert download_resp.headers["content-type"] == "application/pdf"
+    assert download_resp.content.startswith(b"%PDF")
+
+
 def test_download_only_by_report_id_not_user_path(client, analyzed_run, tmp_path, monkeypatch):
     monkeypatch.setenv("REPORT_STORAGE_DIR", str(tmp_path))
     from app.core.config import get_settings

@@ -27,6 +27,7 @@ def _run_alembic_sql(*args: str) -> str:
 COLLECTION_NAME = "20260615_0002-geo_monitoring_0002_collection.py"
 ANALYSIS_NAME = "20260615_0003-geo_monitoring_0003_analysis_metrics.py"
 SCHEDULE_REPORT_NAME = "20260615_0004-geo_monitoring_0004_schedule_report.py"
+REPORT_PDF_NAME = "20260623_0006-geo_monitoring_0006_report_pdf_format.py"
 
 
 def _migration_text() -> str:
@@ -377,3 +378,29 @@ def test_schedule_report_downgrade_sql_reverts_to_analysis_revision():
     assert "DROP TABLE geo_report" in sql
     assert "DROP TABLE geo_monitor_schedule" in sql
     assert "version_num='geo_monitoring_0003'" in sql
+
+
+def _report_pdf_migration_text() -> str:
+    return (VERSIONS_DIR / REPORT_PDF_NAME).read_text(encoding="utf-8")
+
+
+def test_report_pdf_revision_extends_monitor_setup_revision():
+    migration = _report_pdf_migration_text()
+
+    assert 'revision = "geo_monitoring_0006"' in migration
+    assert 'down_revision = "geo_monitoring_0005"' in migration
+
+
+def test_report_pdf_revision_allows_pdf_report_format():
+    migration = _report_pdf_migration_text()
+
+    assert "ck_geo_report_format" in migration
+    assert "format IN ('md', 'html', 'pdf')" in migration
+
+
+def test_report_pdf_upgrade_sql_updates_format_constraint():
+    sql = _run_alembic_sql("upgrade", "geo_monitoring_0005:geo_monitoring_0006")
+
+    assert "ck_geo_report_format" in sql
+    assert "format IN ('md', 'html', 'pdf')" in sql
+    assert "version_num='geo_monitoring_0006'" in sql

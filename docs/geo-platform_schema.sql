@@ -568,7 +568,7 @@ CREATE TABLE geo_report (
     completed_at TIMESTAMP WITH TIME ZONE, 
     PRIMARY KEY (id), 
     CONSTRAINT ck_geo_report_status CHECK (status IN ('pending', 'generating', 'completed', 'failed')), 
-    CONSTRAINT ck_geo_report_format CHECK (format IN ('md', 'html')), 
+    CONSTRAINT ck_geo_report_format CHECK (format IN ('md', 'html', 'pdf')), 
     CONSTRAINT ck_geo_report_relative_storage_path CHECK (relative_storage_path NOT LIKE '/%' AND relative_storage_path !~ '^[A-Za-z]:' AND relative_storage_path NOT LIKE '\\%'), 
     FOREIGN KEY(project_id) REFERENCES geo_monitor_project (id) ON DELETE CASCADE, 
     FOREIGN KEY(run_id) REFERENCES geo_monitor_run (id) ON DELETE CASCADE

@@ -21,7 +21,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from app.core.config import settings
+from app.core.config import get_settings
 from app.core.exceptions import BusinessException
 from app.geo_monitoring.models import MonitorRun
 from app.geo_monitoring.reports.renderer import (
@@ -29,11 +29,12 @@ from app.geo_monitoring.reports.renderer import (
     render_html,
     render_markdown,
 )
+from app.geo_monitoring.reports.pdf_renderer import render_pdf
 from app.geo_monitoring.services.runs import get_run
 from app.models.base import BaseModel
 
 RETAIN_MARKER = -1
-_VALID_FORMATS = frozenset({"md", "html"})
+_VALID_FORMATS = frozenset({"md", "html", "pdf"})
 
 
 class PathTraversalError(ValueError):
@@ -48,7 +49,7 @@ class GeoReport(BaseModel):
             name="ck_geo_report_status",
         ),
         CheckConstraint(
-            "format IN ('md', 'html')",
+            "format IN ('md', 'html', 'pdf')",
             name="ck_geo_report_format",
         ),
         Index("uq_geo_report_relative_storage_path", "relative_storage_path", unique=True),
@@ -158,7 +159,7 @@ def mark_report_retained(report: GeoReport) -> None:
 
 # 使用全局配置创建默认报告存储实例。
 def _default_storage() -> ReportStorage:
-    return ReportStorage(settings.REPORT_STORAGE_DIR)
+    return ReportStorage(get_settings().REPORT_STORAGE_DIR)
 
 
 # 为已完成分析的运行创建待生成的报告元数据记录。
@@ -226,11 +227,13 @@ def generate_report_content(
 
     try:
         context = build_report_context(db, report.run_id)
-        # 按格式选择 Markdown 或 HTML 渲染
+        # 按格式选择 Markdown、HTML 或 PDF 渲染
         if report.format == "md":
             content = render_markdown(context).encode("utf-8")
         elif report.format == "html":
             content = render_html(context).encode("utf-8")
+        elif report.format == "pdf":
+            content = render_pdf(context)
         else:
             raise BusinessException(message=f"不支持的报告格式: {report.format}", code=40060)
 

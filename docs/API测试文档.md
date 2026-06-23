@@ -677,7 +677,7 @@ Agent 审计字段包括：
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `formats` | string[] | 否 | 默认 `["md", "html"]`，仅支持 `md`、`html`，会去重 |
+| `formats` | string[] | 否 | 默认 `["md", "html"]`，支持 `md`、`html`、`pdf`，会去重 |
 
 报告元数据字段：
 
@@ -690,7 +690,7 @@ Agent 审计字段包括：
 | 创建并生成监测报告 | `POST` | `/api/geo-monitoring/runs/{run_id}/reports` | Path：`run_id`；Body：`ReportCreateRequest` | `run_id`、`reports[]` | 返回报告列表，报告 `status=completed`，`file_size` 和 `checksum` 非空 | 分析未完成 HTTP `409`、`40920`；格式不支持 `40060`；运行不存在 `40400` |
 | 分页查询运行报告 | `GET` | `/api/geo-monitoring/runs/{run_id}/reports` | Path：`run_id`；Query：`page`、`page_size` 默认 20 且 1-100 | 分页报告元数据 | `code=0`，报告均属于该运行 | 运行不存在 `40400` |
 | 获取报告状态与元数据 | `GET` | `/api/geo-monitoring/reports/{report_id}` | Path：`report_id` | 报告元数据 | `data.id = report_id` | 报告不存在 HTTP `404`、`code=40420` |
-| 下载报告文件 | `GET` | `/api/geo-monitoring/reports/{report_id}/download` | Path：`report_id` | 文件二进制/文本响应，不是统一 JSON | HTTP `200`，`Content-Disposition` 包含文件名，`Content-Type` 为 `text/markdown; charset=utf-8` 或 `text/html; charset=utf-8` | 报告未生成完成 HTTP `409`、`40921`；报告不存在 HTTP `404`、`40420` |
+| 下载报告文件 | `GET` | `/api/geo-monitoring/reports/{report_id}/download` | Path：`report_id` | 文件二进制/文本响应，不是统一 JSON | HTTP `200`，`Content-Disposition` 包含文件名，`Content-Type` 为 `text/markdown; charset=utf-8`、`text/html; charset=utf-8` 或 `application/pdf` | 报告未生成完成 HTTP `409`、`40921`；报告不存在 HTTP `404`、`40420` |
 | 删除报告 | `DELETE` | `/api/geo-monitoring/reports/{report_id}` | Path：`report_id` | 报告元数据 | `code=0`，后续查询不存在 | 报告不存在 HTTP `404`、`40420` |
 
 创建报告示例：
@@ -698,7 +698,7 @@ Agent 审计字段包括：
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
   -H "Content-Type: application/json" \
-  -d '{"formats":["md","html"]}'
+  -d '{"formats":["md","html","pdf"]}'
 ```
 
 ## 14. 推荐测试流程
