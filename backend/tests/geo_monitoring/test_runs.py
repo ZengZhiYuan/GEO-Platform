@@ -7,9 +7,11 @@ from app.geo_monitoring.models import (
     MonitorRun,
     Prompt,
     PromptSet,
+    QueryTask,
 )
 from app.geo_monitoring.repositories import runs as run_repo
 from app.geo_monitoring.schemas import RunCreate
+from app.geo_monitoring.services import collection as collection_service
 from app.geo_monitoring.services import runs as run_service
 from app.geo_monitoring.services.platforms import DEFAULT_PLATFORMS
 
@@ -90,6 +92,28 @@ def test_create_run_builds_prompt_platform_cartesian_product(
     }
 
 
+def test_create_run_uses_configured_collection_max_attempts(
+    client, session_factory, project_id
+):
+    _active_prompt_setup(client, project_id, prompt_count=1)
+    _seed_platforms(session_factory, disabled={"doubao", "deepseek", "kimi", "yuanbao"})
+    runtime = collection_service.get_runtime()
+    runtime.settings.COLLECTION_MAX_ATTEMPTS = 5
+
+    response = client.post(
+        "/api/geo-monitoring/runs",
+        json={"project_id": project_id, "platform_codes": ["qwen"]},
+    ).json()
+
+    with session_factory() as db:
+        tasks = db.execute(
+            select(QueryTask).where(QueryTask.run_id == response["data"]["id"])
+        ).scalars().all()
+
+    assert response["code"] == 0
+    assert [task.max_attempts for task in tasks] == [5]
+
+
 def test_create_aidso_run_persists_collection_source(
     client, session_factory, project_id
 ):
@@ -105,6 +129,16 @@ def test_create_aidso_run_persists_collection_source(
                 extra_config={"aidso_name": "DB"},
             )
         )
+        db.add(
+            AIPlatform(
+                platform_code="aidso_doubao_app",
+                platform_name="豆包 App 端",
+                adapter_type="aidso",
+                model_name="aidso:DOUBA",
+                enabled=True,
+                extra_config={"aidso_name": "DOUBA"},
+            )
+        )
         db.commit()
 
     response = client.post(
@@ -112,8 +146,11 @@ def test_create_aidso_run_persists_collection_source(
         json={
             "project_id": project_id,
             "collection_source": "aidso",
-            "aidso_thinking_enabled": False,
-            "platform_codes": ["aidso_doubao_web"],
+            "aidso_thinking_enabled_by_platform": {
+                "aidso_doubao_web": False,
+                "aidso_doubao_app": True,
+            },
+            "platform_codes": ["aidso_doubao_web", "aidso_doubao_app"],
         },
     ).json()
 
@@ -122,9 +159,12 @@ def test_create_aidso_run_persists_collection_source(
     assert run["prompt_set_id"] == setup["prompt_set"]["id"]
     assert run["prompt_set_version"] == "v1"
     assert run["collection_source"] == "aidso"
-    assert run["aidso_thinking_enabled"] is False
-    assert run["platform_codes"] == ["aidso_doubao_web"]
-    assert run["expected_query_count"] == 1
+    assert run["aidso_thinking_enabled_by_platform"] == {
+        "aidso_doubao_web": False,
+        "aidso_doubao_app": True,
+    }
+    assert run["platform_codes"] == ["aidso_doubao_web", "aidso_doubao_app"]
+    assert run["expected_query_count"] == 2
 
 
 def test_run_defaults_to_active_prompt_set_and_enabled_platforms(

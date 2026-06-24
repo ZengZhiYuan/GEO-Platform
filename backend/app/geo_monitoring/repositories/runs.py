@@ -60,6 +60,8 @@ def build_query_tasks(
     run: MonitorRun,
     prompts: list[Prompt],
     platforms: list[AIPlatform],
+    *,
+    max_attempts: int,
 ) -> None:
     for prompt in prompts:
         for platform in platforms:
@@ -72,6 +74,7 @@ def build_query_tasks(
                     platform_code=platform.platform_code,
                     idempotency_key=sha256(key_source.encode("utf-8")).hexdigest(),
                     status="pending",
+                    max_attempts=max_attempts,
                     request_json={
                         "prompt_code": prompt.prompt_code,
                         "prompt_text": prompt.prompt_text,

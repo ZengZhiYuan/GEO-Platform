@@ -22,6 +22,13 @@ RUN_TERMINAL_STATUSES = frozenset(
 CANCELLABLE_TASK_STATUSES = frozenset({"pending", "queued", "running"})
 
 
+# 读取采集任务最大尝试次数配置
+def _collection_max_attempts() -> int:
+    from app.geo_monitoring.services.collection import get_runtime
+
+    return get_runtime().settings.COLLECTION_MAX_ATTEMPTS
+
+
 # 生成带时间戳与随机后缀的运行编号
 def _new_run_no() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
@@ -297,7 +304,7 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
         analysis_status="skipped",
         report_status="skipped",
         collection_source=payload.collection_source.value,
-        aidso_thinking_enabled=payload.aidso_thinking_enabled,
+        aidso_thinking_enabled_by_platform=payload.aidso_thinking_enabled_by_platform,
         platform_codes=platform_codes,
         expected_query_count=task_count,
         total_tasks=task_count,
@@ -306,7 +313,13 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
         run_repo.add_run(db, run)
         db.flush()
         # 按提示词 × 平台组合生成查询子任务
-        run_repo.build_query_tasks(db, run, prompts, platforms)
+        run_repo.build_query_tasks(
+            db,
+            run,
+            prompts,
+            platforms,
+            max_attempts=_collection_max_attempts(),
+        )
         db.commit()
     except Exception:
         db.rollback()

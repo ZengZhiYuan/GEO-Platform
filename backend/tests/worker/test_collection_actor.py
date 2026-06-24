@@ -38,14 +38,20 @@ def dispatch_task(task_id: int) -> None:
     def defer_send(next_task_id: int) -> None:
         pending.append(next_task_id)
 
+    def defer_send_with_options(*, args=(), kwargs=None, delay=None, **options):
+        pending.append(args[0])
+
     original_send = collect_query_task.send
+    original_send_with_options = collect_query_task.send_with_options
     collect_query_task.send = defer_send
+    collect_query_task.send_with_options = defer_send_with_options
     try:
         collect_query_task.fn(task_id)
         while pending:
             collect_query_task.fn(pending.pop(0))
     finally:
         collect_query_task.send = original_send
+        collect_query_task.send_with_options = original_send_with_options
 
 
 class MockAdapter:
@@ -129,6 +135,32 @@ class MockAidsoAdapter:
             latency_ms=80,
             provider_request_id=request.metadata["aidso_req_id"],
             raw_response={"aidso": True},
+        )
+
+
+class AlwaysPendingAidsoAdapter:
+    code = "aidso_doubao_web"
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[PlatformQuery, PlatformCredential]] = []
+
+    async def query(
+        self,
+        request: PlatformQuery,
+        *,
+        credential: PlatformCredential,
+    ) -> PlatformAnswer:
+        self.calls.append((request, credential))
+        raise AidsoPendingError(
+            pending_metadata={
+                "aidso_req_id": request.metadata.get("aidso_req_id") or "req-db-1",
+                "aidso_task_id": request.metadata.get("aidso_task_id")
+                or "task-aidso-1",
+                "aidso_platform_name": "DB",
+                "aidso_thinking_enabled": request.metadata.get(
+                    "aidso_thinking_enabled"
+                ),
+            }
         )
 
 
@@ -404,7 +436,7 @@ def test_aidso_pending_persists_req_id_and_reuses_on_retry(
         platform.extra_config = {"aidso_name": "DB"}
         run = db.get(MonitorRun, seeded["run_id"])
         run.collection_source = "aidso"
-        run.aidso_thinking_enabled = False
+        run.aidso_thinking_enabled_by_platform = {"aidso_doubao_web": False}
         run.platform_codes = ["aidso_doubao_web"]
         task = db.get(QueryTask, seeded["task_id"])
         task.platform_code = "aidso_doubao_web"
@@ -415,8 +447,10 @@ def test_aidso_pending_persists_req_id_and_reuses_on_retry(
     with session_factory() as db:
         task = db.get(QueryTask, seeded["task_id"])
         assert task.status == "success"
+        assert task.attempt_count == 1
         assert task.request_json["aidso_req_id"] == "req-db-1"
         assert task.request_json["aidso_task_id"] == "task-aidso-1"
+        assert task.request_json["aidso_poll_count"] == 1
         assert task.provider_request_id == "req-db-1"
 
     assert len(aidso_adapter.calls) == 2
@@ -424,6 +458,46 @@ def test_aidso_pending_persists_req_id_and_reuses_on_retry(
     assert aidso_adapter.calls[0][0].metadata["aidso_thinking_enabled"] is False
     assert aidso_adapter.calls[1][0].metadata["aidso_req_id"] == "req-db-1"
     assert aidso_adapter.calls[1][0].metadata["aidso_thinking_enabled"] is False
+
+
+def test_aidso_pending_respects_configured_max_poll_limit(
+    collection_env, session_factory
+):
+    aidso_adapter = AlwaysPendingAidsoAdapter()
+    runtime = collection_env["runtime"]
+    runtime.settings.COLLECTION_AIDSO_MAX_POLLS = 1
+    runtime.adapter_registry.register(aidso_adapter)
+    runtime.key_pool.register_platform_credentials(
+        "aidso_doubao_web",
+        [ApiKeyCredential(platform_code="aidso_doubao_web", api_key="aidso-token")],
+    )
+
+    with session_factory() as db:
+        seeded = _seed_collection_graph(db)
+        platform = db.query(AIPlatform).filter_by(platform_code="qwen").one()
+        platform.platform_code = "aidso_doubao_web"
+        platform.platform_name = "豆包 Web 端"
+        platform.adapter_type = "aidso"
+        platform.model_name = "aidso:DB"
+        platform.extra_config = {"aidso_name": "DB"}
+        run = db.get(MonitorRun, seeded["run_id"])
+        run.collection_source = "aidso"
+        run.platform_codes = ["aidso_doubao_web"]
+        task = db.get(QueryTask, seeded["task_id"])
+        task.platform_code = "aidso_doubao_web"
+        db.commit()
+
+    dispatch_task(seeded["task_id"])
+
+    with session_factory() as db:
+        task = db.get(QueryTask, seeded["task_id"])
+        assert task.status == "failed"
+        assert task.error_code == ErrorCategory.PENDING.value
+        assert task.attempt_count == 1
+        assert task.retry_count == 0
+        assert task.request_json["aidso_poll_count"] == 1
+
+    assert len(aidso_adapter.calls) == 1
 
 
 def test_non_retryable_error_marks_failed(collection_env, session_factory):
@@ -532,6 +606,24 @@ def test_dramatiq_message_carries_only_task_id():
     message = collect_query_task.message(42)
     assert message.args == (42,)
     assert message.kwargs == {}
+
+
+def test_retry_reenqueue_uses_configured_backoff(collection_env, monkeypatch):
+    async def fake_execute_query_task(task_id: int) -> bool:
+        assert task_id == 42
+        return True
+
+    delayed: list[tuple[tuple[int, ...], int | None]] = []
+
+    def fake_send_with_options(*, args=(), kwargs=None, delay=None, **options):
+        delayed.append((args, delay))
+
+    monkeypatch.setattr(collection_service, "execute_query_task", fake_execute_query_task)
+    monkeypatch.setattr(collect_query_task, "send_with_options", fake_send_with_options)
+
+    collect_query_task.fn(42)
+
+    assert delayed == [((42,), 2000)]
 
 
 def test_max_attempts_exhaustion_marks_failed(collection_env, session_factory):

@@ -5,7 +5,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 T = TypeVar("T")
 
@@ -411,7 +411,7 @@ class RunCreate(BaseModel):
     prompt_set_id: int | None = Field(default=None, ge=1)
     platform_codes: list[str] | None = None
     collection_source: CollectionSource = CollectionSource.OFFICIAL
-    aidso_thinking_enabled: bool = True
+    aidso_thinking_enabled_by_platform: dict[str, bool] = Field(default_factory=dict)
 
     @field_validator("platform_codes")
     @classmethod
@@ -423,6 +423,35 @@ class RunCreate(BaseModel):
         if not normalized:
             raise ValueError("platform_codes 不能为空")
         return normalized
+
+    @field_validator("aidso_thinking_enabled_by_platform")
+    @classmethod
+    # 按平台码规范化 Aidso 深度思考开关，未配置的平台在采集时默认开启。
+    def normalize_aidso_thinking_enabled_by_platform(
+        cls, value: dict[str, bool]
+    ) -> dict[str, bool]:
+        return {code.strip(): enabled for code, enabled in value.items() if code.strip()}
+
+    @model_validator(mode="after")
+    def validate_aidso_thinking_enabled_platforms(self) -> "RunCreate":
+        if not self.aidso_thinking_enabled_by_platform:
+            return self
+
+        from app.geo_monitoring.services.platforms import AIDSO_PLATFORM_MAPPINGS
+
+        configured = set(self.aidso_thinking_enabled_by_platform)
+        unknown = configured - set(AIDSO_PLATFORM_MAPPINGS)
+        if unknown:
+            raise ValueError("aidso_thinking_enabled_by_platform 包含无效 Aidso 平台编码")
+
+        if self.platform_codes is not None:
+            outside_request = configured - set(self.platform_codes)
+            if outside_request:
+                raise ValueError(
+                    "aidso_thinking_enabled_by_platform 只能配置本次 platform_codes 内的平台"
+                )
+
+        return self
 
 
 class MonitorRunOut(BaseModel):
@@ -440,7 +469,7 @@ class MonitorRunOut(BaseModel):
     analysis_status: str
     report_status: str
     collection_source: str = "official"
-    aidso_thinking_enabled: bool = True
+    aidso_thinking_enabled_by_platform: dict[str, bool] = Field(default_factory=dict)
     platform_codes: list[str]
     expected_query_count: int
     total_tasks: int = 0

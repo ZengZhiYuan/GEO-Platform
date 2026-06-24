@@ -28,6 +28,9 @@ COLLECTION_NAME = "20260615_0002-geo_monitoring_0002_collection.py"
 ANALYSIS_NAME = "20260615_0003-geo_monitoring_0003_analysis_metrics.py"
 SCHEDULE_REPORT_NAME = "20260615_0004-geo_monitoring_0004_schedule_report.py"
 REPORT_PDF_NAME = "20260623_0006-geo_monitoring_0006_report_pdf_format.py"
+AIDSO_COLLECTION_SOURCE_NAME = (
+    "20260624_0007-geo_monitoring_0007_aidso_collection_source.py"
+)
 
 
 def _migration_text() -> str:
@@ -404,3 +407,12 @@ def test_report_pdf_upgrade_sql_updates_format_constraint():
     assert "ck_geo_report_format" in sql
     assert "format IN ('md', 'html', 'pdf')" in sql
     assert "version_num='geo_monitoring_0006'" in sql
+
+
+def test_aidso_collection_source_upgrade_sql_renders_seed_json():
+    sql = _run_alembic_sql("upgrade", "geo_monitoring_0006:geo_monitoring_0007")
+
+    assert "aidso_thinking_enabled_by_platform" in sql
+    assert "aidso_doubao_web" in sql
+    assert """'{"aidso_name": "DB"}'::jsonb""" in sql
+    assert "version_num='geo_monitoring_0007'" in sql

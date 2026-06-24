@@ -1,5 +1,6 @@
 """Add Aidso collection source to monitoring runs."""
 
+import json
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -26,6 +27,10 @@ AIDSO_PLATFORM_ROWS = [
 ]
 
 
+def _sql_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
 def upgrade() -> None:
     op.add_column(
         "geo_monitor_run",
@@ -39,9 +44,9 @@ def upgrade() -> None:
     op.add_column(
         "geo_monitor_run",
         sa.Column(
-            "aidso_thinking_enabled",
-            sa.Boolean(),
-            server_default=sa.text("true"),
+            "aidso_thinking_enabled_by_platform",
+            sa.JSON(),
+            server_default=sa.text("'{}'"),
             nullable=False,
         ),
     )
@@ -50,39 +55,19 @@ def upgrade() -> None:
         "geo_monitor_run",
         "collection_source IN ('official', 'aidso')",
     )
-    platform_table = sa.table(
-        "geo_ai_platform",
-        sa.column("platform_code", sa.String),
-        sa.column("platform_name", sa.String),
-        sa.column("adapter_type", sa.String),
-        sa.column("base_url", sa.String),
-        sa.column("model_name", sa.String),
-        sa.column("search_enabled", sa.Boolean),
-        sa.column("citation_supported", sa.Boolean),
-        sa.column("max_concurrency", sa.Integer),
-        sa.column("timeout_seconds", sa.Integer),
-        sa.column("enabled", sa.Boolean),
-        sa.column("extra_config", sa.JSON),
-    )
-    op.bulk_insert(
-        platform_table,
-        [
-            {
-                "platform_code": code,
-                "platform_name": name,
-                "adapter_type": "aidso",
-                "base_url": None,
-                "model_name": f"aidso:{aidso_name}",
-                "search_enabled": True,
-                "citation_supported": True,
-                "max_concurrency": 2,
-                "timeout_seconds": 120,
-                "enabled": True,
-                "extra_config": {"aidso_name": aidso_name},
-            }
-            for code, name, aidso_name in AIDSO_PLATFORM_ROWS
-        ],
-    )
+    for code, name, aidso_name in AIDSO_PLATFORM_ROWS:
+        extra_config = json.dumps({"aidso_name": aidso_name}, ensure_ascii=False)
+        op.execute(
+            "INSERT INTO geo_ai_platform ("
+            "platform_code, platform_name, adapter_type, base_url, model_name, "
+            "search_enabled, citation_supported, max_concurrency, timeout_seconds, "
+            "enabled, extra_config"
+            ") VALUES ("
+            f"{_sql_literal(code)}, {_sql_literal(name)}, 'aidso', NULL, "
+            f"{_sql_literal(f'aidso:{aidso_name}')}, true, true, 2, 120, true, "
+            f"{_sql_literal(extra_config)}::jsonb"
+            ")"
+        )
 
 
 def downgrade() -> None:
@@ -92,5 +77,5 @@ def downgrade() -> None:
         "geo_monitor_run",
         type_="check",
     )
-    op.drop_column("geo_monitor_run", "aidso_thinking_enabled")
+    op.drop_column("geo_monitor_run", "aidso_thinking_enabled_by_platform")
     op.drop_column("geo_monitor_run", "collection_source")

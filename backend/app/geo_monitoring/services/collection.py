@@ -164,7 +164,7 @@ def build_credential_key_pool(
                 for item in yuanbao_credentials
             ],
         )
-    aidso_token = str(getattr(runtime_settings, "AIDSO_API_TOKEN", "")).strip()
+    aidso_token = runtime_settings.AIDSO_API_TOKEN.strip()
     if aidso_token:
         for platform_code in AIDSO_PLATFORM_MAPPINGS:
             pool.register_platform_credentials(
@@ -188,6 +188,11 @@ def _register_api_keys(
         platform_code,
         [ApiKeyCredential(platform_code=platform_code, api_key=key) for key in keys],
     )
+
+
+def _resolve_aidso_thinking_enabled(run: MonitorRun, platform_code: str) -> bool:
+    value = (run.aidso_thinking_enabled_by_platform or {}).get(platform_code)
+    return value if isinstance(value, bool) else True
 
 
 def enqueue_run_query_tasks(run_id: int, *, db: Session | None = None) -> int:
@@ -343,7 +348,7 @@ def _claim_task_for_execution(
             _after_task_terminal(db, run_id)
             return None
 
-        if not reclaim:
+        if not reclaim and not _is_aidso_pending_poll(task):
             task.attempt_count += 1
         # 更新为 running 并返回执行快照
         task.status = "running"
@@ -362,7 +367,9 @@ def _claim_task_for_execution(
             model_name=_resolve_model(runtime.settings, platform),
             project_id=run.project_id,
             collection_source=run.collection_source,
-            aidso_thinking_enabled=run.aidso_thinking_enabled,
+            aidso_thinking_enabled=_resolve_aidso_thinking_enabled(
+                run, task.platform_code
+            ),
             request_json=task.request_json,
             reclaim=reclaim,
         )
@@ -512,10 +519,10 @@ def _handle_adapter_failure(
         task.last_error_message = error.sanitized_message()
         task.error_code = error.category.value
         task.error_message = error.sanitized_message()
-        _persist_pending_metadata(task, error)
+        pending_poll_count = _persist_pending_metadata(task, error)
 
         # 可重试且未达上限则重新入队
-        if is_retryable(error.category) and task.attempt_count < task.max_attempts:
+        if _should_retry_task(runtime, task, error, pending_poll_count):
             task.status = "queued"
             task.retry_count += 1
             task.started_at = None
@@ -538,16 +545,44 @@ def _handle_adapter_failure(
         db.close()
 
 
-def _persist_pending_metadata(task: QueryTask, error: AdapterError) -> None:
+def _is_aidso_pending_poll(task: QueryTask) -> bool:
+    request_json = task.request_json or {}
+    return (
+        task.platform_code in AIDSO_PLATFORM_MAPPINGS
+        and task.last_error_code == ErrorCategory.PENDING.value
+        and isinstance(request_json.get("aidso_req_id"), str)
+        and bool(request_json.get("aidso_req_id", "").strip())
+    )
+
+
+def _should_retry_task(
+    runtime: CollectionRuntime,
+    task: QueryTask,
+    error: AdapterError,
+    pending_poll_count: int | None,
+) -> bool:
+    if not is_retryable(error.category):
+        return False
+    if error.category == ErrorCategory.PENDING:
+        return (pending_poll_count or 0) < runtime.settings.COLLECTION_AIDSO_MAX_POLLS
+    return task.attempt_count < task.max_attempts
+
+
+def _persist_pending_metadata(task: QueryTask, error: AdapterError) -> int | None:
     pending_metadata = getattr(error, "pending_metadata", None)
     if not isinstance(pending_metadata, dict):
-        return
+        return None
     request_json = dict(task.request_json or {})
     request_json.update(pending_metadata)
+    poll_count = None
+    if error.category == ErrorCategory.PENDING:
+        poll_count = int(request_json.get("aidso_poll_count") or 0) + 1
+        request_json["aidso_poll_count"] = poll_count
     task.request_json = request_json
     req_id = pending_metadata.get("aidso_req_id")
     if isinstance(req_id, str) and req_id.strip():
         task.provider_request_id = req_id.strip()
+    return poll_count
 
 
 # 将 QueryTask 标记为 failed 并写入错误信息

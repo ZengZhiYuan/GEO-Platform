@@ -361,8 +361,8 @@ class MonitorRun(BaseModel):
         server_default="official",
         nullable=False,
     )
-    aidso_thinking_enabled: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default=text("true"), nullable=False
+    aidso_thinking_enabled_by_platform: Mapped[dict] = mapped_column(
+        JSON_VALUE, default=dict, server_default=text("'{}'"), nullable=False
     )
     platform_codes: Mapped[list[str]] = mapped_column(
         JSON_VALUE, default=list, nullable=False

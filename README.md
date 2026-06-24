@@ -8,7 +8,7 @@ GEO-Platform 是一个后端优先的 AI 应用监测系统：配置项目、品
 
 - 管理监测项目、目标品牌、竞品、品牌别名、核心词和 Prompt 集版本。
 - 配置并调用豆包、通义千问、腾讯元宝、DeepSeek、Kimi 等官方平台 Adapter。
-- 可在创建运行时选择 `collection_source=aidso`，通过 Aidso 采集 AI Web/App 端真实回答结果。
+- 可在创建运行时选择 `collection_source=aidso`，通过 Aidso 采集 AI Web/App 端真实回答结果，并按平台端侧单独控制深度思考。
 - 创建监测运行，自动扇出查询任务，由 Dramatiq Worker 异步采集。
 - 汇总品牌提及率、首位率、Prompt 竞争力、引用来源、平台表现等指标。
 - 采集完成后触发 LangGraph Agent 生成语义诊断和优化建议。
@@ -99,7 +99,10 @@ Content-Type: application/json
 {
   "project_id": 1,
   "collection_source": "aidso",
-  "aidso_thinking_enabled": false,
+  "aidso_thinking_enabled_by_platform": {
+    "aidso_doubao_web": false,
+    "aidso_doubao_app": true
+  },
   "platform_codes": ["aidso_doubao_web", "aidso_doubao_app"]
 }
 ```
@@ -207,6 +210,7 @@ docker compose down
 | `NACOS_ENABLED` | 为 `true` 时必须配置 Nacos 连接信息 |
 | `DOUBAO_*` / `QWEN_*` / `YUANBAO_*` / `DEEPSEEK_*` / `KIMI_*` | 各平台采集开关、模型和密钥 |
 | `AIDSO_ENABLED` / `AIDSO_BASE_URL` / `AIDSO_API_TOKEN` | Aidso 第三方数据源开关、地址和 token；深度思考由创建运行入参控制 |
+| `COLLECTION_AIDSO_MAX_POLLS` | Aidso `ING` 结果轮询上限，独立于普通失败重试次数 |
 | `AGENT_LLM_*` | Agent 语义分析使用的 OpenAI-compatible LLM |
 
 真实账号、密码、API Key 只写入 `.env`、Nacos 或服务器密钥管理系统，不写入仓库。

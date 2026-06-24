@@ -1,5 +1,7 @@
 from importlib.util import find_spec
 
+import pytest
+
 
 def test_monitoring_metadata_contains_only_expected_business_tables():
     assert find_spec("app.geo_monitoring.models") is not None
@@ -70,7 +72,7 @@ def test_project_and_run_input_validation():
     assert project.project_name == "测试项目"
     assert run.platform_codes == ["qwen", "deepseek"]
     assert run.collection_source == "official"
-    assert run.aidso_thinking_enabled is True
+    assert run.aidso_thinking_enabled_by_platform == {}
 
 
 def test_run_create_accepts_aidso_collection_source():
@@ -81,10 +83,44 @@ def test_run_create_accepts_aidso_collection_source():
     run = RunCreate(
         project_id=1,
         collection_source="aidso",
-        aidso_thinking_enabled=False,
-        platform_codes=["aidso_doubao_web"],
+        aidso_thinking_enabled_by_platform={
+            " aidso_doubao_web ": False,
+            "aidso_doubao_app": True,
+        },
+        platform_codes=["aidso_doubao_web", "aidso_doubao_app"],
     )
 
     assert run.collection_source == "aidso"
-    assert run.aidso_thinking_enabled is False
-    assert run.platform_codes == ["aidso_doubao_web"]
+    assert run.aidso_thinking_enabled_by_platform == {
+        "aidso_doubao_web": False,
+        "aidso_doubao_app": True,
+    }
+    assert run.platform_codes == ["aidso_doubao_web", "aidso_doubao_app"]
+
+
+def test_run_create_rejects_invalid_aidso_thinking_platform():
+    from pydantic import ValidationError
+
+    from app.geo_monitoring.schemas import RunCreate
+
+    with pytest.raises(ValidationError):
+        RunCreate(
+            project_id=1,
+            collection_source="aidso",
+            platform_codes=["aidso_doubao_web"],
+            aidso_thinking_enabled_by_platform={"qwen": False},
+        )
+
+
+def test_run_create_rejects_aidso_thinking_platform_outside_requested_platforms():
+    from pydantic import ValidationError
+
+    from app.geo_monitoring.schemas import RunCreate
+
+    with pytest.raises(ValidationError):
+        RunCreate(
+            project_id=1,
+            collection_source="aidso",
+            platform_codes=["aidso_doubao_web"],
+            aidso_thinking_enabled_by_platform={"aidso_doubao_app": False},
+        )

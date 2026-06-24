@@ -260,7 +260,7 @@
 | `analysis_status` | string | 分析阶段状态 |
 | `report_status` | string | 报告阶段状态 |
 | `collection_source` | string | 采集来源：`official` / `aidso` |
-| `aidso_thinking_enabled` | boolean | Aidso 数据源是否开启深度思考 |
+| `aidso_thinking_enabled_by_platform` | object | Aidso 数据源各平台端侧是否开启深度思考，键为平台编码，值为 boolean；未配置的平台默认开启 |
 | `platform_codes` | string[] | 参与采集的平台 |
 | `expected_query_count` | integer | 预期查询数 |
 | `total_tasks` | integer | 总任务数 |
@@ -1274,7 +1274,7 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/platforms/qwen" \
 | `project_id` | integer | 是 | 项目 ID，≥ 1 |
 | `prompt_set_id` | integer/null | 否 | 指定提示词集；不传则用激活集 |
 | `collection_source` | string | 否 | 采集来源，默认 `official`；可选 `official` / `aidso` |
-| `aidso_thinking_enabled` | boolean | 否 | Aidso 数据源是否开启深度思考，默认 `true` |
+| `aidso_thinking_enabled_by_platform` | object | 否 | Aidso 数据源各平台端侧是否开启深度思考，键为平台编码，值为 boolean；未配置的平台默认开启 |
 | `platform_codes` | string[]/null | 否 | 指定平台；不传则用项目默认或全部启用平台 |
 
 **出参 `data`：** [MonitorRunOut](#29-monitorrunout监测运行)
@@ -1294,7 +1294,7 @@ Aidso 数据源示例：
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
   -H "Content-Type: application/json" \
-  -d '{"project_id": 1, "collection_source": "aidso", "aidso_thinking_enabled": false, "platform_codes": ["aidso_doubao_web", "aidso_doubao_app"]}'
+  -d '{"project_id": 1, "collection_source": "aidso", "aidso_thinking_enabled_by_platform": {"aidso_doubao_web": false, "aidso_doubao_app": true}, "platform_codes": ["aidso_doubao_web", "aidso_doubao_app"]}'
 ```
 
 ---

@@ -169,7 +169,7 @@ def test_aidso_pending_result_carries_retry_metadata():
         asyncio.run(_adapter().query(_query(), credential=_credential()))
 
     error = exc_info.value
-    assert error.category == ErrorCategory.NETWORK_ERROR
+    assert error.category == ErrorCategory.PENDING
     assert error.pending_metadata == {
         "aidso_req_id": "req-db-1",
         "aidso_task_id": "task-aidso-1",

@@ -28,7 +28,7 @@ class AidsoPendingError(AdapterError):
         self.pending_metadata = pending_metadata
         super().__init__(
             "aidso result is still pending",
-            category=ErrorCategory.NETWORK_ERROR,
+            category=ErrorCategory.PENDING,
         )
 
 

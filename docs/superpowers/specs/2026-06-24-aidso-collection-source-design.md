@@ -13,7 +13,7 @@
 
 当 `collection_source="aidso"` 时，用户可在创建运行入参中控制 Aidso 深度思考：
 
-- `aidso_thinking_enabled`：布尔值，默认 `true`。提交 Aidso API 时转换为 `thinkingEnabled: 1` 或 `thinkingEnabled: 0`。
+- `aidso_thinking_enabled_by_platform`：按 Aidso 平台编码配置布尔值，未配置的平台默认 `true`。提交 Aidso API 时转换为 `thinkingEnabled: 1` 或 `thinkingEnabled: 0`。
 
 `platform_codes` 继续表达本次运行的展示与分析维度。Aidso 数据源使用独立的平台编码表示端侧，例如：
 
@@ -110,7 +110,7 @@ Aidso 文档中的服务地址为 `https://odapi.aidso.com`，需要从环境变
 
 - 当 `AIDSO_ENABLED=true` 时，必须提供 `AIDSO_API_TOKEN`。
 - Aidso token 不写入数据库、不写入日志、不出现在错误消息中。
-- Aidso `thinkingEnabled` 不从环境变量读取，由创建运行入参 `aidso_thinking_enabled` 控制。
+- Aidso `thinkingEnabled` 不从环境变量读取，由创建运行入参 `aidso_thinking_enabled_by_platform` 控制。
 
 ## Error Handling
 
@@ -124,7 +124,7 @@ Aidso HTTP 错误沿用现有分类：
 
 Aidso 业务状态：
 
-- `data.status = ING` -> `NETWORK_ERROR`，可重试。
+- `data.status = ING` -> `PENDING`，可重试；轮询次数独立于 `attempt_count`。
 - `data.status = SUCCESS` 且无非空 `context` -> `INVALID_REQUEST`。
 - 缺少 `reqId` 或 Aidso 平台映射不存在 -> `INVALID_REQUEST`。
 
@@ -133,7 +133,7 @@ Aidso 业务状态：
 测试必须先行，覆盖：
 
 - `RunCreate` 默认 `collection_source="official"`，旧请求不变。
-- `RunCreate` 支持 `aidso_thinking_enabled`，并在 Aidso 提交请求中映射为 `thinkingEnabled`。
+- `RunCreate` 支持 `aidso_thinking_enabled_by_platform`，并在 Aidso 提交请求中映射为 `thinkingEnabled`。
 - 创建 Aidso 运行时，`collection_source` 持久化到 run，`platform_codes` 使用 Aidso 端侧编码。
 - Aidso 首次提交后会把 `reqId/taskId` 写入 `QueryTask.request_json`，重试时复用已有 `reqId`。
 - Aidso 适配器提交请求体、Authorization 头、平台名映射正确。

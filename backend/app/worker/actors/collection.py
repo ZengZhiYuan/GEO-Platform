@@ -16,4 +16,8 @@ def collect_query_task(task_id: int) -> None:
     """消费仅含 task_id 的消息，执行单条 QueryTask 采集。"""
     should_retry = asyncio.run(collection_service.execute_query_task(task_id))
     if should_retry:
-        collect_query_task.send(task_id)
+        retry_delay_ms = (
+            collection_service.get_runtime().settings.COLLECTION_RETRY_BASE_SECONDS
+            * 1000
+        )
+        collect_query_task.send_with_options(args=(task_id,), delay=retry_delay_ms)

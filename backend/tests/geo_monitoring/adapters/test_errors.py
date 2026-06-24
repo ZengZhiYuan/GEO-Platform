@@ -49,6 +49,7 @@ def test_classify_content_safety_by_message():
         (ErrorCategory.RATE_LIMITED, True),
         (ErrorCategory.SERVER_ERROR, True),
         (ErrorCategory.NETWORK_ERROR, True),
+        (ErrorCategory.PENDING, True),
         (ErrorCategory.UNAUTHORIZED, False),
         (ErrorCategory.INVALID_REQUEST, False),
         (ErrorCategory.CONTENT_SAFETY, False),

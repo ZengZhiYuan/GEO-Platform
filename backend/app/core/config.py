@@ -181,6 +181,7 @@ class Settings(BaseSettings):
     COLLECTION_REQUEST_TIMEOUT_SECONDS: int = 60
     COLLECTION_MAX_ATTEMPTS: int = 3
     COLLECTION_RETRY_BASE_SECONDS: int = 2
+    COLLECTION_AIDSO_MAX_POLLS: int = 120
     COLLECTION_MAX_CONCURRENCY: int = 10
     COLLECTION_RAW_RESPONSE_ENABLED: bool = True
 
@@ -323,6 +324,7 @@ class Settings(BaseSettings):
         "COLLECTION_REQUEST_TIMEOUT_SECONDS",
         "COLLECTION_MAX_ATTEMPTS",
         "COLLECTION_RETRY_BASE_SECONDS",
+        "COLLECTION_AIDSO_MAX_POLLS",
         "COLLECTION_MAX_CONCURRENCY",
         "AGENT_LLM_TIMEOUT_SECONDS",
         "AGENT_LLM_MAX_ATTEMPTS",
@@ -417,6 +419,7 @@ class Settings(BaseSettings):
                 "request_timeout_seconds": self.COLLECTION_REQUEST_TIMEOUT_SECONDS,
                 "max_attempts": self.COLLECTION_MAX_ATTEMPTS,
                 "retry_base_seconds": self.COLLECTION_RETRY_BASE_SECONDS,
+                "aidso_max_polls": self.COLLECTION_AIDSO_MAX_POLLS,
                 "max_concurrency": self.COLLECTION_MAX_CONCURRENCY,
                 "raw_response_enabled": self.COLLECTION_RAW_RESPONSE_ENABLED,
             },

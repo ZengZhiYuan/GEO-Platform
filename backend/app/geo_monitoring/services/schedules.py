@@ -355,7 +355,15 @@ def _create_scheduled_run(
     )
     run_repo.add_run(db, run)
     db.flush()
-    run_repo.build_query_tasks(db, run, prompts, platforms)
+    from app.geo_monitoring.services.collection import get_runtime
+
+    run_repo.build_query_tasks(
+        db,
+        run,
+        prompts,
+        platforms,
+        max_attempts=get_runtime().settings.COLLECTION_MAX_ATTEMPTS,
+    )
     now = datetime.now(timezone.utc)
     # 更新调度上次/下次运行时间
     schedule.last_run_at = now

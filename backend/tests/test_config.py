@@ -264,6 +264,7 @@ def test_runtime_summary_redacts_all_secrets(tmp_path):
     assert settings.runtime_summary()["platforms"]["doubao"]["api_key_count"] == 2
     assert settings.runtime_summary()["platforms"]["aidso"]["enabled"] is True
     assert settings.runtime_summary()["platforms"]["aidso"]["has_token"] is True
+    assert settings.runtime_summary()["collection"]["aidso_max_polls"] == 120
     assert settings.runtime_summary()["agent_llm"]["has_api_key"] is True
 
 

@@ -161,7 +161,11 @@ class CredentialKeyPool:
                 cooldown_until=str(time.time() + cooldown),
             )
             return
-        if error.category in {ErrorCategory.SERVER_ERROR, ErrorCategory.NETWORK_ERROR}:
+        if error.category in {
+            ErrorCategory.SERVER_ERROR,
+            ErrorCategory.NETWORK_ERROR,
+            ErrorCategory.PENDING,
+        }:
             return
         if error.category in {ErrorCategory.INVALID_REQUEST, ErrorCategory.CONTENT_SAFETY}:
             return
