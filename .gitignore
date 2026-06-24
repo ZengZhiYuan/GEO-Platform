@@ -25,6 +25,7 @@ frontend/vite.config.d.ts
 
 # ---- Uploads / Runtime ----
 uploads/
+.tmp/
 *.log
 
 # ---- OS / IDE ----

@@ -22,6 +22,13 @@ RUN_TERMINAL_STATUSES = frozenset(
 CANCELLABLE_TASK_STATUSES = frozenset({"pending", "queued", "running"})
 
 
+# 读取采集任务最大尝试次数配置
+def _collection_max_attempts() -> int:
+    from app.geo_monitoring.services.collection import get_runtime
+
+    return get_runtime().settings.COLLECTION_MAX_ATTEMPTS
+
+
 # 生成带时间戳与随机后缀的运行编号
 def _new_run_no() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
@@ -50,15 +57,32 @@ def _enabled_prompts(db: Session, prompt_set_id: int):
     return prompts
 
 
+# 判断平台是否属于当前采集源
+def _platform_matches_collection_source(platform, collection_source: str) -> bool:
+    if collection_source == "aidso":
+        return platform.adapter_type == "aidso"
+    return platform.adapter_type != "aidso"
+
+
 # 解析并校验可用的 AI 平台列表
-def _resolve_platforms(db: Session, platform_codes: list[str] | None):
+def _resolve_platforms(
+    db: Session,
+    platform_codes: list[str] | None,
+    *,
+    collection_source: str = "official",
+):
     rows = platform_repo.list_candidates(db, platform_codes)
     by_code = {platform.platform_code: platform for platform in rows}
 
     if platform_codes is None:
         # 未指定时取全部已启用平台
         platforms = sorted(
-            (platform for platform in rows if platform.enabled),
+            (
+                platform
+                for platform in rows
+                if platform.enabled
+                and _platform_matches_collection_source(platform, collection_source)
+            ),
             key=lambda item: item.id,
         )
     else:
@@ -66,7 +90,11 @@ def _resolve_platforms(db: Session, platform_codes: list[str] | None):
         platforms = []
         for code in platform_codes:
             platform = by_code.get(code)
-            if platform is None or not platform.enabled:
+            if (
+                platform is None
+                or not platform.enabled
+                or not _platform_matches_collection_source(platform, collection_source)
+            ):
                 raise BusinessException(message=f"AI 平台不可用: {code}", code=40031)
             platforms.append(platform)
     if not platforms:
@@ -258,7 +286,11 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
     platform_codes = payload.platform_codes
     if platform_codes is None and project.default_platform_codes:
         platform_codes = list(project.default_platform_codes)
-    platforms = _resolve_platforms(db, platform_codes)
+    platforms = _resolve_platforms(
+        db,
+        platform_codes,
+        collection_source=payload.collection_source.value,
+    )
     platform_codes = [platform.platform_code for platform in platforms]
     task_count = len(prompts) * len(platforms)
     run = MonitorRun(
@@ -271,6 +303,8 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
         collection_status="pending",
         analysis_status="skipped",
         report_status="skipped",
+        collection_source=payload.collection_source.value,
+        aidso_thinking_enabled_by_platform=payload.aidso_thinking_enabled_by_platform,
         platform_codes=platform_codes,
         expected_query_count=task_count,
         total_tasks=task_count,
@@ -279,7 +313,13 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
         run_repo.add_run(db, run)
         db.flush()
         # 按提示词 × 平台组合生成查询子任务
-        run_repo.build_query_tasks(db, run, prompts, platforms)
+        run_repo.build_query_tasks(
+            db,
+            run,
+            prompts,
+            platforms,
+            max_attempts=_collection_max_attempts(),
+        )
         db.commit()
     except Exception:
         db.rollback()

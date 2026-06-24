@@ -25,7 +25,9 @@ def test_docs_contains_only_approved_documents():
         "docs/采集任务生命周期说明.md",
         "docs/端到端流水线测试报告.md",
         "docs/superpowers/specs/2026-06-15-ai-monitoring-domain-replacement-design.md",
+        "docs/superpowers/specs/2026-06-24-aidso-collection-source-design.md",
         "docs/superpowers/plans/2026-06-15-ai-monitoring-domain-replacement-plan.md",
+        "docs/superpowers/plans/2026-06-24-aidso-collection-source.md",
     }
 
 

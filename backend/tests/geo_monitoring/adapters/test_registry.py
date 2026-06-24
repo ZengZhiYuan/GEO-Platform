@@ -78,6 +78,9 @@ def _runtime_settings(**overrides: Any) -> SimpleNamespace:
         "KIMI_BASE_URL": "https://kimi.test/v1",
         "KIMI_MODEL": "",
         "KIMI_API_KEYS": "",
+        "AIDSO_ENABLED": False,
+        "AIDSO_BASE_URL": "https://aidso.test",
+        "AIDSO_API_TOKEN": "",
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -163,3 +166,17 @@ def test_build_adapter_registry_registers_enabled_configured_platforms():
         "qwen",
         "yuanbao",
     )
+
+
+def test_build_adapter_registry_registers_aidso_platforms_when_configured():
+    registry = build_adapter_registry(
+        _runtime_settings(
+            AIDSO_ENABLED=True,
+            AIDSO_BASE_URL="https://aidso.test",
+            AIDSO_API_TOKEN="aidso-token",
+        )
+    )
+
+    codes = registry.registered_codes()
+    assert "aidso_doubao_web" in codes
+    assert "aidso_qwen_app" in codes

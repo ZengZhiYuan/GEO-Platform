@@ -181,6 +181,7 @@ class Settings(BaseSettings):
     COLLECTION_REQUEST_TIMEOUT_SECONDS: int = 60
     COLLECTION_MAX_ATTEMPTS: int = 3
     COLLECTION_RETRY_BASE_SECONDS: int = 2
+    COLLECTION_AIDSO_MAX_POLLS: int = 120
     COLLECTION_MAX_CONCURRENCY: int = 10
     COLLECTION_RAW_RESPONSE_ENABLED: bool = True
 
@@ -209,6 +210,10 @@ class Settings(BaseSettings):
     KIMI_BASE_URL: str = "https://api.moonshot.cn/v1"
     KIMI_MODEL: str = ""
     KIMI_API_KEYS: str = ""
+
+    AIDSO_ENABLED: bool = False
+    AIDSO_BASE_URL: str = "https://odapi.aidso.com"
+    AIDSO_API_TOKEN: str = ""
 
     # Agent LLM
     AGENT_LLM_BASE_URL: str = ""
@@ -319,6 +324,7 @@ class Settings(BaseSettings):
         "COLLECTION_REQUEST_TIMEOUT_SECONDS",
         "COLLECTION_MAX_ATTEMPTS",
         "COLLECTION_RETRY_BASE_SECONDS",
+        "COLLECTION_AIDSO_MAX_POLLS",
         "COLLECTION_MAX_CONCURRENCY",
         "AGENT_LLM_TIMEOUT_SECONDS",
         "AGENT_LLM_MAX_ATTEMPTS",
@@ -383,6 +389,9 @@ class Settings(BaseSettings):
                     "YUANBAO_CREDENTIALS_JSON is required when YUANBAO_ENABLED=true"
                 )
 
+        if self.AIDSO_ENABLED and not self.AIDSO_API_TOKEN.strip():
+            raise ValueError("AIDSO_API_TOKEN is required when AIDSO_ENABLED=true")
+
         return self
 
     # 返回数据库、Redis、Nacos 连接目标摘要（脱敏）
@@ -410,6 +419,7 @@ class Settings(BaseSettings):
                 "request_timeout_seconds": self.COLLECTION_REQUEST_TIMEOUT_SECONDS,
                 "max_attempts": self.COLLECTION_MAX_ATTEMPTS,
                 "retry_base_seconds": self.COLLECTION_RETRY_BASE_SECONDS,
+                "aidso_max_polls": self.COLLECTION_AIDSO_MAX_POLLS,
                 "max_concurrency": self.COLLECTION_MAX_CONCURRENCY,
                 "raw_response_enabled": self.COLLECTION_RAW_RESPONSE_ENABLED,
             },
@@ -444,6 +454,11 @@ class Settings(BaseSettings):
                     self.KIMI_MODEL,
                     len(self.parsed_api_keys(self.KIMI_API_KEYS)),
                 ),
+                "aidso": {
+                    "enabled": self.AIDSO_ENABLED,
+                    "base_url": self.AIDSO_BASE_URL,
+                    "has_token": bool(self.AIDSO_API_TOKEN.strip()),
+                },
             },
             "agent_llm": {
                 "base_url": self.AGENT_LLM_BASE_URL or None,

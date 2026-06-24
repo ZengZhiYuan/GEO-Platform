@@ -12,6 +12,7 @@ class ErrorCategory(StrEnum):
     UNAUTHORIZED = "unauthorized"
     SERVER_ERROR = "server_error"
     NETWORK_ERROR = "network_error"
+    PENDING = "pending"
     INVALID_REQUEST = "invalid_request"
     CONTENT_SAFETY = "content_safety"
     UNKNOWN = "unknown"
@@ -42,6 +43,7 @@ def is_retryable(category: ErrorCategory) -> bool:
         ErrorCategory.RATE_LIMITED,
         ErrorCategory.SERVER_ERROR,
         ErrorCategory.NETWORK_ERROR,
+        ErrorCategory.PENDING,
     }
 
 
