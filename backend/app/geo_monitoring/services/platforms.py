@@ -7,7 +7,7 @@ from app.geo_monitoring.models import AIPlatform
 from app.geo_monitoring.repositories import platforms as platform_repo
 from app.geo_monitoring.schemas import AIPlatformUpdate
 
-DEFAULT_PLATFORMS = (
+OFFICIAL_PLATFORMS = (
     {
         "platform_code": "doubao",
         "platform_name": "豆包",
@@ -34,6 +34,36 @@ DEFAULT_PLATFORMS = (
         "adapter_type": "openai_compatible",
     },
 )
+
+AIDSO_PLATFORM_MAPPINGS = {
+    "aidso_doubao_web": {"aidso_name": "DB", "platform_name": "豆包 Web 端"},
+    "aidso_doubao_app": {"aidso_name": "DOUBA", "platform_name": "豆包 App 端"},
+    "aidso_deepseek_web": {"aidso_name": "DP", "platform_name": "DeepSeek Web 端"},
+    "aidso_deepseek_app": {"aidso_name": "DPA", "platform_name": "DeepSeek App 端"},
+    "aidso_kimi_web": {"aidso_name": "KIMI", "platform_name": "Kimi Web 端"},
+    "aidso_yuanbao_web": {"aidso_name": "TXYB", "platform_name": "元宝 Web 端"},
+    "aidso_yuanbao_app": {"aidso_name": "TXYBA", "platform_name": "元宝 App 端"},
+    "aidso_qwen_web": {"aidso_name": "TYQW", "platform_name": "千问 Web 端"},
+    "aidso_qwen_app": {"aidso_name": "TYQWA", "platform_name": "千问 App 端"},
+    "aidso_baidu_web": {"aidso_name": "BDAI", "platform_name": "百度 AI"},
+    "aidso_douyin_web": {"aidso_name": "DYAI", "platform_name": "抖音 AI"},
+    "aidso_wenxin_web": {"aidso_name": "WXYY", "platform_name": "文心一言"},
+}
+
+AIDSO_PLATFORMS = tuple(
+    {
+        "platform_code": code,
+        "platform_name": item["platform_name"],
+        "adapter_type": "aidso",
+        "model_name": f"aidso:{item['aidso_name']}",
+        "search_enabled": True,
+        "citation_supported": True,
+        "extra_config": {"aidso_name": item["aidso_name"]},
+    }
+    for code, item in AIDSO_PLATFORM_MAPPINGS.items()
+)
+
+DEFAULT_PLATFORMS = (*OFFICIAL_PLATFORMS, *AIDSO_PLATFORMS)
 
 
 # 按平台编码查询 AI 平台，不存在则抛业务异常

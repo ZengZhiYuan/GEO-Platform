@@ -181,6 +181,34 @@ def test_run_rejects_cross_project_prompt_set_and_unavailable_platforms(
     assert unknown["code"] == 40031
 
 
+def test_official_run_rejects_aidso_platform(client, session_factory, project_id):
+    _active_prompt_setup(client, project_id, prompt_count=1)
+    _seed_platforms(session_factory)
+
+    body = client.post(
+        "/api/geo-monitoring/runs",
+        json={"project_id": project_id, "platform_codes": ["aidso_doubao_web"]},
+    ).json()
+
+    assert body["code"] == 40031
+
+
+def test_aidso_run_rejects_official_platform(client, session_factory, project_id):
+    _active_prompt_setup(client, project_id, prompt_count=1)
+    _seed_platforms(session_factory)
+
+    body = client.post(
+        "/api/geo-monitoring/runs",
+        json={
+            "project_id": project_id,
+            "collection_source": "aidso",
+            "platform_codes": ["qwen"],
+        },
+    ).json()
+
+    assert body["code"] == 40031
+
+
 def test_run_rejects_inactive_project_and_empty_enabled_prompts(
     client, session_factory, project_id
 ):
