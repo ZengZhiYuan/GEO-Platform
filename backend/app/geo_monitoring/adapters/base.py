@@ -20,6 +20,7 @@ class PlatformQuery:
     model: str
     temperature: float | None
     request_id: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
