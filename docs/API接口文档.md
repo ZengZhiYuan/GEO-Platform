@@ -259,6 +259,8 @@
 | `collection_status` | string | 采集阶段状态 |
 | `analysis_status` | string | 分析阶段状态 |
 | `report_status` | string | 报告阶段状态 |
+| `collection_source` | string | 采集来源：`official` / `aidso` |
+| `aidso_thinking_enabled` | boolean | Aidso 数据源是否开启深度思考 |
 | `platform_codes` | string[] | 参与采集的平台 |
 | `expected_query_count` | integer | 预期查询数 |
 | `total_tasks` | integer | 总任务数 |
@@ -1146,7 +1148,24 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/prompt-sets/1/activate"
 
 ## 10. AI 平台
 
-默认平台编码：`doubao`、`qwen`、`yuanbao`、`deepseek`、`kimi`。
+官方平台编码：`doubao`、`qwen`、`yuanbao`、`deepseek`、`kimi`。
+
+Aidso 第三方数据源端侧平台编码：
+
+| 平台编码 | 说明 |
+| --- | --- |
+| `aidso_doubao_web` | 豆包 Web 端 |
+| `aidso_doubao_app` | 豆包 App 端 |
+| `aidso_deepseek_web` | DeepSeek Web 端 |
+| `aidso_deepseek_app` | DeepSeek App 端 |
+| `aidso_kimi_web` | Kimi Web 端 |
+| `aidso_yuanbao_web` | 元宝 Web 端 |
+| `aidso_yuanbao_app` | 元宝 App 端 |
+| `aidso_qwen_web` | 千问 Web 端 |
+| `aidso_qwen_app` | 千问 App 端 |
+| `aidso_baidu_web` | 百度 AI |
+| `aidso_douyin_web` | 抖音 AI |
+| `aidso_wenxin_web` | 文心一言 |
 
 ### 10.1 分页查询 AI 平台
 
@@ -1254,6 +1273,8 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/platforms/qwen" \
 | --- | --- | --- | --- |
 | `project_id` | integer | 是 | 项目 ID，≥ 1 |
 | `prompt_set_id` | integer/null | 否 | 指定提示词集；不传则用激活集 |
+| `collection_source` | string | 否 | 采集来源，默认 `official`；可选 `official` / `aidso` |
+| `aidso_thinking_enabled` | boolean | 否 | Aidso 数据源是否开启深度思考，默认 `true` |
 | `platform_codes` | string[]/null | 否 | 指定平台；不传则用项目默认或全部启用平台 |
 
 **出参 `data`：** [MonitorRunOut](#29-monitorrunout监测运行)
@@ -1266,6 +1287,14 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/platforms/qwen" \
 curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
   -H "Content-Type: application/json" \
   -d '{"project_id": 1, "platform_codes": ["qwen", "deepseek"]}'
+```
+
+Aidso 数据源示例：
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
+  -H "Content-Type: application/json" \
+  -d '{"project_id": 1, "collection_source": "aidso", "aidso_thinking_enabled": false, "platform_codes": ["aidso_doubao_web", "aidso_doubao_app"]}'
 ```
 
 ---

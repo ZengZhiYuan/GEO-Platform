@@ -2,12 +2,13 @@
 
 GEO-Platform 是一个后端优先的 AI 应用监测系统：配置项目、品牌、Prompt 和 AI 平台后，系统按 `Prompt × Platform` 发起采集，沉淀回答、引用源、品牌识别、指标快照和 Agent 洞察，最后导出 Markdown / HTML / PDF 诊断报告。
 
-当前后端 Alembic head：`geo_monitoring_0006`。
+当前后端 Alembic head：`geo_monitoring_0007`。
 
 ## 现在能做什么
 
 - 管理监测项目、目标品牌、竞品、品牌别名、核心词和 Prompt 集版本。
-- 配置并调用豆包、通义千问、腾讯元宝、DeepSeek、Kimi 等平台 Adapter。
+- 配置并调用豆包、通义千问、腾讯元宝、DeepSeek、Kimi 等官方平台 Adapter。
+- 可在创建运行时选择 `collection_source=aidso`，通过 Aidso 采集 AI Web/App 端真实回答结果。
 - 创建监测运行，自动扇出查询任务，由 Dramatiq Worker 异步采集。
 - 汇总品牌提及率、首位率、Prompt 竞争力、引用来源、平台表现等指标。
 - 采集完成后触发 LangGraph Agent 生成语义诊断和优化建议。
@@ -87,6 +88,20 @@ cd backend
 ```powershell
 curl http://127.0.0.1:8000/api/geo-monitoring/health
 curl http://127.0.0.1:8000/api/geo-monitoring/ready
+```
+
+创建 Aidso 数据源运行示例：
+
+```http
+POST /api/geo-monitoring/runs
+Content-Type: application/json
+
+{
+  "project_id": 1,
+  "collection_source": "aidso",
+  "aidso_thinking_enabled": false,
+  "platform_codes": ["aidso_doubao_web", "aidso_doubao_app"]
+}
 ```
 
 ## PDF 报告导出
@@ -191,6 +206,7 @@ docker compose down
 | `SCHEDULER_ENABLED` | 本地 scheduler 进程需显式设为 `true` 才运行 |
 | `NACOS_ENABLED` | 为 `true` 时必须配置 Nacos 连接信息 |
 | `DOUBAO_*` / `QWEN_*` / `YUANBAO_*` / `DEEPSEEK_*` / `KIMI_*` | 各平台采集开关、模型和密钥 |
+| `AIDSO_ENABLED` / `AIDSO_BASE_URL` / `AIDSO_API_TOKEN` | Aidso 第三方数据源开关、地址和 token；深度思考由创建运行入参控制 |
 | `AGENT_LLM_*` | Agent 语义分析使用的 OpenAI-compatible LLM |
 
 真实账号、密码、API Key 只写入 `.env`、Nacos 或服务器密钥管理系统，不写入仓库。
@@ -232,6 +248,7 @@ geo_monitoring_0001
   -> geo_monitoring_0004
   -> geo_monitoring_0005
   -> geo_monitoring_0006
+  -> geo_monitoring_0007
 ```
 
 查看版本：
