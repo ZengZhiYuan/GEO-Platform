@@ -34,6 +34,7 @@ from app.geo_monitoring.models import (
 )
 from app.geo_monitoring.repositories import answers as answer_repo
 from app.geo_monitoring.services.brand_matcher import match_brands_in_text, normalize_answer_text
+from app.geo_monitoring.services.platforms import AIDSO_PLATFORM_MAPPINGS
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,13 @@ def build_credential_key_pool(
                 for item in yuanbao_credentials
             ],
         )
+    aidso_token = str(getattr(runtime_settings, "AIDSO_API_TOKEN", "")).strip()
+    if aidso_token:
+        for platform_code in AIDSO_PLATFORM_MAPPINGS:
+            pool.register_platform_credentials(
+                platform_code,
+                [ApiKeyCredential(platform_code=platform_code, api_key=aidso_token)],
+            )
     return pool
 
 

@@ -210,6 +210,10 @@ class Settings(BaseSettings):
     KIMI_MODEL: str = ""
     KIMI_API_KEYS: str = ""
 
+    AIDSO_ENABLED: bool = False
+    AIDSO_BASE_URL: str = "https://odapi.aidso.com"
+    AIDSO_API_TOKEN: str = ""
+
     # Agent LLM
     AGENT_LLM_BASE_URL: str = ""
     AGENT_LLM_API_KEY: str = ""
@@ -383,6 +387,9 @@ class Settings(BaseSettings):
                     "YUANBAO_CREDENTIALS_JSON is required when YUANBAO_ENABLED=true"
                 )
 
+        if self.AIDSO_ENABLED and not self.AIDSO_API_TOKEN.strip():
+            raise ValueError("AIDSO_API_TOKEN is required when AIDSO_ENABLED=true")
+
         return self
 
     # 返回数据库、Redis、Nacos 连接目标摘要（脱敏）
@@ -444,6 +451,11 @@ class Settings(BaseSettings):
                     self.KIMI_MODEL,
                     len(self.parsed_api_keys(self.KIMI_API_KEYS)),
                 ),
+                "aidso": {
+                    "enabled": self.AIDSO_ENABLED,
+                    "base_url": self.AIDSO_BASE_URL,
+                    "has_token": bool(self.AIDSO_API_TOKEN.strip()),
+                },
             },
             "agent_llm": {
                 "base_url": self.AGENT_LLM_BASE_URL or None,

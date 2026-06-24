@@ -144,6 +144,15 @@ def test_enabled_yuanbao_requires_credentials_and_model(tmp_path):
         )
 
 
+def test_enabled_aidso_requires_token(tmp_path):
+    with pytest.raises(ValidationError, match="AIDSO_API_TOKEN"):
+        make_settings(
+            REPORT_STORAGE_DIR=str(tmp_path),
+            AIDSO_ENABLED=True,
+            AIDSO_API_TOKEN="",
+        )
+
+
 def test_api_keys_are_trimmed_deduped_and_empty_values_removed():
     assert _parse_comma_separated_keys(" key-a , key-b, key-a , , key-c ") == [
         "key-a",
@@ -237,6 +246,8 @@ def test_runtime_summary_redacts_all_secrets(tmp_path):
         YUANBAO_CREDENTIALS_JSON=[
             {"secret_id": "yuanbao-id", "secret_key": "yuanbao-secret"},
         ],
+        AIDSO_ENABLED=True,
+        AIDSO_API_TOKEN="aidso-secret-token",
         AGENT_LLM_API_KEY="agent-secret-key",
     )
 
@@ -248,8 +259,11 @@ def test_runtime_summary_redacts_all_secrets(tmp_path):
     assert "kimi-key" not in rendered
     assert "yuanbao-id" not in rendered
     assert "yuanbao-secret" not in rendered
+    assert "aidso-secret-token" not in rendered
     assert "agent-secret-key" not in rendered
     assert settings.runtime_summary()["platforms"]["doubao"]["api_key_count"] == 2
+    assert settings.runtime_summary()["platforms"]["aidso"]["enabled"] is True
+    assert settings.runtime_summary()["platforms"]["aidso"]["has_token"] is True
     assert settings.runtime_summary()["agent_llm"]["has_api_key"] is True
 
 

@@ -101,6 +101,21 @@ def build_adapter_registry(runtime_settings: Any | None = None) -> AdapterRegist
             )
         )
 
+    if _aidso_configured(runtime_settings):
+        from app.geo_monitoring.adapters.aidso import AidsoAdapter
+        from app.geo_monitoring.services.platforms import AIDSO_PLATFORM_MAPPINGS
+
+        for code, item in AIDSO_PLATFORM_MAPPINGS.items():
+            registry.register(
+                AidsoAdapter(
+                    code=code,
+                    aidso_name=item["aidso_name"],
+                    base_url=runtime_settings.AIDSO_BASE_URL,
+                    timeout_seconds=timeout_seconds,
+                    raw_response_enabled=raw_response_enabled,
+                )
+            )
+
     return registry
 
 
@@ -123,6 +138,13 @@ def _has_api_keys(raw_value: Any) -> bool:
     if isinstance(raw_value, list):
         return any(str(item).strip() for item in raw_value)
     return any(item.strip() for item in str(raw_value).split(","))
+
+
+def _aidso_configured(runtime_settings: Any) -> bool:
+    enabled = bool(getattr(runtime_settings, "AIDSO_ENABLED", False))
+    base_url = str(getattr(runtime_settings, "AIDSO_BASE_URL", "")).strip()
+    token = str(getattr(runtime_settings, "AIDSO_API_TOKEN", "")).strip()
+    return bool(enabled and base_url and token)
 
 
 # 判断配置中是否包含至少一组有效腾讯元宝凭证
