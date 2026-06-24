@@ -8,6 +8,9 @@ ANALYSIS_NAME = "20260615_0003-geo_monitoring_0003_analysis_metrics.py"
 SCHEDULE_REPORT_NAME = "20260615_0004-geo_monitoring_0004_schedule_report.py"
 MONITOR_SETUP_NAME = "20260622_0005-geo_monitoring_0005_monitor_setup.py"
 REPORT_PDF_NAME = "20260623_0006-geo_monitoring_0006_report_pdf_format.py"
+AIDSO_COLLECTION_SOURCE_NAME = (
+    "20260624_0007-geo_monitoring_0007_aidso_collection_source.py"
+)
 EXPECTED_MIGRATIONS = [
     BASELINE_NAME,
     COLLECTION_NAME,
@@ -15,6 +18,7 @@ EXPECTED_MIGRATIONS = [
     SCHEDULE_REPORT_NAME,
     MONITOR_SETUP_NAME,
     REPORT_PDF_NAME,
+    AIDSO_COLLECTION_SOURCE_NAME,
 ]
 
 
