@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.geo_monitoring.adapters.base import PlatformAnswer, PlatformCredential, PlatformQuery
+from app.geo_monitoring.adapters.aidso import AidsoPendingError
 from app.geo_monitoring.adapters.errors import AdapterError, ErrorCategory
 from app.geo_monitoring.adapters.key_pool import ApiKeyCredential, CredentialKeyPool
 from app.geo_monitoring.adapters.registry import AdapterRegistry
@@ -93,6 +94,41 @@ class MockAdapter:
             latency_ms=120,
             provider_request_id="req-1",
             raw_response={"mock": True},
+        )
+
+
+class MockAidsoAdapter:
+    code = "aidso_doubao_web"
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[PlatformQuery, PlatformCredential]] = []
+
+    async def query(
+        self,
+        request: PlatformQuery,
+        *,
+        credential: PlatformCredential,
+    ) -> PlatformAnswer:
+        self.calls.append((request, credential))
+        if "aidso_req_id" not in request.metadata:
+            raise AidsoPendingError(
+                pending_metadata={
+                    "aidso_req_id": "req-db-1",
+                    "aidso_task_id": "task-aidso-1",
+                    "aidso_platform_name": "DB",
+                    "aidso_thinking_enabled": request.metadata.get(
+                        "aidso_thinking_enabled"
+                    ),
+                }
+            )
+        return PlatformAnswer(
+            text="推荐目标品牌。",
+            citations=[],
+            model="aidso:DB",
+            usage={},
+            latency_ms=80,
+            provider_request_id=request.metadata["aidso_req_id"],
+            raw_response={"aidso": True},
         )
 
 
@@ -345,6 +381,49 @@ def test_retryable_error_requeues_and_recovers(collection_env, session_factory):
         assert task.retry_count == 1
         assert task.attempt_count == 2
         assert len(adapter.calls) == 2
+
+
+def test_aidso_pending_persists_req_id_and_reuses_on_retry(
+    collection_env, session_factory
+):
+    aidso_adapter = MockAidsoAdapter()
+    runtime = collection_env["runtime"]
+    runtime.adapter_registry.register(aidso_adapter)
+    runtime.key_pool.register_platform_credentials(
+        "aidso_doubao_web",
+        [ApiKeyCredential(platform_code="aidso_doubao_web", api_key="aidso-token")],
+    )
+
+    with session_factory() as db:
+        seeded = _seed_collection_graph(db)
+        platform = db.query(AIPlatform).filter_by(platform_code="qwen").one()
+        platform.platform_code = "aidso_doubao_web"
+        platform.platform_name = "豆包 Web 端"
+        platform.adapter_type = "aidso"
+        platform.model_name = "aidso:DB"
+        platform.extra_config = {"aidso_name": "DB"}
+        run = db.get(MonitorRun, seeded["run_id"])
+        run.collection_source = "aidso"
+        run.aidso_thinking_enabled = False
+        run.platform_codes = ["aidso_doubao_web"]
+        task = db.get(QueryTask, seeded["task_id"])
+        task.platform_code = "aidso_doubao_web"
+        db.commit()
+
+    dispatch_task(seeded["task_id"])
+
+    with session_factory() as db:
+        task = db.get(QueryTask, seeded["task_id"])
+        assert task.status == "success"
+        assert task.request_json["aidso_req_id"] == "req-db-1"
+        assert task.request_json["aidso_task_id"] == "task-aidso-1"
+        assert task.provider_request_id == "req-db-1"
+
+    assert len(aidso_adapter.calls) == 2
+    assert "aidso_req_id" not in aidso_adapter.calls[0][0].metadata
+    assert aidso_adapter.calls[0][0].metadata["aidso_thinking_enabled"] is False
+    assert aidso_adapter.calls[1][0].metadata["aidso_req_id"] == "req-db-1"
+    assert aidso_adapter.calls[1][0].metadata["aidso_thinking_enabled"] is False
 
 
 def test_non_retryable_error_marks_failed(collection_env, session_factory):

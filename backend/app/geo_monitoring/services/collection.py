@@ -53,6 +53,9 @@ class TaskSnapshot:
     prompt_text: str
     model_name: str
     project_id: int
+    collection_source: str
+    aidso_thinking_enabled: bool
+    request_json: dict[str, Any] | None
     reclaim: bool
 
 
@@ -358,6 +361,9 @@ def _claim_task_for_execution(
             prompt_text=prompt.prompt_text,
             model_name=_resolve_model(runtime.settings, platform),
             project_id=run.project_id,
+            collection_source=run.collection_source,
+            aidso_thinking_enabled=run.aidso_thinking_enabled,
+            request_json=task.request_json,
             reclaim=reclaim,
         )
     finally:
@@ -380,6 +386,11 @@ async def _collect_platform_answer(
         model=snapshot.model_name,
         temperature=None,
         request_id=snapshot.idempotency_key,
+        metadata={
+            **(snapshot.request_json or {}),
+            "collection_source": snapshot.collection_source,
+            "aidso_thinking_enabled": snapshot.aidso_thinking_enabled,
+        },
     )
     try:
         answer = await adapter.query(request, credential=credential)
@@ -501,6 +512,7 @@ def _handle_adapter_failure(
         task.last_error_message = error.sanitized_message()
         task.error_code = error.category.value
         task.error_message = error.sanitized_message()
+        _persist_pending_metadata(task, error)
 
         # 可重试且未达上限则重新入队
         if is_retryable(error.category) and task.attempt_count < task.max_attempts:
@@ -524,6 +536,18 @@ def _handle_adapter_failure(
         return False
     finally:
         db.close()
+
+
+def _persist_pending_metadata(task: QueryTask, error: AdapterError) -> None:
+    pending_metadata = getattr(error, "pending_metadata", None)
+    if not isinstance(pending_metadata, dict):
+        return
+    request_json = dict(task.request_json or {})
+    request_json.update(pending_metadata)
+    task.request_json = request_json
+    req_id = pending_metadata.get("aidso_req_id")
+    if isinstance(req_id, str) and req_id.strip():
+        task.provider_request_id = req_id.strip()
 
 
 # 将 QueryTask 标记为 failed 并写入错误信息
