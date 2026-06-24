@@ -69,3 +69,22 @@ def test_project_and_run_input_validation():
 
     assert project.project_name == "测试项目"
     assert run.platform_codes == ["qwen", "deepseek"]
+    assert run.collection_source == "official"
+    assert run.aidso_thinking_enabled is True
+
+
+def test_run_create_accepts_aidso_collection_source():
+    assert find_spec("app.geo_monitoring.schemas") is not None
+
+    from app.geo_monitoring.schemas import RunCreate
+
+    run = RunCreate(
+        project_id=1,
+        collection_source="aidso",
+        aidso_thinking_enabled=False,
+        platform_codes=["aidso_doubao_web"],
+    )
+
+    assert run.collection_source == "aidso"
+    assert run.aidso_thinking_enabled is False
+    assert run.platform_codes == ["aidso_doubao_web"]

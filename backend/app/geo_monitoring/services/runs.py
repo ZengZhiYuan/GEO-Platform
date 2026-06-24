@@ -271,6 +271,8 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
         collection_status="pending",
         analysis_status="skipped",
         report_status="skipped",
+        collection_source=payload.collection_source.value,
+        aidso_thinking_enabled=payload.aidso_thinking_enabled,
         platform_codes=platform_codes,
         expected_query_count=task_count,
         total_tasks=task_count,

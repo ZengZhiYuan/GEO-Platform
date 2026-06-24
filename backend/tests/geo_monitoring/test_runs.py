@@ -90,6 +90,43 @@ def test_create_run_builds_prompt_platform_cartesian_product(
     }
 
 
+def test_create_aidso_run_persists_collection_source(
+    client, session_factory, project_id
+):
+    setup = _active_prompt_setup(client, project_id, prompt_count=1)
+    with session_factory() as db:
+        db.add(
+            AIPlatform(
+                platform_code="aidso_doubao_web",
+                platform_name="豆包 Web 端",
+                adapter_type="aidso",
+                model_name="aidso:DB",
+                enabled=True,
+                extra_config={"aidso_name": "DB"},
+            )
+        )
+        db.commit()
+
+    response = client.post(
+        "/api/geo-monitoring/runs",
+        json={
+            "project_id": project_id,
+            "collection_source": "aidso",
+            "aidso_thinking_enabled": False,
+            "platform_codes": ["aidso_doubao_web"],
+        },
+    ).json()
+
+    run = response["data"]
+    assert response["code"] == 0
+    assert run["prompt_set_id"] == setup["prompt_set"]["id"]
+    assert run["prompt_set_version"] == "v1"
+    assert run["collection_source"] == "aidso"
+    assert run["aidso_thinking_enabled"] is False
+    assert run["platform_codes"] == ["aidso_doubao_web"]
+    assert run["expected_query_count"] == 1
+
+
 def test_run_defaults_to_active_prompt_set_and_enabled_platforms(
     client, session_factory, project_id
 ):

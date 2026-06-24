@@ -75,6 +75,11 @@ class QueryTaskStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class CollectionSource(StrEnum):
+    OFFICIAL = "official"
+    AIDSO = "aidso"
+
+
 class ProjectCreate(BaseModel):
     project_name: str = Field(max_length=100)
     industry: str = Field(default="文旅演艺", max_length=100)
@@ -405,6 +410,8 @@ class RunCreate(BaseModel):
     project_id: int = Field(ge=1)
     prompt_set_id: int | None = Field(default=None, ge=1)
     platform_codes: list[str] | None = None
+    collection_source: CollectionSource = CollectionSource.OFFICIAL
+    aidso_thinking_enabled: bool = True
 
     @field_validator("platform_codes")
     @classmethod
@@ -432,6 +439,8 @@ class MonitorRunOut(BaseModel):
     collection_status: str
     analysis_status: str
     report_status: str
+    collection_source: str = "official"
+    aidso_thinking_enabled: bool = True
     platform_codes: list[str]
     expected_query_count: int
     total_tasks: int = 0

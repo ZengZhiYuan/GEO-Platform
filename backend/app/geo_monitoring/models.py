@@ -322,6 +322,10 @@ class MonitorRun(BaseModel):
             "report_status IN ('pending', 'running', 'completed', 'failed', 'skipped')",
             name="ck_geo_monitor_run_report_status",
         ),
+        CheckConstraint(
+            "collection_source IN ('official', 'aidso')",
+            name="ck_geo_monitor_run_collection_source",
+        ),
         Index("ix_geo_monitor_run_project_created", "project_id", "created_at"),
         Index("ix_geo_monitor_run_status", "status", "created_at"),
         Index("ix_geo_monitor_run_status_completed", "status", "completed_at"),
@@ -350,6 +354,15 @@ class MonitorRun(BaseModel):
     )
     report_status: Mapped[str] = mapped_column(
         String(30), default="skipped", server_default="skipped", nullable=False
+    )
+    collection_source: Mapped[str] = mapped_column(
+        String(20),
+        default="official",
+        server_default="official",
+        nullable=False,
+    )
+    aidso_thinking_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true"), nullable=False
     )
     platform_codes: Mapped[list[str]] = mapped_column(
         JSON_VALUE, default=list, nullable=False
