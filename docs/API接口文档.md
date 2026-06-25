@@ -2138,6 +2138,66 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/source-analysis" \
 
 ---
 
+### 17.2 竞品分析页面级聚合
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 竞品分析页面级聚合 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/competitor-analysis` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `run_id` | integer | 否 | 指定运行 ID；不传则与 dashboard 一致取最近已分析或终态 run |
+| `platform_codes` | string[] | 否 | 平台端编码，可重复 query；仅聚合选中平台分析快照 |
+| `start_at` / `end_at` | datetime | 否 | 过滤答案采集时间（ISO8601）；传入后改按 `Answer`/`BrandResult` 重算榜单 |
+| `brand_scope` | string | 否 | `top5`（默认）或 `all`；P0 仅校验并回显，趋势序列暂为空数组 |
+
+**口径说明：**
+
+- 目标品牌来自项目 `brand_type=target`；竞品来自 `brand_type=competitor`；榜单仅保留上述品牌，`candidate` 等不会出现在 `boards`。
+- 榜单优先聚合 `PlatformAnalysis.summary_json.metrics.brand_metrics[]`；单行缺失时对该平台退化使用 `top_competitors` 与目标品牌平台指标（按平台逐行处理，避免混合快照漏算）。
+- 传入 `start_at`/`end_at` 时仅在已存在 `PlatformAnalysis` 的前提下按答案重算；未分析 run 即使带时间过滤也返回空榜；`top1_rate` 与其它 KPI 同步按过滤后答案计算，且 Top1 口径与 `compute_brand_rank_rate(max_rank=1)` 一致（按品牌出现位置排序后的相对排名，而非字符 `first_position <= 1`）。
+- `mention_count` 来自 `BrandResult.mention_count` 或分析快照；`average_rank`/`share_of_voice` 无可靠值时返回 `null`。
+- `geo_metric_snapshot` 当前无 `brand_id` 维度，**不能**通过 `GET /trends` 伪装竞品历史趋势；`trends` 在 P0 固定返回空数组，P1 补齐品牌维度快照后再写入序列。
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `run_id` | integer/null | 实际使用的运行 ID |
+| `brand_scope` | string | `top5` 或 `all` |
+| `target_brand` | object | `{ brand_id, brand_name }` |
+| `has_analysis_data` | boolean | 是否存在可展示的分析聚合 |
+| `kpis` | object | 目标品牌 KPI：`mention_rate`、`mention_count`、`average_rank`、`top1_rate`、`share_of_voice` |
+| `boards` | object | 三个榜单：`mention_rate`、`average_rank`、`mention_count` |
+| `trends` | object | `{ days, mention_rate, average_rank, mention_count }`；P0 均为空数组 |
+
+**`boards.*[]` 字段：**
+
+| 字段 | 说明 |
+| --- | --- |
+| `brand_id` / `brand_name` | 品牌标识 |
+| `mention_rate` | 提及率（decimal 字符串，0–1；无分母为 `null`） |
+| `mention_count` | 提及次数 |
+| `average_rank` | 平均提及排名（decimal 字符串；未提及时 `null`） |
+| `share_of_voice` | 声量份额（decimal 字符串；无分母为 `null`） |
+| `is_target` | 是否目标品牌 |
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/competitor-analysis" \
+  --data-urlencode "platform_codes=qwen" \
+  --data-urlencode "brand_scope=top5"
+```
+
+**错误码：** 项目/运行/目标品牌不存在 `40400`；`brand_scope` 非法或 `start_at > end_at` 为 `422`；项目未启用 `40001`。
+
+---
+
 ## 18. 报告
 
 ### 18.1 创建并生成监测报告

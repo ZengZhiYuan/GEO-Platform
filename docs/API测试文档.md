@@ -744,6 +744,26 @@ backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_
 
 补充回归用例：`start_at` 排除全部答案、同域名不同 `source_name`、`run_id` 跨项目、`page/page_size` 分页。
 
+### 13.3 竞品分析接口
+
+| 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 竞品分析页面级聚合 | `GET` | `/api/geo-monitoring/projects/{project_id}/competitor-analysis` | Path：`project_id`；Query：可选 `run_id`、`platform_codes[]`、`start_at`、`end_at`、`brand_scope` | `run_id`、`target_brand`、`kpis`、`boards`、`trends` | 无分析时榜单为空不报错；有分析时目标品牌 `is_target=true`；`trends` 为空数组；未分析 run 带时间过滤仍为空榜；不含 candidate 品牌 | 项目/运行/目标品牌不存在 `40400`；`brand_scope` 非法或 `start_at > end_at` 为 `422` |
+
+**自动化测试：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_competitor_analysis_api.py
+```
+
+关键字段：
+
+- `kpis`：`mention_rate`、`mention_count`、`average_rank`、`top1_rate`、`share_of_voice`
+- `boards.mention_rate[]` / `boards.average_rank[]` / `boards.mention_count[]`：含 `is_target`
+- `trends`：P0 固定 `{ days: [], mention_rate: [], average_rank: [], mention_count: [] }`，勿用 `/trends` 冒充竞品趋势
+
+补充回归用例：未分析 run + `start_at/end_at` 仍为空榜；`summary_json` 含 candidate 品牌时不入榜；多平台混合 `brand_metrics`/`top_competitors` 快照均参与聚合；`start_at > end_at` 返回 `422`；时间过滤后 `top1_rate` 与过滤答案口径一致，且目标品牌 `first_position=10`、竞品 `first_position=30` 时仍计为 Top1。
+
 ## 14. 报告模块
 
 ### 14.1 报告字段

@@ -1040,3 +1040,49 @@ class SourceAnalysisOut(BaseModel):
     platform_columns: list[SourceAnalysisPlatformColumnRead] = Field(default_factory=list)
     sites: PaginatedResponse[SourceAnalysisSiteRead]
 
+
+class CompetitorAnalysisTargetBrandRead(BaseModel):
+    brand_id: int
+    brand_name: str
+
+
+class CompetitorAnalysisKpiRead(BaseModel):
+    mention_rate: str | None = None
+    mention_count: int
+    average_rank: str | None = None
+    top1_rate: str | None = None
+    share_of_voice: str | None = None
+
+
+class CompetitorAnalysisBoardRowRead(BaseModel):
+    brand_id: int
+    brand_name: str
+    mention_rate: str | None = None
+    mention_count: int
+    average_rank: str | None = None
+    share_of_voice: str | None = None
+    is_target: bool
+
+
+class CompetitorAnalysisBoardsRead(BaseModel):
+    mention_rate: list[CompetitorAnalysisBoardRowRead] = Field(default_factory=list)
+    average_rank: list[CompetitorAnalysisBoardRowRead] = Field(default_factory=list)
+    mention_count: list[CompetitorAnalysisBoardRowRead] = Field(default_factory=list)
+
+
+class CompetitorAnalysisTrendsRead(BaseModel):
+    days: list[str] = Field(default_factory=list)
+    mention_rate: list[Any] = Field(default_factory=list)
+    average_rank: list[Any] = Field(default_factory=list)
+    mention_count: list[Any] = Field(default_factory=list)
+
+
+class CompetitorAnalysisOut(BaseModel):
+    run_id: int | None = None
+    brand_scope: str
+    target_brand: CompetitorAnalysisTargetBrandRead
+    has_analysis_data: bool
+    kpis: CompetitorAnalysisKpiRead
+    boards: CompetitorAnalysisBoardsRead
+    trends: CompetitorAnalysisTrendsRead
+

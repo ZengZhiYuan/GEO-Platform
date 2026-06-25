@@ -156,7 +156,7 @@
 
 建议补齐：
 
-- `GET /projects/{project_id}/competitor-analysis?platform_codes=&start_at=&end_at=&brand_scope=top5|all`
+- `GET /projects/{project_id}/competitor-analysis?platform_codes=&start_at=&end_at=&brand_scope=top5|all` ✅ 已覆盖
 - 为竞品/品牌维度新增指标快照，至少包含 `brand_id`、`mention_rate`、`mention_count`、`average_mention_rank`、`share_of_voice`。
 - 如暂不改表，可先做基于多 run 现有分析 JSON 的只读聚合服务，但要明确性能和口径限制。
 
@@ -254,7 +254,7 @@
 | 平台端元数据 | `GET /platform-endpoints` ✅ | 全部页面 | 已提供结构化 `base_platform/endpoint_type/endpoint_label/logo_url` 分组；Aidso 端码兼容解析。 |
 | AI 生成 | `/ai/brand-words:generate`、`/ai/competitors:generate`、`/ai/questions:generate` ✅ | 创建项目、编辑配置 | MVP 确定性规则生成候选，保存仍走 monitor-setup。 |
 | 大盘页面级聚合 | `GET /projects/{id}/dashboard/overview` | 数据大盘 | 解决时间范围、平台多选、竞品预览、信源预览、最近问题的一次性聚合。 |
-| 竞品页面级聚合与品牌维度趋势 | `GET /projects/{id}/competitor-analysis`，并为快照增加 `brand_id` 维度 | 竞品分析 | 当前只能做当前快照榜，不能做竞品趋势。 |
+| 竞品页面级聚合与品牌维度趋势 | `GET /projects/{id}/competitor-analysis` ✅（P0 榜单与 KPI；趋势 P1 补 `brand_id` 快照） | 竞品分析 | 当前只能做当前快照榜，不能做竞品趋势。 |
 | 对话记录问题聚合 | `GET /projects/{id}/conversation-questions` ✅ | AI 对话记录 | 按 prompt 聚合主表与平台端指标；P0 单 run，`reasoning_text/search_keywords` 暂返回 null/[]。 |
 | 信源页面级聚合 | `GET /projects/{id}/source-analysis` ✅ | 信源引用分析 | 已提供 KPI、类型分布、站点矩阵与 `metric` 口径切换；`article_count` 来自 `AnswerCitation.url` 去重。 |
 
