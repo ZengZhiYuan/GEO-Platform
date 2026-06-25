@@ -23,7 +23,8 @@
 - [13. 采集答案](#13-采集答案)
 - [14. 分析与 Agent 审计](#14-分析与-agent-审计)
 - [15. 看板与趋势](#15-看板与趋势)
-- [16. 报告](#16-报告)
+- [16. AI 对话记录](#16-ai-对话记录)
+- [17. 报告](#17-报告)
 - [附录 A：错误码](#附录-a错误码)
 - [附录 B：状态枚举](#附录-b状态枚举)
 
@@ -1968,9 +1969,101 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/trends" \
 
 ---
 
-## 16. 报告
+## 16. AI 对话记录
 
-### 16.1 创建并生成监测报告
+P0 按单次运行（`run_id` 指定或默认取最近已分析/终态 run）聚合，**不做跨 run 时间范围汇总**；`start_at`/`end_at` 仅过滤该 run 内答案的 `collected_at`。
+
+### 16.1 按 AI 问题聚合对话记录主表
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 按 AI 问题聚合对话记录主表 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/conversation-questions` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `run_id` | integer | 否 | 指定运行 ID；不传则与 dashboard 一致取最近已分析或终态 run |
+| `platform_codes` | string[] | 否 | 平台端编码，可重复 query；仅过滤展示与指标分母 |
+| `start_at` / `end_at` | datetime | 否 | 过滤答案采集时间（ISO8601） |
+| `keyword` | string | 否 | 问题文本关键词（子串匹配，忽略大小写） |
+| `page` | integer | 否 | 默认 1 |
+| `page_size` | integer | 否 | 默认 10，1–100 |
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `run_id` | integer/null | 实际使用的运行 ID |
+| `items` | array | 按 `prompt_id` 聚合的问题行 |
+| `total` | integer | 问题总数 |
+| `page` / `page_size` | integer | 分页 |
+
+**`items[]` 字段：**
+
+| 字段 | 说明 |
+| --- | --- |
+| `prompt_id` / `prompt_text` / `prompt_type` | 问题标识与文本 |
+| `run_id` | 运行 ID |
+| `valid_answer_count` | 有效答案数（任务成功且文本非空） |
+| `visibility_rate` | 目标品牌可见度（decimal 字符串；无分母为 `null`） |
+| `mention_count` | 目标品牌提及次数合计 |
+| `average_rank` | 目标品牌 `first_position` 平均值（decimal 字符串；未提及为 `null`） |
+| `top1_rate` / `top3_rate` | 单答案 `first_position <= 1/3` 的占比 |
+| `sentiment` | `{ positive, neutral, negative }` 计数 |
+| `platform_metrics` | 分平台同上指标 |
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questions" \
+  --data-urlencode "keyword=杭州" \
+  --data-urlencode "platform_codes=qwen"
+```
+
+---
+
+### 16.2 获取指定问题下各平台回答详情
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 获取指定问题下各平台回答详情 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/conversation-questions/{prompt_id}/answers` |
+
+**Query 入参：** 同 16.1 的 `run_id`、`platform_codes`、`start_at`、`end_at`，以及 `page`（默认 1）、`page_size`（默认 50，1–200）。
+
+**出参 `data` 字段：**
+
+| 字段 | 说明 |
+| --- | --- |
+| `run_id` | 运行 ID |
+| `prompt_id` | 问题 ID |
+| `items` | 各平台答案详情 |
+| `total` / `page` / `page_size` | 分页 |
+
+**`items[]` 字段：**
+
+| 字段 | 说明 |
+| --- | --- |
+| `answer_id` / `platform_code` | 答案与平台 |
+| `prompt_text` / `prompt_type` | 问题文本与类型 |
+| `raw_text` / `normalized_text` | 回答正文 |
+| `collected_at` | 采集时间 ISO8601 |
+| `reasoning_text` | P0 固定 `null` |
+| `search_keywords` | P0 固定 `[]` |
+| `citations` | 引用列表（结构同 `CitationRead`） |
+| `brand_results` | 已提及品牌结果，含 `brand_name` |
+
+**错误码：** 项目/运行/问题不存在 `40400`；项目未启用 `40001`。
+
+---
+
+## 17. 报告
+
+### 17.1 创建并生成监测报告
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2003,7 +2096,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 
 ---
 
-### 16.2 分页查询运行报告
+### 17.2 分页查询运行报告
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2017,7 +2110,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 
 ---
 
-### 16.3 获取报告状态与元数据
+### 17.3 获取报告状态与元数据
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2031,7 +2124,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 
 ---
 
-### 16.4 下载报告文件
+### 17.4 下载报告文件
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2058,7 +2151,7 @@ curl -O -J "http://127.0.0.1:8000/api/geo-monitoring/reports/1/download"
 
 ---
 
-### 16.5 删除报告
+### 17.5 删除报告
 
 | 项目 | 说明 |
 | --- | --- |

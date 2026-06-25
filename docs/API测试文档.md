@@ -701,9 +701,30 @@ Agent 审计字段包括：
 
 `run_id`、`platform_code`、`metric_code`、`numerator`、`denominator`、`metric_value`、`prompt_set_version`、`snapshot_at`、`completeness_rate`。
 
-## 13. 报告模块
+## 13. AI 对话记录模块
 
-### 13.1 报告字段
+P0 按单次 run 聚合；`start_at`/`end_at` 仅过滤该 run 内答案采集时间。
+
+### 13.1 对话记录接口
+
+| 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 按 AI 问题聚合主表 | `GET` | `/api/geo-monitoring/projects/{project_id}/conversation-questions` | Path：`project_id`；Query：可选 `run_id`、`platform_codes[]`、`start_at`、`end_at`、`keyword`、`page`、`page_size` | `run_id`、`items[]`、分页 | 同 prompt 多平台答案聚合成一行；`keyword` 过滤问题文本；`platform_codes` 过滤平台指标 | 项目不存在 `40400`；无目标品牌 `40400` |
+| 指定问题下各平台回答详情 | `GET` | `/api/geo-monitoring/projects/{project_id}/conversation-questions/{prompt_id}/answers` | Path：`project_id`、`prompt_id`；Query：同主表 | `run_id`、`prompt_id`、`items[]`、分页 | 含 `citations`、`brand_results[].brand_name`；无引用/品牌时为空数组；`reasoning_text=null`、`search_keywords=[]` | 问题不存在 `40400` |
+
+**自动化测试：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_conversations_api.py
+```
+
+主表 `items[]` 关键字段：`prompt_id`、`prompt_text`、`valid_answer_count`、`visibility_rate`、`mention_count`、`average_rank`、`top1_rate`、`top3_rate`、`sentiment`、`platform_metrics[]`。
+
+详情 `items[]` 关键字段：`answer_id`、`platform_code`、`raw_text`、`citations[]`、`brand_results[]`、`reasoning_text`、`search_keywords`。
+
+## 14. 报告模块
+
+### 14.1 报告字段
 
 创建报告请求体：
 
@@ -715,7 +736,7 @@ Agent 审计字段包括：
 
 `id`、`project_id`、`run_id`、`status`、`format`、`file_name`、`relative_storage_path`、`file_size`、`checksum`、`error_message`、`completed_at`、`created_at`、`updated_at`。
 
-### 13.2 报告接口
+### 14.2 报告接口
 
 | 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -733,15 +754,15 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
   -d '{"formats":["md","html","pdf"]}'
 ```
 
-## 14. 推荐测试流程
+## 15. 推荐测试流程
 
-### 14.1 基础连通性
+### 15.1 基础连通性
 
 1. 调用 `/api/health`，确认应用可响应。
 2. 调用 `/api/ready`，确认数据库和 Redis 可用。
 3. 调用 `/api/geo-monitoring/health` 与 `/api/geo-monitoring/ready`，确认监测模块可用。
 
-### 14.2 主业务正向流程
+### 15.2 主业务正向流程
 
 1. 创建项目：`POST /projects`。
 2. **（推荐）保存监测设置**：`PUT /projects/{project_id}/monitor-setup`（品牌、竞品、核心词、AI 问题、平台一次配置）。
@@ -763,7 +784,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 11. 分析完成后生成报告：`POST /runs/{run_id}/reports`。
 12. 下载报告：`GET /reports/{report_id}/download`。
 
-### 14.3 重点反向测试
+### 15.3 重点反向测试
 
 | 场景 | 操作 | 预期 |
 | --- | --- | --- |

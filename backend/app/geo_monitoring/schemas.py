@@ -934,3 +934,60 @@ class MonitorSetupSave(BaseModel):
     @classmethod
     def normalize_platform_codes(cls, value: list[str]) -> list[str]:
         return list(dict.fromkeys(code.strip() for code in value if code.strip()))
+
+
+class ConversationSentimentSummary(BaseModel):
+    positive: int = 0
+    neutral: int = 0
+    negative: int = 0
+
+
+class ConversationPlatformMetricsRead(BaseModel):
+    platform_code: str
+    valid_answer_count: int
+    visibility_rate: str | None = None
+    mention_count: int
+    average_rank: str | None = None
+    top1_rate: str | None = None
+    top3_rate: str | None = None
+    sentiment: ConversationSentimentSummary
+
+
+class ConversationQuestionRead(BaseModel):
+    prompt_id: int
+    prompt_text: str
+    prompt_type: str
+    run_id: int
+    valid_answer_count: int
+    visibility_rate: str | None = None
+    mention_count: int
+    average_rank: str | None = None
+    top1_rate: str | None = None
+    top3_rate: str | None = None
+    sentiment: ConversationSentimentSummary
+    platform_metrics: list[ConversationPlatformMetricsRead] = Field(default_factory=list)
+
+
+class ConversationAnswerBrandResultRead(BaseModel):
+    brand_id: int
+    brand_name: str
+    is_mentioned: bool
+    mention_count: int
+    first_position: int | None = None
+    sentiment: str | None = None
+
+
+class ConversationAnswerRead(BaseModel):
+    answer_id: int
+    platform_code: str
+    prompt_id: int
+    prompt_text: str
+    prompt_type: str
+    raw_text: str
+    normalized_text: str | None = None
+    collected_at: datetime
+    reasoning_text: str | None = None
+    search_keywords: list[str] = Field(default_factory=list)
+    citations: list[CitationRead] = Field(default_factory=list)
+    brand_results: list[ConversationAnswerBrandResultRead] = Field(default_factory=list)
+

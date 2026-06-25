@@ -179,8 +179,8 @@
 
 建议补齐：
 
-- `GET /projects/{project_id}/conversation-questions?run_id=&platform_codes=&start_at=&end_at=&keyword=&page=&page_size=`
-- `GET /conversation-questions/{prompt_id}/answers?run_id=&platform_codes=`
+- `GET /projects/{project_id}/conversation-questions?run_id=&platform_codes=&start_at=&end_at=&keyword=&page=&page_size=` ✅ 已覆盖
+- `GET /projects/{project_id}/conversation-questions/{prompt_id}/answers?run_id=&platform_codes=` ✅ 已覆盖
 - `GET /projects/{project_id}/conversation-questions/export`
 - `AnswerDetailRead` 增加 `prompt_text/prompt_type`，并按脱敏策略暴露 `reasoning_text/search_keywords` 或 `raw_response_json` 的安全子集。
 
@@ -255,7 +255,7 @@
 | AI 生成 | `/ai/brand-words:generate`、`/ai/competitors:generate`、`/ai/questions:generate` ✅ | 创建项目、编辑配置 | MVP 确定性规则生成候选，保存仍走 monitor-setup。 |
 | 大盘页面级聚合 | `GET /projects/{id}/dashboard/overview` | 数据大盘 | 解决时间范围、平台多选、竞品预览、信源预览、最近问题的一次性聚合。 |
 | 竞品页面级聚合与品牌维度趋势 | `GET /projects/{id}/competitor-analysis`，并为快照增加 `brand_id` 维度 | 竞品分析 | 当前只能做当前快照榜，不能做竞品趋势。 |
-| 对话记录问题聚合 | `GET /projects/{id}/conversation-questions` | AI 对话记录 | 当前答案列表粒度不匹配原型主表。 |
+| 对话记录问题聚合 | `GET /projects/{id}/conversation-questions` ✅ | AI 对话记录 | 按 prompt 聚合主表与平台端指标；P0 单 run，`reasoning_text/search_keywords` 暂返回 null/[]。 |
 | 信源页面级聚合 | `GET /projects/{id}/source-analysis` | 信源引用分析 | 当前只有域名 Top 和单答案引用，不能支撑完整矩阵和类型趋势。 |
 
 ### P1：统一指标口径与提升对接质量
