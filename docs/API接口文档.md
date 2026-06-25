@@ -1963,15 +1963,17 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/dashboard" \
 | `brand_mention_rate` | 目标品牌提及率 |
 | `brand_top1_mention_rate` | Top1 提及率 |
 | `brand_top3_mention_rate` | Top3 提及率 |
+| `brand_top10_mention_rate` | Top10 提及率（目标品牌相对排名 ≤10 的有效回答占比） |
 | `valid_answer_count` | 有效回答数 |
 | `brand_mention_count` | 提及对话数 |
-| `average_rank` | 平均提及排名；从 `summary_json.metrics.brand_metrics[]` 读取，无法稳定读取时为 `null` |
-| `share_of_voice` | SOV；同上 |
-| `brand_mention_total_count` | 品牌提及次数汇总；同上 |
+| `average_rank` | 平均提及排名；优先从竞品分析聚合，时间筛选时按答案重算 |
+| `share_of_voice` | SOV；优先从竞品分析聚合，时间筛选时按答案重算 |
+| `brand_mention_total_count` | 品牌提及次数汇总（`mention_count` 求和） |
+| `positive_rate` / `neutral_rate` / `negative_rate` | 目标品牌提及对话的情感率；无对应情感对话时为 `null` |
 
 无运行、或仅有采集未分析 run 时，KPI 字段为 `null`（`brand_mention_count` 等计数型在无分析时亦为 `null`），接口仍返回 `code=0`。
 
-**时间筛选口径：** 传入 `start_at`/`end_at` 时，`kpis` 与扩展 KPI（`average_rank`/`share_of_voice`/`brand_mention_total_count`）按该 run 内答案采集时间重算，与竞品/信源/问题预览一致；`platforms[].analysis` 仍为 run 级 `PlatformAnalysis` 快照，不受时间筛选影响。
+**时间筛选口径：** 传入 `start_at`/`end_at` 时，`kpis` 与扩展 KPI（`average_rank`/`share_of_voice`/`brand_mention_total_count`/情感率/Top10）按该 run 内答案采集时间重算，与竞品/信源/问题预览一致；`platforms[].analysis` 仍为 run 级 `PlatformAnalysis` 快照，不受时间筛选影响。
 
 **调用示例：**
 
@@ -1995,7 +1997,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/dashboard/overview"
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `metric_code` | string | **是** | 指标编码 |
+| `metric_code` | string | **是** | 指标编码；平台级含 `brand_visibility`、`brand_top1_mention_rate`、`brand_top3_mention_rate`、`brand_top10_mention_rate`、`average_mention_rank`、`share_of_voice`、`brand_mention_total_count`、`positive_rate`、`neutral_rate`、`negative_rate` 等；品牌维度快照另含 `brand_mention_rate`（需结合 `brand_id` 查询，见 `geo_metric_snapshot.brand_id`） |
 | `platform_code` | string | 否 | 平台编码 |
 | `start_at` | datetime | 否 | 起始时间 |
 | `end_at` | datetime | 否 | 结束时间 |
@@ -2008,6 +2010,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/dashboard/overview"
 | --- | --- |
 | `run_id` | 运行 ID |
 | `platform_code` | 平台编码 |
+| `brand_id` | 品牌 ID；平台级指标为 `null`，品牌维度快照为具体品牌 |
 | `metric_code` | 指标编码 |
 | `numerator` / `denominator` | 分子/分母 |
 | `metric_value` | 指标值 |
@@ -2216,7 +2219,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/source-analysis" \
 - 榜单优先聚合 `PlatformAnalysis.summary_json.metrics.brand_metrics[]`；单行缺失时对该平台退化使用 `top_competitors` 与目标品牌平台指标（按平台逐行处理，避免混合快照漏算）。
 - 传入 `start_at`/`end_at` 时仅在已存在 `PlatformAnalysis` 的前提下按答案重算；未分析 run 即使带时间过滤也返回空榜；`top1_rate` 与其它 KPI 同步按过滤后答案计算，且 Top1 口径与 `compute_brand_rank_rate(max_rank=1)` 一致（按品牌出现位置排序后的相对排名，而非字符 `first_position <= 1`）。
 - `mention_count` 来自 `BrandResult.mention_count` 或分析快照；`average_rank`/`share_of_voice` 无可靠值时返回 `null`。
-- `geo_metric_snapshot` 当前无 `brand_id` 维度，**不能**通过 `GET /trends` 伪装竞品历史趋势；`trends` 在 P0 固定返回空数组，P1 补齐品牌维度快照后再写入序列。
+- `geo_metric_snapshot` 已支持可选 `brand_id` 维度；分析完成后写入平台级与品牌级快照（`brand_mention_rate`、`average_mention_rank`、`share_of_voice`、`brand_mention_total_count`）。`GET /trends` 可按 `metric_code` + `brand_id` 查询品牌历史序列；`competitor-analysis.trends` 仍待 P1-4 编码兼容后填充。
 
 **出参 `data` 字段：**
 

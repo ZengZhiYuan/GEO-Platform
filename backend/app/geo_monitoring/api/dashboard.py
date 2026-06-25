@@ -58,6 +58,7 @@ def list_project_trends(
     project_id: int = Path(..., ge=1),
     metric_code: str = Query(..., min_length=1, max_length=100),
     platform_code: str | None = Query(None, max_length=32),
+    brand_id: int | None = Query(None, ge=1, description="品牌 ID；不传则仅返回平台级快照"),
     start_at: datetime | None = Query(None),
     end_at: datetime | None = Query(None),
     page: int = Query(1, ge=1),
@@ -70,6 +71,10 @@ def list_project_trends(
         MetricSnapshot.metric_code == metric_code,
         MetricSnapshot.is_deleted.is_(False),
     ]
+    if brand_id is not None:
+        conditions.append(MetricSnapshot.brand_id == brand_id)
+    else:
+        conditions.append(MetricSnapshot.brand_id.is_(None))
     if platform_code:
         conditions.append(MetricSnapshot.platform_code == platform_code)
     if start_at is not None:
@@ -93,6 +98,7 @@ def list_project_trends(
         {
             "run_id": row.run_id,
             "platform_code": row.platform_code,
+            "brand_id": row.brand_id,
             "metric_code": row.metric_code,
             "numerator": str(row.numerator) if row.numerator is not None else None,
             "denominator": str(row.denominator) if row.denominator is not None else None,

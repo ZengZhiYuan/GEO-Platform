@@ -111,6 +111,121 @@ def test_project_dashboard_latest_summary(client, session_factory, analyzed_run)
     )
 
 
+def test_analyze_persists_extended_metric_snapshots(client, session_factory, analyzed_run):
+    from app.geo_monitoring.services.analysis import MetricSnapshot
+
+    run_id = analyzed_run["run_id"]
+    with session_factory() as db:
+        snapshots = list(
+            db.execute(
+                select(MetricSnapshot).where(
+                    MetricSnapshot.run_id == run_id,
+                    MetricSnapshot.is_deleted.is_(False),
+                )
+            )
+            .scalars()
+            .all()
+        )
+    codes = {row.metric_code for row in snapshots}
+    assert "average_mention_rank" in codes
+    assert "share_of_voice" in codes
+    assert "brand_top10_mention_rate" in codes
+    assert "brand_mention_total_count" in codes
+    assert "positive_rate" in codes
+    assert "neutral_rate" in codes
+    assert "negative_rate" in codes
+    brand_snapshots = [row for row in snapshots if row.brand_id is not None]
+    assert brand_snapshots
+    assert any(
+        row.metric_code == "share_of_voice" and row.brand_id is not None
+        for row in brand_snapshots
+    )
+
+
+def test_project_dashboard_platform_metrics_exclude_brand_snapshots(
+    client, session_factory, analyzed_run
+):
+    from app.geo_monitoring.services.analysis import MetricSnapshot
+
+    run_id = analyzed_run["run_id"]
+    project_id = analyzed_run["project_id"]
+    with session_factory() as db:
+        brand_snapshots = list(
+            db.execute(
+                select(MetricSnapshot).where(
+                    MetricSnapshot.run_id == run_id,
+                    MetricSnapshot.brand_id.is_not(None),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert brand_snapshots
+
+    response = client.get(f"/api/geo-monitoring/projects/{project_id}/dashboard")
+    body = response.json()
+    assert body["code"] == 0
+    platform = body["data"]["platforms"][0]
+    assert all(item.get("brand_id") is None for item in platform["metrics"])
+    metric_codes = {item["metric_code"] for item in platform["metrics"]}
+    assert "average_mention_rank" in metric_codes
+    assert "brand_mention_rate" not in metric_codes
+
+
+def test_dashboard_overview_time_filter_share_of_voice_counts_competitors(
+    client, session_factory, monkeypatch
+):
+    llm = FakeLLMClient()
+    monkeypatch.setattr(
+        "app.geo_monitoring.api.analysis.create_agent_llm_client",
+        lambda *_args, **_kwargs: llm,
+    )
+    with session_factory() as db:
+        seeded = _seed_run(db, platforms=("qwen",))
+        run_id = seeded["run_id"]
+        project_id = seeded["project_id"]
+        target_id = seeded["target_brand_id"]
+        competitor_id = db.execute(
+            select(Brand.id).where(
+                Brand.project_id == project_id,
+                Brand.brand_type == "competitor",
+            )
+        ).scalar_one()
+
+    client.post(f"/api/geo-monitoring/runs/{run_id}/analyze")
+
+    collected_at = datetime(2026, 6, 3, 12, 0, tzinfo=timezone.utc)
+    with session_factory() as db:
+        from app.geo_monitoring.models import Answer, AnswerBrandResult
+
+        answer = db.execute(select(Answer)).scalar_one()
+        answer.collected_at = collected_at
+        target_result = db.execute(
+            select(AnswerBrandResult).where(
+                AnswerBrandResult.answer_id == answer.id,
+                AnswerBrandResult.brand_id == target_id,
+            )
+        ).scalar_one()
+        target_result.is_mentioned = True
+        competitor_result = db.execute(
+            select(AnswerBrandResult).where(
+                AnswerBrandResult.answer_id == answer.id,
+                AnswerBrandResult.brand_id == competitor_id,
+            )
+        ).scalar_one()
+        competitor_result.is_mentioned = True
+        db.commit()
+
+    response = client.get(
+        f"/api/geo-monitoring/projects/{project_id}/dashboard/overview",
+        params={
+            "start_at": collected_at.isoformat(),
+            "end_at": collected_at.isoformat(),
+        },
+    )
+    assert response.json()["data"]["kpis"]["share_of_voice"] == "0.5000"
+
+
 @pytest.fixture
 def multi_platform_analyzed_run(client, session_factory, monkeypatch):
     llm = FakeLLMClient()

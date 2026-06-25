@@ -690,7 +690,15 @@ Agent 审计字段包括：
 
 `summary` 字段（分析完成后跨平台汇总，`scope=all`）：
 
-`valid_answer_count`、`brand_mention_count`、`brand_mention_rate`、`brand_first_count`、`brand_first_rate`、`data_completeness_rate`、`metrics[]`（按分子/分母加权汇总，非简单平均）。
+`valid_answer_count`、`brand_mention_count`、`brand_mention_rate`、`brand_first_count`、`brand_first_rate`、`brand_top10_mention_count`、`brand_top10_mention_rate`、`brand_mention_total_count`、`positive_rate`、`neutral_rate`、`negative_rate`、`data_completeness_rate`、`metrics[]`（按分子/分母加权汇总，非简单平均；`metrics[]` 不含 `brand_id` 维度快照）。
+
+**P1-1 指标快照验收：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\analysis\test_metrics.py backend\tests\geo_monitoring\analysis\test_brands.py backend\tests\geo_monitoring\test_dashboard_api.py::test_analyze_persists_extended_metric_snapshots --basetemp .pytest-tmp
+```
+
+分析完成后应能在 `geo_metric_snapshot` 查到平台级 `average_mention_rank`、`share_of_voice`、`brand_top10_mention_rate`、`brand_mention_total_count`、`positive_rate`/`neutral_rate`/`negative_rate`，以及带 `brand_id` 的品牌维度快照。
 
 `platforms[]` 字段（分 AI 平台明细）：
 

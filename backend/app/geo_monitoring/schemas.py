@@ -947,9 +947,15 @@ class ConversationPlatformMetricsRead(BaseModel):
     valid_answer_count: int
     visibility_rate: str | None = None
     mention_count: int
+    brand_mention_total_count: int | None = None
     average_rank: str | None = None
     top1_rate: str | None = None
     top3_rate: str | None = None
+    top10_rate: str | None = None
+    share_of_voice: str | None = None
+    positive_rate: str | None = None
+    neutral_rate: str | None = None
+    negative_rate: str | None = None
     sentiment: ConversationSentimentSummary
 
 
@@ -961,9 +967,15 @@ class ConversationQuestionRead(BaseModel):
     valid_answer_count: int
     visibility_rate: str | None = None
     mention_count: int
+    brand_mention_total_count: int | None = None
     average_rank: str | None = None
     top1_rate: str | None = None
     top3_rate: str | None = None
+    top10_rate: str | None = None
+    share_of_voice: str | None = None
+    positive_rate: str | None = None
+    neutral_rate: str | None = None
+    negative_rate: str | None = None
     sentiment: ConversationSentimentSummary
     platform_metrics: list[ConversationPlatformMetricsRead] = Field(default_factory=list)
 
@@ -1091,11 +1103,15 @@ class DashboardOverviewKpiRead(BaseModel):
     brand_mention_rate: str | None = None
     brand_top1_mention_rate: str | None = None
     brand_top3_mention_rate: str | None = None
+    brand_top10_mention_rate: str | None = None
     valid_answer_count: int | None = None
     brand_mention_count: int | None = None
     average_rank: str | None = None
     share_of_voice: str | None = None
     brand_mention_total_count: int | None = None
+    positive_rate: str | None = None
+    neutral_rate: str | None = None
+    negative_rate: str | None = None
 
 
 class DashboardOverviewPlatformRead(BaseModel):

@@ -11,8 +11,20 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import BusinessException
-from app.geo_monitoring.analysis.dto import AnswerInput
-from app.geo_monitoring.analysis.metrics import compute_rate, is_valid_answer
+from app.geo_monitoring.analysis.brands import (
+    compute_average_mention_rank,
+    compute_brand_mention_count,
+    compute_sentiment_rates,
+    compute_share_of_voice,
+)
+from app.geo_monitoring.analysis.dto import AnswerInput, BrandMentionInput
+from app.geo_monitoring.analysis.metrics import (
+    _collect_brand_ids,
+    compute_brand_rank_rate,
+    compute_brand_visibility,
+    compute_rate,
+    is_valid_answer,
+)
 from app.geo_monitoring.models import (
     Answer,
     Brand,
@@ -303,23 +315,39 @@ def _is_answer_valid(answer: Answer) -> bool:
     )
 
 
-def _sentiment_summary(
-    answers: list[Answer],
-    *,
-    target_brand_id: int,
-) -> dict[str, int]:
-    counts = {label: 0 for label in _SENTIMENT_LABELS}
+def _answer_inputs_from_answers(answers: list[Answer]) -> list[AnswerInput]:
+    rows: list[AnswerInput] = []
     for answer in answers:
-        if not _is_answer_valid(answer):
-            continue
-        result = _target_brand_result(answer, target_brand_id)
-        if result is None or not result.is_mentioned:
-            continue
-        label = (result.sentiment or "neutral").lower()
-        if label not in counts:
-            label = "neutral"
-        counts[label] += 1
-    return counts
+        task_status = answer.task.status if answer.task is not None else "failed"
+        rows.append(
+            AnswerInput(
+                answer_id=answer.id,
+                prompt_id=answer.prompt_id,
+                platform_code=answer.platform_code,
+                task_status=task_status,
+                normalized_text=answer.normalized_text or answer.raw_text or "",
+                brand_mentions=tuple(
+                    BrandMentionInput(
+                        brand_id=result.brand_id,
+                        is_mentioned=result.is_mentioned,
+                        mention_count=result.mention_count,
+                        first_position=result.first_position,
+                        sentiment=result.sentiment,
+                    )
+                    for result in answer.brand_results
+                ),
+            )
+        )
+    return rows
+
+
+def _sentiment_summary_from_rates(
+    sentiment_rates: dict[str, Any],
+) -> dict[str, int]:
+    return {
+        label: int(sentiment_rates[f"{label}_rate"].numerator)
+        for label in _SENTIMENT_LABELS
+    }
 
 
 def _compute_metrics(
@@ -327,54 +355,59 @@ def _compute_metrics(
     *,
     target_brand_id: int,
 ) -> dict[str, Any]:
-    valid_answers = [answer for answer in answers if _is_answer_valid(answer)]
-    denominator = len(valid_answers)
-    mention_answers = [
-        answer
-        for answer in valid_answers
-        if (result := _target_brand_result(answer, target_brand_id)) is not None
-        and result.is_mentioned
-    ]
-    mention_count = sum(
-        (_target_brand_result(answer, target_brand_id).mention_count or 0)
-        for answer in mention_answers
-        if _target_brand_result(answer, target_brand_id) is not None
+    answer_inputs = _answer_inputs_from_answers(answers)
+    visibility = compute_brand_visibility(
+        answer_inputs,
+        target_brand_id=target_brand_id,
     )
-    top1_count = sum(
-        1
-        for answer in mention_answers
-        if (result := _target_brand_result(answer, target_brand_id)) is not None
-        and result.first_position is not None
-        and result.first_position <= 1
+    top1 = compute_brand_rank_rate(
+        answer_inputs,
+        target_brand_id=target_brand_id,
+        max_rank=1,
     )
-    top3_count = sum(
-        1
-        for answer in mention_answers
-        if (result := _target_brand_result(answer, target_brand_id)) is not None
-        and result.first_position is not None
-        and result.first_position <= 3
+    top3 = compute_brand_rank_rate(
+        answer_inputs,
+        target_brand_id=target_brand_id,
+        max_rank=3,
     )
-    rank_positions = [
-        result.first_position
-        for answer in mention_answers
-        if (result := _target_brand_result(answer, target_brand_id)) is not None
-        and result.first_position is not None
-    ]
-    average_rank = None
-    if rank_positions:
-        average_rank = _decimal_str(
-            Decimal(sum(rank_positions)) / Decimal(len(rank_positions)),
-            quant=_RANK_QUANT,
-        )
+    top10 = compute_brand_rank_rate(
+        answer_inputs,
+        target_brand_id=target_brand_id,
+        max_rank=10,
+    )
+    brand_ids = _collect_brand_ids(answer_inputs, seed_ids=(target_brand_id,))
+    share_of_voice = compute_share_of_voice(answer_inputs, brand_ids=brand_ids).get(
+        target_brand_id
+    )
+    sentiment_rates = compute_sentiment_rates(answer_inputs, target_brand_id)
+    average_rank = compute_average_mention_rank(answer_inputs, target_brand_id)
+    mention_count = compute_brand_mention_count(answer_inputs, target_brand_id)
 
     return {
-        "valid_answer_count": denominator,
-        "visibility_rate": _rate_str(len(mention_answers), denominator),
+        "valid_answer_count": visibility.denominator,
+        "visibility_rate": _rate_str(visibility.numerator, visibility.denominator),
         "mention_count": mention_count,
-        "average_rank": average_rank,
-        "top1_rate": _rate_str(top1_count, denominator),
-        "top3_rate": _rate_str(top3_count, denominator),
-        "sentiment": _sentiment_summary(valid_answers, target_brand_id=target_brand_id),
+        "brand_mention_total_count": mention_count,
+        "average_rank": _decimal_str(average_rank, quant=_RANK_QUANT)
+        if average_rank is not None
+        else None,
+        "top1_rate": _rate_str(top1.numerator, top1.denominator),
+        "top3_rate": _rate_str(top3.numerator, top3.denominator),
+        "top10_rate": _rate_str(top10.numerator, top10.denominator),
+        "share_of_voice": _decimal_str(share_of_voice),
+        "positive_rate": _rate_str(
+            sentiment_rates["positive_rate"].numerator,
+            sentiment_rates["positive_rate"].denominator,
+        ),
+        "neutral_rate": _rate_str(
+            sentiment_rates["neutral_rate"].numerator,
+            sentiment_rates["neutral_rate"].denominator,
+        ),
+        "negative_rate": _rate_str(
+            sentiment_rates["negative_rate"].numerator,
+            sentiment_rates["negative_rate"].denominator,
+        ),
+        "sentiment": _sentiment_summary_from_rates(sentiment_rates),
     }
 
 

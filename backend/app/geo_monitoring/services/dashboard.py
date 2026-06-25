@@ -11,7 +11,14 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import BusinessException
 from app.geo_monitoring.analysis.dto import AnswerInput, BrandMentionInput
+from app.geo_monitoring.analysis.brands import (
+    compute_average_mention_rank,
+    compute_brand_mention_count,
+    compute_sentiment_rates,
+    compute_share_of_voice,
+)
 from app.geo_monitoring.analysis.metrics import (
+    _collect_brand_ids,
     compute_brand_rank_rate,
     compute_brand_visibility,
     compute_rate,
@@ -29,9 +36,11 @@ _RUN_TERMINAL = frozenset({"completed", "partial_success", "failed", "cancelled"
 _ANALYZED = frozenset({"completed", "partial_success"})
 
 
-def _decimal_str(value: Decimal | None) -> str:
+def _decimal_str(value: Decimal | None, *, quant: Decimal | None = None) -> str:
     if value is None:
         return "0"
+    if quant is not None:
+        return str(value.quantize(quant))
     return str(value)
 
 
@@ -100,6 +109,19 @@ def _platform_analysis_payload(row: PlatformAnalysis) -> dict[str, Any]:
             row,
             "brand_top3_mention_rate",
         ),
+        "brand_top10_mention_rate": _summary_metric_rate(
+            row,
+            "brand_top10_mention_rate",
+        ),
+        "average_mention_rank": _summary_metric_scalar(row, "average_mention_rank"),
+        "share_of_voice": _summary_metric_scalar(row, "share_of_voice"),
+        "brand_mention_total_count": _summary_metric_total_count(
+            row,
+            "brand_mention_total_count",
+        ),
+        "positive_rate": _summary_metric_rate(row, "positive_rate"),
+        "neutral_rate": _summary_metric_rate(row, "neutral_rate"),
+        "negative_rate": _summary_metric_rate(row, "negative_rate"),
         "top_competitors": row.top_competitors,
         "top_sources": row.top_sources,
         "prompt_competitiveness_summary": row.prompt_competitiveness_summary,
@@ -112,6 +134,7 @@ def _metric_snapshot_payload(row: MetricSnapshot) -> dict[str, Any]:
     return {
         "metric_code": row.metric_code,
         "platform_code": row.platform_code,
+        "brand_id": row.brand_id,
         "numerator": _decimal_str(row.numerator),
         "denominator": _decimal_str(row.denominator),
         "metric_value": _decimal_str(row.metric_value),
@@ -191,12 +214,40 @@ def _load_collection_stats(db: Session, run_id: int) -> dict[str, dict[str, int]
     return stats
 
 
+def _summary_metric_scalar(row: PlatformAnalysis, metric_code: str) -> str | None:
+    metric = _summary_metric(row, metric_code)
+    if metric in (None, {}):
+        return None
+    if isinstance(metric, (int, float, Decimal, str)):
+        return str(metric)
+    if not isinstance(metric, dict):
+        return str(metric)
+    value = metric.get("rate")
+    if value is None:
+        value = metric.get("metric")
+    if value is None:
+        return None
+    return str(value)
+
+
+def _summary_metric_total_count(row: PlatformAnalysis, metric_code: str) -> int:
+    metric = _summary_metric(row, metric_code)
+    if isinstance(metric, int):
+        return metric
+    if isinstance(metric, dict):
+        if metric.get("numerator") is not None:
+            return int(metric["numerator"])
+        if metric.get("metric") is not None:
+            return int(metric["metric"])
+    return 0
+
+
 def _aggregate_metric_snapshots(
     snapshots: list[MetricSnapshot],
 ) -> list[dict[str, Any]]:
     grouped: dict[str, dict[str, int]] = {}
     for row in snapshots:
-        if row.prompt_id is not None:
+        if row.prompt_id is not None or row.brand_id is not None:
             continue
         bucket = grouped.setdefault(
             row.metric_code,
@@ -215,6 +266,56 @@ def _aggregate_metric_snapshots(
     ]
 
 
+def _aggregate_extended_from_analysis(rows: list[PlatformAnalysis]) -> dict[str, Any]:
+    if not rows:
+        return {}
+    total_mention_count = 0
+    top10_num = 0
+    top10_den = 0
+    pos_num = 0
+    pos_den = 0
+    neu_num = 0
+    neu_den = 0
+    neg_num = 0
+    neg_den = 0
+    for row in rows:
+        total_mention_count += _summary_metric_total_count(
+            row,
+            "brand_mention_total_count",
+        )
+        top10 = _summary_metric(row, "brand_top10_mention_rate")
+        top10_num += int(top10.get("numerator") or 0)
+        top10_den += int(top10.get("denominator") or 0)
+        pos_metric = _summary_metric(row, "positive_rate")
+        pos_num += int(pos_metric.get("numerator") or 0)
+        pos_den += int(pos_metric.get("denominator") or 0)
+        neu_metric = _summary_metric(row, "neutral_rate")
+        neu_num += int(neu_metric.get("numerator") or 0)
+        neu_den += int(neu_metric.get("denominator") or 0)
+        neg_metric = _summary_metric(row, "negative_rate")
+        neg_num += int(neg_metric.get("numerator") or 0)
+        neg_den += int(neg_metric.get("denominator") or 0)
+
+    return {
+        "brand_mention_total_count": total_mention_count or None,
+        "brand_top10_mention_rate": _decimal_str(
+            compute_rate(top10_num, top10_den),
+            quant=Decimal("0.0001"),
+        )
+        if top10_den > 0
+        else None,
+        "positive_rate": _decimal_str(compute_rate(pos_num, pos_den), quant=Decimal("0.0001"))
+        if pos_den > 0
+        else None,
+        "neutral_rate": _decimal_str(compute_rate(neu_num, neu_den), quant=Decimal("0.0001"))
+        if neu_den > 0
+        else None,
+        "negative_rate": _decimal_str(compute_rate(neg_num, neg_den), quant=Decimal("0.0001"))
+        if neg_den > 0
+        else None,
+    }
+
+
 def _aggregate_analysis_summary(rows: list[PlatformAnalysis]) -> dict[str, Any] | None:
     if not rows:
         return None
@@ -227,6 +328,8 @@ def _aggregate_analysis_summary(rows: list[PlatformAnalysis]) -> dict[str, Any] 
         for row in rows
     )
     top3 = sum(_summary_metric_count(row, "brand_top3_mention_rate") for row in rows)
+    top10 = sum(_summary_metric_count(row, "brand_top10_mention_rate") for row in rows)
+    extended = _aggregate_extended_from_analysis(rows)
     if valid > 0:
         completeness = sum(
             row.data_completeness_rate * row.valid_answer_count for row in rows
@@ -245,9 +348,16 @@ def _aggregate_analysis_summary(rows: list[PlatformAnalysis]) -> dict[str, Any] 
         "brand_top1_mention_rate": _decimal_str(compute_rate(top1, valid)),
         "brand_top3_mention_count": top3,
         "brand_top3_mention_rate": _decimal_str(compute_rate(top3, valid)),
+        "brand_top10_mention_count": top10,
+        "brand_top10_mention_rate": extended.get("brand_top10_mention_rate")
+        or _decimal_str(compute_rate(top10, valid)),
         "data_completeness_rate": _decimal_str(
             completeness.quantize(Decimal("0.0001"))
         ),
+        "brand_mention_total_count": extended.get("brand_mention_total_count"),
+        "positive_rate": extended.get("positive_rate"),
+        "neutral_rate": extended.get("neutral_rate"),
+        "negative_rate": extended.get("negative_rate"),
         "metrics": [],
     }
 
@@ -324,6 +434,7 @@ def build_project_dashboard(
                 MetricSnapshot.run_id == run.id,
                 MetricSnapshot.is_deleted.is_(False),
                 MetricSnapshot.prompt_id.is_(None),
+                MetricSnapshot.brand_id.is_(None),
             )
         )
         .scalars()
@@ -481,6 +592,7 @@ def _summary_from_filtered_answers(
     answers: list[Answer],
     *,
     target_brand_id: int,
+    brand_ids: tuple[int, ...] | None = None,
 ) -> dict[str, Any] | None:
     answer_inputs = [_answer_input_from_row(answer) for answer in answers]
     visibility = compute_brand_visibility(
@@ -497,8 +609,23 @@ def _summary_from_filtered_answers(
         target_brand_id=target_brand_id,
         max_rank=3,
     )
+    top10 = compute_brand_rank_rate(
+        answer_inputs,
+        target_brand_id=target_brand_id,
+        max_rank=10,
+    )
     if visibility.denominator == 0:
         return None
+
+    resolved_brand_ids = brand_ids or _collect_brand_ids(
+        answer_inputs,
+        seed_ids=(target_brand_id,),
+    )
+    sov = compute_share_of_voice(answer_inputs, brand_ids=resolved_brand_ids).get(
+        target_brand_id
+    )
+    sentiment_rates = compute_sentiment_rates(answer_inputs, target_brand_id)
+    average_rank = compute_average_mention_rank(answer_inputs, target_brand_id)
 
     return {
         "scope": "all",
@@ -509,6 +636,19 @@ def _summary_from_filtered_answers(
         "brand_top1_mention_rate": _decimal_str(top1.rate),
         "brand_top3_mention_count": top3.numerator,
         "brand_top3_mention_rate": _decimal_str(top3.rate),
+        "brand_top10_mention_count": top10.numerator,
+        "brand_top10_mention_rate": _decimal_str(top10.rate),
+        "average_rank": _decimal_str(average_rank, quant=Decimal("0.1"))
+        if average_rank is not None
+        else None,
+        "share_of_voice": _decimal_str(sov, quant=Decimal("0.0001")),
+        "brand_mention_total_count": compute_brand_mention_count(
+            answer_inputs,
+            target_brand_id,
+        ),
+        "positive_rate": _decimal_str(sentiment_rates["positive_rate"].rate),
+        "neutral_rate": _decimal_str(sentiment_rates["neutral_rate"].rate),
+        "negative_rate": _decimal_str(sentiment_rates["negative_rate"].rate),
     }
 
 
@@ -517,11 +657,15 @@ def _empty_kpis_payload() -> dict[str, Any]:
         "brand_mention_rate": None,
         "brand_top1_mention_rate": None,
         "brand_top3_mention_rate": None,
+        "brand_top10_mention_rate": None,
         "valid_answer_count": None,
         "brand_mention_count": None,
         "average_rank": None,
         "share_of_voice": None,
         "brand_mention_total_count": None,
+        "positive_rate": None,
+        "neutral_rate": None,
+        "negative_rate": None,
     }
 
 
@@ -536,11 +680,17 @@ def _summary_to_kpis_payload(
         "brand_mention_rate": summary.get("brand_mention_rate"),
         "brand_top1_mention_rate": summary.get("brand_top1_mention_rate"),
         "brand_top3_mention_rate": summary.get("brand_top3_mention_rate"),
+        "brand_top10_mention_rate": summary.get("brand_top10_mention_rate")
+        or extended.get("brand_top10_mention_rate"),
         "valid_answer_count": summary.get("valid_answer_count"),
         "brand_mention_count": summary.get("brand_mention_count"),
-        "average_rank": extended.get("average_rank"),
-        "share_of_voice": extended.get("share_of_voice"),
-        "brand_mention_total_count": extended.get("brand_mention_total_count"),
+        "average_rank": summary.get("average_rank") or extended.get("average_rank"),
+        "share_of_voice": summary.get("share_of_voice") or extended.get("share_of_voice"),
+        "brand_mention_total_count": extended.get("brand_mention_total_count")
+        or summary.get("brand_mention_total_count"),
+        "positive_rate": summary.get("positive_rate") or extended.get("positive_rate"),
+        "neutral_rate": summary.get("neutral_rate") or extended.get("neutral_rate"),
+        "negative_rate": summary.get("negative_rate") or extended.get("negative_rate"),
     }
 
 

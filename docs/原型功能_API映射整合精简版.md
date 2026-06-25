@@ -139,7 +139,7 @@
 建议补齐：
 
 - `GET /projects/{project_id}/dashboard/overview?platform_codes=&start_at=&end_at=` ✅ 已覆盖
-- 在 `dashboard` 或 overview 中稳定返回 `average_mention_rank/share_of_voice/brand_mention_total_count`（overview `kpis` 在 `brand_metrics[]` 可读时返回，否则 `null`）。
+- 在 `dashboard` 或 overview 中稳定返回 `average_mention_rank/share_of_voice/brand_mention_total_count`（overview `kpis` 在可读取时返回，否则 `null`）✅ 已覆盖（P1-1）
 - `GET /projects/{project_id}/conversation-questions/recent`：已由 overview `recent_questions` 预览替代。
 
 ### 3.4 竞品分析
@@ -151,14 +151,13 @@
 
 当前限制：
 
-- `geo_metric_snapshot` 没有 `brand_id` 维度，无法按竞品生成历史趋势。
-- 平均提及排名和 SOV 虽能在 `brand_metrics[]` 中看到当前值，但没有稳定的趋势快照。
+- `competitor-analysis.trends` 仍返回空数组；历史趋势需通过 `GET /projects/{id}/trends?metric_code=...` 结合 `brand_id` 查询 `geo_metric_snapshot`。
 - 行业平均、市场地位、历史基准不是当前后端能力。
 
 建议补齐：
 
 - `GET /projects/{project_id}/competitor-analysis?platform_codes=&start_at=&end_at=&brand_scope=top5|all` ✅ 已覆盖
-- 为竞品/品牌维度新增指标快照，至少包含 `brand_id`、`mention_rate`、`mention_count`、`average_mention_rank`、`share_of_voice`。
+- 为竞品/品牌维度新增指标快照，至少包含 `brand_id`、`mention_rate`、`mention_count`、`average_mention_rank`、`share_of_voice` ✅ 已覆盖（P1-1，`geo_metric_snapshot.brand_id` + 分析写入）
 - 如暂不改表，可先做基于多 run 现有分析 JSON 的只读聚合服务，但要明确性能和口径限制。
 
 ### 3.5 AI 对话记录

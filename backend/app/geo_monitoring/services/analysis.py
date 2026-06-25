@@ -168,11 +168,20 @@ class MetricSnapshot(BaseModel):
             "metric_code",
             text("coalesce(platform_code, '')"),
             text("coalesce(prompt_id, -1)"),
+            text("coalesce(brand_id, -1)"),
             unique=True,
         ),
         Index(
             "ix_geo_metric_snapshot_trend",
             "project_id",
+            "metric_code",
+            "platform_code",
+            "snapshot_at",
+        ),
+        Index(
+            "ix_geo_metric_snapshot_brand_trend",
+            "project_id",
+            "brand_id",
             "metric_code",
             "platform_code",
             "snapshot_at",
@@ -190,6 +199,11 @@ class MetricSnapshot(BaseModel):
         nullable=False,
     )
     platform_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    brand_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_brand.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     prompt_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("geo_prompt.id", ondelete="SET NULL"), nullable=True
     )

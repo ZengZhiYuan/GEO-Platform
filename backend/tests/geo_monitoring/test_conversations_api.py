@@ -201,6 +201,9 @@ def test_conversation_questions_aggregate_by_prompt(client, conversation_run):
     assert row["valid_answer_count"] == 2
     assert row["mention_count"] == 2
     assert row["visibility_rate"] == "1.0000"
+    assert row["top10_rate"] is not None
+    assert row["share_of_voice"] is not None
+    assert row["brand_mention_total_count"] == row["mention_count"]
     assert len(row["platform_metrics"]) == 2
 
 
