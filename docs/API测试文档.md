@@ -722,6 +722,28 @@ backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_
 
 详情 `items[]` 关键字段：`answer_id`、`platform_code`、`raw_text`、`citations[]`、`brand_results[]`、`reasoning_text`、`search_keywords`。
 
+### 13.2 信源引用分析接口
+
+| 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 信源引用分析页面级聚合 | `GET` | `/api/geo-monitoring/projects/{project_id}/source-analysis` | Path：`project_id`；Query：可选 `run_id`、`platform_codes[]`、`start_at`、`end_at`、`source_type`、`keyword`、`metric`、`page`、`page_size` | `run_id`、`kpi`、`type_distribution`、`platform_columns`、`sites` | 无信源时 KPI 为 0、列表为空；多平台返回矩阵列；`source_type`/`keyword`/`metric`/`platform_codes` 过滤有效 | 项目不存在 `40400` |
+
+**自动化测试：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_source_analysis_api.py
+```
+
+关键字段：
+
+- `kpi`：`citation_count`、`site_count`、`article_count`（`AnswerCitation.url` 去重）、`citation_rate`
+- `type_distribution[]`：`source_type`、`link_count`、`citation_rate`、`display_value`
+- `sites.items[]`：`domain`、`source_name`、`link_count`、`platform_values[]`（含 `has_citation_data`）
+- `metric=links` 时 `display_value` 为链接数；`metric=rate` 时为 `citation_rate`
+- 传入 `start_at`/`end_at` 后 KPI/矩阵改按 `AnswerCitation` 重聚合；矩阵按 `(domain, source_name)` 分行
+
+补充回归用例：`start_at` 排除全部答案、同域名不同 `source_name`、`run_id` 跨项目、`page/page_size` 分页。
+
 ## 14. 报告模块
 
 ### 14.1 报告字段

@@ -991,3 +991,52 @@ class ConversationAnswerRead(BaseModel):
     citations: list[CitationRead] = Field(default_factory=list)
     brand_results: list[ConversationAnswerBrandResultRead] = Field(default_factory=list)
 
+
+class SourceAnalysisKpiRead(BaseModel):
+    citation_count: int
+    site_count: int
+    article_count: int
+    citation_rate: str | None = None
+
+
+class SourceAnalysisTypeDistributionRead(BaseModel):
+    source_type: str
+    source_type_label: str
+    link_count: int
+    citation_rate: str | None = None
+    display_value: str
+
+
+class SourceAnalysisPlatformColumnRead(BaseModel):
+    platform_code: str
+    has_citation_data: bool
+
+
+class SourceAnalysisPlatformValueRead(BaseModel):
+    platform_code: str
+    link_count: int
+    citation_rate: str | None = None
+    has_citation_data: bool
+    display_value: str
+
+
+class SourceAnalysisSiteRead(BaseModel):
+    domain: str
+    source_name: str | None = None
+    source_type: str
+    source_type_label: str
+    link_count: int
+    citation_rate: str | None = None
+    display_value: str
+    platform_values: list[SourceAnalysisPlatformValueRead] = Field(default_factory=list)
+
+
+class SourceAnalysisOut(BaseModel):
+    run_id: int | None = None
+    metric: str
+    has_citation_data: bool
+    kpi: SourceAnalysisKpiRead
+    type_distribution: list[SourceAnalysisTypeDistributionRead] = Field(default_factory=list)
+    platform_columns: list[SourceAnalysisPlatformColumnRead] = Field(default_factory=list)
+    sites: PaginatedResponse[SourceAnalysisSiteRead]
+

@@ -201,7 +201,7 @@
 
 建议补齐：
 
-- `GET /projects/{project_id}/source-analysis?platform_codes=&start_at=&end_at=&source_type=&keyword=&metric=&page=&page_size=`
+- `GET /projects/{project_id}/source-analysis?platform_codes=&start_at=&end_at=&source_type=&keyword=&metric=&page=&page_size=` ✅ 已覆盖
 - `GET /projects/{project_id}/source-analysis/type-trends`
 - `GET /projects/{project_id}/source-analysis/sites`
 - `GET /source-types` 固化分类字典和中文显示名。✅ 已覆盖
@@ -256,7 +256,7 @@
 | 大盘页面级聚合 | `GET /projects/{id}/dashboard/overview` | 数据大盘 | 解决时间范围、平台多选、竞品预览、信源预览、最近问题的一次性聚合。 |
 | 竞品页面级聚合与品牌维度趋势 | `GET /projects/{id}/competitor-analysis`，并为快照增加 `brand_id` 维度 | 竞品分析 | 当前只能做当前快照榜，不能做竞品趋势。 |
 | 对话记录问题聚合 | `GET /projects/{id}/conversation-questions` ✅ | AI 对话记录 | 按 prompt 聚合主表与平台端指标；P0 单 run，`reasoning_text/search_keywords` 暂返回 null/[]。 |
-| 信源页面级聚合 | `GET /projects/{id}/source-analysis` | 信源引用分析 | 当前只有域名 Top 和单答案引用，不能支撑完整矩阵和类型趋势。 |
+| 信源页面级聚合 | `GET /projects/{id}/source-analysis` ✅ | 信源引用分析 | 已提供 KPI、类型分布、站点矩阵与 `metric` 口径切换；`article_count` 来自 `AnswerCitation.url` 去重。 |
 
 ### P1：统一指标口径与提升对接质量
 

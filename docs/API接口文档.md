@@ -2061,9 +2061,86 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questi
 
 ---
 
-## 17. 报告
+## 17. 信源引用分析
 
-### 17.1 创建并生成监测报告
+### 17.1 信源引用分析页面级聚合
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 信源引用分析页面级聚合 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/source-analysis` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `run_id` | integer | 否 | 指定运行 ID；不传则与 dashboard 一致取最近已分析或终态 run |
+| `platform_codes` | string[] | 否 | 平台端编码，可重复 query；仅聚合选中平台列并更新 KPI |
+| `start_at` / `end_at` | datetime | 否 | 过滤答案采集时间（ISO8601）；传入后 KPI/类型分布/矩阵改按 `AnswerCitation` 重聚合，不再使用 `SourceStat` |
+| `source_type` | string | 否 | 信源展示类型 code，见 `GET /source-types` |
+| `keyword` | string | 否 | 域名或站点名子串匹配（忽略大小写） |
+| `metric` | string | 否 | `links`（默认）或 `rate`；控制矩阵 `display_value` 口径 |
+| `page` | integer | 否 | 站点矩阵分页，默认 1 |
+| `page_size` | integer | 否 | 默认 10，1–100 |
+
+**口径说明：**
+
+- 域名级链接数优先聚合 `geo_source_stat`（`SourceStat`）。
+- `kpi.citation_count` 为所选平台 `SourceStat.citation_count` 求和。
+- `kpi.site_count` 为所选平台 distinct `domain`。
+- `kpi.article_count` 为当前 run 内 `AnswerCitation.url` 去重计数（推荐口径）。
+- `kpi.citation_rate` 为有效回答中含有效引用的占比（与趋势 `citation_rate` 一致）。
+- 类型分布将六类存储值映射为 `GET /source-types` 展示字典后聚合。
+- 平台端矩阵按 `domain`/`source_name` 聚合；某平台无信源数据时 `platform_columns[].has_citation_data=false`。
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `run_id` | integer/null | 实际使用的运行 ID |
+| `metric` | string | `links` 或 `rate` |
+| `has_citation_data` | boolean | 是否存在可展示的信源聚合数据 |
+| `kpi` | object | `citation_count`、`site_count`、`article_count`、`citation_rate` |
+| `type_distribution` | array | 信源类型分布 |
+| `platform_columns` | array | 矩阵平台列及 `has_citation_data` |
+| `sites` | object | 站点矩阵分页 `{ items, total, page, page_size }` |
+
+**`type_distribution[]` / `sites.items[]` 公共字段：**
+
+| 字段 | 说明 |
+| --- | --- |
+| `source_type` / `source_type_label` | 展示字典 code 与中文名 |
+| `link_count` | 链接数（`SourceStat.citation_count` 聚合） |
+| `citation_rate` | 占当前筛选总链接数的比率（decimal 字符串；无分母为 `null`） |
+| `display_value` | `metric=links` 时为 `link_count` 字符串；`metric=rate` 时为 `citation_rate` |
+
+**`sites.items[].platform_values[]`：**
+
+| 字段 | 说明 |
+| --- | --- |
+| `platform_code` | 平台端编码 |
+| `link_count` | 该平台下该站点链接数 |
+| `citation_rate` | 占该平台总链接数的比率 |
+| `has_citation_data` | 该平台是否存在信源数据 |
+| `display_value` | 随 `metric` 切换 |
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/source-analysis" \
+  --data-urlencode "platform_codes=qwen" \
+  --data-urlencode "source_type=official_site" \
+  --data-urlencode "metric=rate"
+```
+
+**错误码：** 项目/运行不存在 `40400`；项目未启用 `40001`。
+
+---
+
+## 18. 报告
+
+### 18.1 创建并生成监测报告
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2096,7 +2173,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 
 ---
 
-### 17.2 分页查询运行报告
+### 18.2 分页查询运行报告
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2110,7 +2187,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 
 ---
 
-### 17.3 获取报告状态与元数据
+### 18.3 获取报告状态与元数据
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2124,7 +2201,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 
 ---
 
-### 17.4 下载报告文件
+### 18.4 下载报告文件
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2151,7 +2228,7 @@ curl -O -J "http://127.0.0.1:8000/api/geo-monitoring/reports/1/download"
 
 ---
 
-### 17.5 删除报告
+### 18.5 删除报告
 
 | 项目 | 说明 |
 | --- | --- |

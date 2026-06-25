@@ -5,6 +5,8 @@ pydantic>=2.7,<3
 pydantic-settings>=2.3,<3
 python-dotenv>=1.0,<2
 
+# 开发 / 测试 / 质量工具（如 ruff）请见 requirements-dev.txt。
+
 # 数据库 / ORM / 迁移
 sqlalchemy>=2.0,<3
 alembic>=1.13,<2

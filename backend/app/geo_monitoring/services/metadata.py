@@ -229,3 +229,24 @@ def list_source_types() -> dict[str, Any]:
         items=[dict(item) for item in _SOURCE_TYPE_ITEMS],
         storage_mappings=[dict(item) for item in _SOURCE_STORAGE_MAPPINGS],
     ).model_dump(mode="json")
+
+
+_STORAGE_TO_DISPLAY = {
+    mapping["storage_value"]: (
+        mapping["display_code"],
+        mapping["display_label"],
+    )
+    for mapping in _SOURCE_STORAGE_MAPPINGS
+}
+_DISPLAY_LABELS = {item["code"]: item["label"] for item in _SOURCE_TYPE_ITEMS}
+
+
+def resolve_display_source_type(storage_value: str | None) -> tuple[str, str]:
+    """将存储层信源类型映射为原型展示字典 code/label。"""
+    if storage_value:
+        normalized = storage_value.strip().lower()
+        if normalized in _STORAGE_TO_DISPLAY:
+            return _STORAGE_TO_DISPLAY[normalized]
+        if normalized in _DISPLAY_LABELS:
+            return normalized, _DISPLAY_LABELS[normalized]
+    return "other", _DISPLAY_LABELS["other"]

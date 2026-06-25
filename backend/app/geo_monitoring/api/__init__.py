@@ -18,6 +18,7 @@ from app.geo_monitoring.api.prompts import router as prompts_router
 from app.geo_monitoring.api.reports import router as reports_router
 from app.geo_monitoring.api.runs import router as runs_router
 from app.geo_monitoring.api.schedules import router as schedules_router
+from app.geo_monitoring.api.source_analysis import router as source_analysis_router
 
 _SUB_ROUTERS = (
     ai_generation_router,
@@ -33,6 +34,7 @@ _SUB_ROUTERS = (
     schedules_router,
     answers_router,
     conversations_router,
+    source_analysis_router,
     analysis_router,
     dashboard_router,
     reports_router,
