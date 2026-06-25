@@ -94,19 +94,20 @@
 1. `GET /platforms?enabled=true` 或 `GET /platform-endpoints?enabled=true` 获取平台候选。
 2. 可选 `GET /prompt-library` 获取问题模板。
 3. `POST /projects` 创建项目基础信息。
-4. `PUT /projects/{project_id}/monitor-setup` 保存品牌词、竞品、核心词、问题和默认平台，并按需传 `activate_prompt_set=true`。
-5. 如需立即开始采集，调用 `POST /runs`。
+4. 可选 `POST /projects/{project_id}/ai/brand-words:generate`、`/ai/competitors:generate`、`/ai/questions:generate` 生成候选（不落库）。
+5. `PUT /projects/{project_id}/monitor-setup` 保存品牌词、竞品、核心词、问题和默认平台，并按需传 `activate_prompt_set=true`。
+6. 如需立即开始采集，调用 `POST /runs`。
 
 需要消除的旧文档歧义：
 
-- “AI 生成品牌词/竞品/问题”不是 `prompt-library`，当前没有对应接口。
-- “平台端”可通过 Aidso 平台码呈现，但缺少结构化端元数据，不能从 schema 直接拿到端类型、logo、分组。
+- 「AI 生成品牌词/竞品/问题」不是 `prompt-library`，已通过 AI 生成辅助接口提供。✅ 已覆盖
+- 「平台端」可通过 Aidso 平台码呈现，但缺少结构化端元数据，不能从 schema 直接拿到端类型、logo、分组。
 
 建议补齐：
 
-- `POST /projects/{project_id}/ai/brand-words:generate`
-- `POST /projects/{project_id}/ai/competitors:generate`
-- `POST /projects/{project_id}/ai/questions:generate`
+- `POST /projects/{project_id}/ai/brand-words:generate` ✅ 已覆盖
+- `POST /projects/{project_id}/ai/competitors:generate` ✅ 已覆盖
+- `POST /projects/{project_id}/ai/questions:generate` ✅ 已覆盖
 - `POST /projects:setup`：把创建项目和保存配置包成事务，减少半成品项目。
 - `POST/PUT /project-drafts`：支持向导草稿恢复，属于体验增强。
 
@@ -215,6 +216,9 @@
 2. 初始化配置页
    GET /platforms?enabled=true
    GET /prompt-library
+   POST /projects/{id}/ai/brand-words:generate（可选）
+   POST /projects/{id}/ai/competitors:generate（可选）
+   POST /projects/{id}/ai/questions:generate（可选）
 
 3. 保存完整监测配置
    PUT /projects/{project_id}/monitor-setup
@@ -248,7 +252,7 @@
 | 缺口 | 建议接口/改造 | 影响页面 | 说明 |
 | --- | --- | --- | --- |
 | 平台端元数据 | `GET /platform-endpoints` ✅ | 全部页面 | 已提供结构化 `base_platform/endpoint_type/endpoint_label/logo_url` 分组；Aidso 端码兼容解析。 |
-| AI 生成 | `/ai/brand-words:generate`、`/ai/competitors:generate`、`/ai/questions:generate` | 创建项目、编辑配置 | 原型核心体验，当前完全缺失。 |
+| AI 生成 | `/ai/brand-words:generate`、`/ai/competitors:generate`、`/ai/questions:generate` ✅ | 创建项目、编辑配置 | MVP 确定性规则生成候选，保存仍走 monitor-setup。 |
 | 大盘页面级聚合 | `GET /projects/{id}/dashboard/overview` | 数据大盘 | 解决时间范围、平台多选、竞品预览、信源预览、最近问题的一次性聚合。 |
 | 竞品页面级聚合与品牌维度趋势 | `GET /projects/{id}/competitor-analysis`，并为快照增加 `brand_id` 维度 | 竞品分析 | 当前只能做当前快照榜，不能做竞品趋势。 |
 | 对话记录问题聚合 | `GET /projects/{id}/conversation-questions` | AI 对话记录 | 当前答案列表粒度不匹配原型主表。 |

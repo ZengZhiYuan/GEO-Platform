@@ -457,6 +457,102 @@ class SourceTypesOut(BaseModel):
     storage_mappings: list[SourceTypeStorageMappingOut]
 
 
+class AiBrandWordsGenerateIn(BaseModel):
+    brand_name: str = Field(min_length=1, max_length=255)
+    category: str | None = Field(default=None, max_length=100)
+    official_domain: str | None = Field(default=None, max_length=255)
+    limit: int = Field(default=10, ge=1, le=50)
+
+    @field_validator("brand_name", mode="before")
+    @classmethod
+    def strip_brand_name(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("category", "official_domain")
+    @classmethod
+    def strip_optional_fields(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class AiBrandWordsGenerateOut(BaseModel):
+    brand_words: list[str]
+
+
+class AiCompetitorsGenerateIn(BaseModel):
+    brand_name: str = Field(min_length=1, max_length=255)
+    category: str | None = Field(default=None, max_length=100)
+    region: str | None = Field(default=None, max_length=100)
+    limit: int = Field(default=5, ge=1, le=20)
+
+    @field_validator("brand_name", mode="before")
+    @classmethod
+    def strip_brand_name(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("category", "region")
+    @classmethod
+    def strip_optional_fields(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class AiCompetitorCandidateOut(BaseModel):
+    brand_name: str
+    competitor_words: list[str]
+    official_domain: str | None = None
+
+
+class AiCompetitorsGenerateOut(BaseModel):
+    competitors: list[AiCompetitorCandidateOut]
+
+
+class AiQuestionsGenerateIn(BaseModel):
+    brand_name: str = Field(min_length=1, max_length=255)
+    category: str | None = Field(default=None, max_length=100)
+    region: str | None = Field(default=None, max_length=100)
+    core_keywords: list[str] = Field(default_factory=list, max_length=20)
+    competitors: list[str] = Field(default_factory=list, max_length=20)
+    limit: int = Field(default=10, ge=1, le=50)
+
+    @field_validator("brand_name", mode="before")
+    @classmethod
+    def strip_brand_name(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("category", "region")
+    @classmethod
+    def strip_optional_fields(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+    @field_validator("core_keywords", "competitors")
+    @classmethod
+    def normalize_keyword_lists(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            cleaned = item.strip()
+            if not cleaned:
+                continue
+            if len(cleaned) > 100:
+                raise ValueError("单项长度不能超过 100")
+            normalized.append(cleaned)
+        return list(dict.fromkeys(normalized))
+
+
+class AiGeneratedQuestionOut(BaseModel):
+    prompt_text: str
+    prompt_type: str
+    core_keyword: str | None = None
+
+
+class AiQuestionsGenerateOut(BaseModel):
+    questions: list[AiGeneratedQuestionOut]
+
+
 class RunCreate(BaseModel):
     project_id: int = Field(ge=1)
     prompt_set_id: int | None = Field(default=None, ge=1)

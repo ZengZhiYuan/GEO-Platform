@@ -982,6 +982,148 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/projects/1/monitor-setup" 
 
 ---
 
+## 8.3 AI 生成辅助（候选，不落库）
+
+创建项目与编辑配置向导中的「AI 生成品牌词 / 竞品 / 监测问题」辅助接口。MVP 阶段使用确定性规则生成候选，**不写数据库**；用户确认后仍通过 [8.2 保存监测设置](#82-保存监测设置) 落库。
+
+### 8.3.1 AI 生成品牌词
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | AI 生成品牌词候选 |
+| **请求方式** | `POST` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/ai/brand-words:generate` |
+
+**Body 入参：**
+
+| 字段 | 类型 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `brand_name` | string | 是 | — | 品牌/产品名称 |
+| `category` | string | 否 | — | 监测品类，如 `文旅演艺` |
+| `official_domain` | string | 否 | — | 官网地址（预留，当前不影响生成） |
+| `limit` | integer | 否 | `10` | 返回候选上限，1–50 |
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `brand_words` | string[] | 去重后的品牌词候选，**必含** `brand_name` |
+
+**常见错误：** 项目不存在 `40400`；`brand_name` 为空 `422`
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects/1/ai/brand-words:generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "brand_name": "杭州宋城",
+    "category": "文旅演艺",
+    "limit": 10
+  }'
+```
+
+---
+
+### 8.3.2 AI 生成竞品
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | AI 生成竞品候选 |
+| **请求方式** | `POST` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/ai/competitors:generate` |
+
+**Body 入参：**
+
+| 字段 | 类型 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `brand_name` | string | 是 | — | 目标品牌名称（用于排除自身） |
+| `category` | string | 否 | — | 监测品类 |
+| `region` | string | 否 | — | 区域，如 `杭州` |
+| `limit` | integer | 否 | `5` | 返回竞品上限，1–20 |
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `competitors` | array | 竞品候选列表 |
+
+`competitors[]` 元素：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `brand_name` | string | 竞品品牌名 |
+| `competitor_words` | string[] | 竞品别名候选，必含 `brand_name` |
+| `official_domain` | string/null | 官网（如有） |
+
+**生成规则：** 优先匹配 `category + region` 固定规则；未命中时回退到品类通用候选。
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects/1/ai/competitors:generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "brand_name": "杭州宋城",
+    "category": "文旅演艺",
+    "region": "杭州",
+    "limit": 5
+  }'
+```
+
+---
+
+### 8.3.3 AI 生成监测问题
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | AI 生成监测问题候选 |
+| **请求方式** | `POST` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/ai/questions:generate` |
+
+**Body 入参：**
+
+| 字段 | 类型 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `brand_name` | string | 是 | — | 目标品牌 |
+| `category` | string | 否 | — | 监测品类 |
+| `region` | string | 否 | — | 区域 |
+| `core_keywords` | string[] | 否 | `[]` | 核心词/品类关键字 |
+| `competitors` | string[] | 否 | `[]` | 竞品名称，用于对比类问题 |
+| `limit` | integer | 否 | `10` | 返回问题数，1–50 |
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `questions` | array | 问题候选列表 |
+
+`questions[]` 元素：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `prompt_text` | string | 问题正文 |
+| `prompt_type` | string | 意图编码，对应 [10.5 Prompt 意图类型字典](#105-获取-prompt-意图类型字典) 五类 |
+| `core_keyword` | string/null | 关联核心词 |
+
+**生成规则：** 按五类意图模板轮询生成：`brand_sentiment`、`brand_info`、`category_sentiment`、`competitor_comparison`、`category_recommendation`；结果按 `limit` 截断。
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects/1/ai/questions:generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "brand_name": "杭州宋城",
+    "category": "文旅演艺",
+    "core_keywords": ["杭州旅游"],
+    "competitors": ["印象西湖", "只有河南·戏剧幻城"],
+    "limit": 5
+  }'
+```
+
+---
+
 ## 9. 提示词集与提示词
 
 ### 9.1 分页查询提示词集

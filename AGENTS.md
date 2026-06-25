@@ -193,6 +193,26 @@ npm test
 npm run build
 ```
 
+### Windows 报告存储测试权限说明
+
+在 Windows / Codex 沙箱下，报告相关测试会执行 `os.replace()`、`unlink()` 等文件原子替换和删除操作，普通沙箱可能报 `PermissionError`。
+
+当运行以下范围时：
+
+- `backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring`
+- `backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\reports`
+- 任何包含报告生成、报告下载、报告存储的测试
+
+Codex 应优先使用工作区内临时目录，并申请提权执行：
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring --basetemp .pytest-tmp
+```
+
+执行时使用 `sandbox_permissions=require_escalated`，理由为：“报告存储测试需要在工作区临时目录内执行文件原子替换和删除，普通沙箱在 Windows 下可能拒绝访问。”
+
+测试结束后清理 `.pytest-tmp`；如普通权限清理失败，可在确认路径位于当前 workspace 后提权清理。
+
 ## 分支规范
 
 - 当前工作区可能存在用户或其他 Agent 的未提交改动；不要还原、覆盖、格式化或清理与本任务无关的改动。

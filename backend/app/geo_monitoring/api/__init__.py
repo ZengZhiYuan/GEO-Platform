@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 
+from app.geo_monitoring.api.ai_generation import router as ai_generation_router
 from app.geo_monitoring.api.analysis import router as analysis_router
 from app.geo_monitoring.api.answers import router as answers_router
 from app.geo_monitoring.api.brands import router as brands_router
@@ -18,6 +19,7 @@ from app.geo_monitoring.api.runs import router as runs_router
 from app.geo_monitoring.api.schedules import router as schedules_router
 
 _SUB_ROUTERS = (
+    ai_generation_router,
     projects_router,
     brands_router,
     core_keywords_router,

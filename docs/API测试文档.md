@@ -407,7 +407,23 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects" \
 backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_metadata_api.py
 ```
 
-#### 5.4.7 监测设置接口
+#### 5.4.7 AI 生成辅助接口
+
+| 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
+| --- | --- | --- | --- | --- | --- | --- |
+| AI 生成品牌词 | `POST` | `/api/geo-monitoring/projects/{project_id}/ai/brand-words:generate` | Body：`brand_name`（必填）、`category`、`official_domain`、`limit` 默认 10 | `{ "brand_words": string[] }` | `code=0`；必含 `brand_name`；去重 | 项目不存在 `40400`；品牌名为空 `422` |
+| AI 生成竞品 | `POST` | `/api/geo-monitoring/projects/{project_id}/ai/competitors:generate` | Body：`brand_name`（必填）、`category`、`region`、`limit` 默认 5 | `{ "competitors": [{ brand_name, competitor_words[], official_domain? }] }` | `code=0`；排除目标品牌自身 | 项目不存在 `40400` |
+| AI 生成监测问题 | `POST` | `/api/geo-monitoring/projects/{project_id}/ai/questions:generate` | Body：`brand_name`（必填）、`category`、`region`、`core_keywords[]`、`competitors[]`、`limit` 默认 10 | `{ "questions": [{ prompt_text, prompt_type, core_keyword? }] }` | 五类意图模板；按 `limit` 截断 | 项目不存在 `40400` |
+
+自动化测试文件：`backend/tests/geo_monitoring/test_ai_generation_api.py`
+
+覆盖场景：宋城/杭州旅游示例、空品牌名校验、生成不落库、项目不存在。
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_ai_generation_api.py
+```
+
+#### 5.4.8 监测设置接口
 
 | 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
 | --- | --- | --- | --- | --- | --- | --- |
