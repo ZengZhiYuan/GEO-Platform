@@ -406,6 +406,57 @@ class AIPlatformOut(BaseModel):
     updated_at: datetime
 
 
+class PlatformEndpointOut(BaseModel):
+    platform_code: str
+    platform_name: str
+    base_platform: str
+    base_platform_label: str
+    endpoint_type: str
+    endpoint_label: str
+    logo_url: str | None = None
+    thinking_mode: str | None = None
+    enabled: bool
+    adapter_type: str
+    search_enabled: bool
+    citation_supported: bool
+
+
+class PlatformEndpointGroupOut(BaseModel):
+    base_platform: str
+    base_platform_label: str
+    endpoints: list[PlatformEndpointOut]
+
+
+class PlatformEndpointsOut(BaseModel):
+    groups: list[PlatformEndpointGroupOut]
+
+
+class PromptTypeOut(BaseModel):
+    code: str
+    label: str
+    compatible_values: list[str]
+
+
+class PromptTypesOut(BaseModel):
+    items: list[PromptTypeOut]
+
+
+class SourceTypeOut(BaseModel):
+    code: str
+    label: str
+
+
+class SourceTypeStorageMappingOut(BaseModel):
+    storage_value: str
+    display_code: str
+    display_label: str
+
+
+class SourceTypesOut(BaseModel):
+    items: list[SourceTypeOut]
+    storage_mappings: list[SourceTypeStorageMappingOut]
+
+
 class RunCreate(BaseModel):
     project_id: int = Field(ge=1)
     prompt_set_id: int | None = Field(default=None, ge=1)

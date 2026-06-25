@@ -44,6 +44,24 @@ def list_platforms(
     return items, total
 
 
+# 查询全部未删除 AI 平台，支持按启用状态筛选
+def list_all_platforms(
+    db: Session,
+    *,
+    enabled: bool | None = None,
+) -> list[AIPlatform]:
+    conditions = [AIPlatform.is_deleted.is_(False)]
+    if enabled is not None:
+        conditions.append(AIPlatform.enabled.is_(enabled))
+    return list(
+        db.execute(
+            select(AIPlatform).where(*conditions).order_by(AIPlatform.id)
+        )
+        .scalars()
+        .all()
+    )
+
+
 # 查询候选 AI 平台列表，可按编码集合限定范围
 def list_candidates(
     db: Session, platform_codes: list[str] | None

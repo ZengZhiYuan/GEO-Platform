@@ -1,7 +1,7 @@
 # AI 应用监测 API 接口文档
 
 > 文档依据当前后端源码整理（`backend/app/api/router.py`、`backend/app/main.py`、`backend/app/geo_monitoring/api/`）。  
-> 更新日期：2026-06-22  
+> 更新日期：2026-06-25  
 > 在线 OpenAPI：`http://127.0.0.1:8000/docs`
 
 ---
@@ -1230,6 +1230,144 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/platforms/qwen"
 curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/platforms/qwen" \
   -H "Content-Type: application/json" \
   -d '{"enabled": true, "max_concurrency": 5}'
+```
+
+---
+
+### 10.4 获取平台端元数据分组
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 获取平台端元数据分组 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/platform-endpoints` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `enabled` | boolean | 否 | 为 `true` 时仅返回启用平台；不传返回全部 |
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `groups` | array | 按 `base_platform` 分组的平台端列表 |
+
+`groups[]` 元素：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `base_platform` | string | 基础平台编码，如 `doubao` |
+| `base_platform_label` | string | 基础平台中文名 |
+| `endpoints` | array | 该平台下的端侧列表，顺序为 `web` → `app` → `other` |
+
+`endpoints[]` 元素：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `platform_code` | string | 平台端编码 |
+| `platform_name` | string | 平台端名称 |
+| `base_platform` | string | 基础平台编码 |
+| `base_platform_label` | string | 基础平台中文名 |
+| `endpoint_type` | string | 端类型：`web` / `app` / `other` |
+| `endpoint_label` | string | 端侧展示名 |
+| `logo_url` | string/null | Logo 地址，优先读 `extra_config.logo_url` |
+| `thinking_mode` | string/null | 深度思考模式，优先读 `extra_config.thinking_mode` |
+| `enabled` | boolean | 是否启用 |
+| `adapter_type` | string | 适配器类型 |
+| `search_enabled` | boolean | 是否支持联网 |
+| `citation_supported` | boolean | 是否支持引用 |
+
+**解析规则：**
+
+1. 优先使用 `AIPlatform.extra_config` 中的 `base_platform`、`endpoint_type`、`endpoint_label`、`logo_url`、`thinking_mode`。
+2. 历史数据缺少 `extra_config` 时，从 `platform_code` 兼容解析：`aidso_*_web` 识别为网页端，`aidso_*_app` 识别为手机端；普通平台码归入 `other`。
+3. 只读聚合，不修改数据库。
+
+**调用示例：**
+
+```bash
+curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/platform-endpoints?enabled=true"
+```
+
+---
+
+### 10.5 获取 Prompt 意图类型字典
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 获取 Prompt 意图类型字典 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/prompt-types` |
+
+**入参：** 无
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `items` | array | 原型五类问题意图 |
+
+`items[]` 元素：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `code` | string | 原型意图编码 |
+| `label` | string | 中文展示名 |
+| `compatible_values` | string[] | 兼容的后端存储值与旧中文值，如 `comparison`、`竞品对比` |
+
+原型五类意图编码：
+
+| code | label |
+| --- | --- |
+| `brand_sentiment` | 品牌情绪 |
+| `brand_info` | 品牌信息 |
+| `category_sentiment` | 品类情绪 |
+| `competitor_comparison` | 竞品对比 |
+| `category_recommendation` | 品类推荐 |
+
+**调用示例：**
+
+```bash
+curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/prompt-types"
+```
+
+---
+
+### 10.6 获取信源类型展示字典
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 获取信源类型展示字典 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/source-types` |
+
+**入参：** 无
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `items` | array | 原型展示用 8 类信源字典 |
+| `storage_mappings` | array | 当前六类存储值到展示字典的映射 |
+
+`items[]` 元素：`code`（展示编码）、`label`（中文名）。
+
+`storage_mappings[]` 元素：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `storage_value` | string | 数据库存储值，如 `web`、`official` |
+| `display_code` | string | 展示字典编码 |
+| `display_label` | string | 展示中文名 |
+
+当前六类存储值：`web`、`official`、`media`、`social`、`video`、`ecommerce`。
+
+**调用示例：**
+
+```bash
+curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/source-types"
 ```
 
 ---

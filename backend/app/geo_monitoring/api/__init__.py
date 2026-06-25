@@ -7,6 +7,7 @@ from app.geo_monitoring.api.answers import router as answers_router
 from app.geo_monitoring.api.brands import router as brands_router
 from app.geo_monitoring.api.core_keywords import router as core_keywords_router
 from app.geo_monitoring.api.dashboard import router as dashboard_router
+from app.geo_monitoring.api.metadata import router as metadata_router
 from app.geo_monitoring.api.monitor_setup import router as monitor_setup_router
 from app.geo_monitoring.api.platforms import router as platforms_router
 from app.geo_monitoring.api.projects import router as projects_router
@@ -23,6 +24,7 @@ _SUB_ROUTERS = (
     prompts_router,
     prompt_library_router,
     monitor_setup_router,
+    metadata_router,
     platforms_router,
     runs_router,
     schedules_router,

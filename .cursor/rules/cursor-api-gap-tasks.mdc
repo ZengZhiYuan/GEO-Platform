@@ -1,0 +1,85 @@
+---
+description: Cursor 接口缺口开发任务执行流程（当前阶段后端开发主任务书）
+alwaysApply: true
+---
+
+# Cursor 接口缺口开发任务执行
+
+当前阶段后端开发以 **`docs/Cursor接口缺口开发任务书.md`** 为**主任务书**；事实来源为 **`docs/原型功能_API映射整合精简版.md`**。用户下达接口缺口相关开发任务时，**默认已授权按任务书执行**，无需重复声明「先读任务文档」。
+
+## 默认入口与优先级
+
+1. 只要用户提出原型页面对接、接口缺口、页面级聚合、字典、AI 生成、导出、指标口径等后端接口开发需求，默认进入本规则。
+2. 用户只写 `执行 Task P0-1`、`执行 P1-2` 等任务编号时，自动按 `docs/Cursor接口缺口开发任务书.md` 定位任务；不要改读 MVP V2 任务书。
+3. `docs/AI应用监测_MVP_Cursor实施任务V2.md` 中的任务已完成归档；当前开发不再把 MVP V2 任务书作为开发依据。
+4. 发生口径冲突时，按以下顺序处理：用户当次指令 > `AGENTS.md` / `.cursor/rules/*` > `docs/Cursor接口缺口开发任务书.md` > `docs/原型功能_API映射整合精简版.md` > 现有 API 文档与代码实现；旧映射文档与 MVP V2 任务书只作历史参考。
+
+## 读取策略（节约 token）
+
+1. **禁止**一次性读取或加载任务书全文（约 650 行）。
+2. **先读** `docs/Cursor接口缺口开发任务书_Task索引.md`（执行规则摘要 + Task 目录 + 行号 + 原型文档章节映射）。
+3. **再读**任务书局部片段：
+   - **§2–§4**（索引给出行号，首次会话或涉及统一规范/口径时）
+   - **当前 Task 对应章节**（按索引行号 `Read` 指定 `offset`/`limit`）
+4. **按 Task 读取** `docs/原型功能_API映射整合精简版.md` 对应章节（见索引「按 Task 必读」表）；禁止通读。
+5. **新增或改造接口前** 局部读取 `docs/API接口文档.md` 相关章节；**写测试前** 读取 `docs/API测试文档.md` 约定。
+6. 用户若已粘贴 Task 编号、目标、涉及文件或验收命令，以用户消息为准；任务书只补全缺失约束。
+7. 涉及架构口径或领域规则时，按需追加 `CLAUDE.md` 相关段落；**禁止**以 `docs/原型功能-API映射_v1.md` 或 `docs/原型功能_API映射与缺口清单.md` 作为开发依据。
+
+## 执行顺序
+
+1. 从用户消息或索引定位 Task 编号（如 `P0-1`）与章节行号。
+2. **Superpowers：** Read `using-superpowers` skill；代码任务加载 `test-driven-development`，收尾前加载 `verification-before-completion`（详见 `.cursor/rules/superpowers-dev-workflow.mdc`）。
+3. 读取该 Task 的：目标、新增/修改接口、关键逻辑、涉及文件、验收命令、验收点。
+4. 检查现有 `backend/app/geo_monitoring/` 路由、服务、schema 与测试，严守 Task 允许修改范围。
+5. 测试先行 → 最小实现 → 运行 Task 验收命令 → **同步 API 文档**（§8）→ **更新 CodeGraph 索引**（有源码改动时）→ 汇报改动、结果、剩余限制与用户待办。
+
+## 统一开发约束（摘要，细节见任务书 §4）
+
+- 新增 API 文件须在 `backend/app/geo_monitoring/api/__init__.py` 注册 router。
+- 列表接口支持 `page`/`page_size`；多页面复用 `run_id`、`platform_codes`、`start_at`/`end_at`、`keyword`。
+- 统一响应 `{ code, message, data }`；比率与平均排名用 decimal 字符串；无分母返回 `null`。
+- 聚合接口避免 N+1；优先复用现有表与分析 JSON，不优先新增大表。
+- 后端命令使用 `backend/.venv`；pytest 范围默认 `backend/tests/geo_monitoring`。
+
+## 任务完成后：文档与 CodeGraph
+
+**文档（每个 Task 必做，§8）：**
+
+| 文档 | 更新内容 |
+| --- | --- |
+| `docs/API接口文档.md` | 路径、入参、出参、错误码、示例 |
+| `docs/API测试文档.md` | 测试用例与命令 |
+| `docs/原型功能_API映射整合精简版.md` | 标注已覆盖缺口 |
+| `docs/API全量接口测试报告.md` | 若执行全量测试则更新结果 |
+
+**CodeGraph（改动了 `backend/` 等源码且验收通过后）：**
+
+```powershell
+codegraph status
+codegraph sync
+codegraph status
+```
+
+- 文档-only 任务无需 pytest，也无需 CodeGraph。
+- 索引失败不推翻已通过的业务验收，但须在汇报中说明。
+
+## 硬约束
+
+- 读取任务书/文档、查看 pytest 或 git 输出时 **默认 UTF-8**；Windows PowerShell 下先按 `AGENTS.md`「文本编码规则」设置终端编码。
+- 本阶段只做 `backend`；不开发/验收 `frontend`。
+- 不读取、打印或提交 `.env` 真实密钥。
+- 遵守任务书 §12 风险与注意事项（如：`brand_visibility` 非 `brand_mention_rate` 趋势编码、answers 非对话主表粒度等）。
+
+## 与 MVP V2 任务书的关系
+
+- **默认：** 接口缺口、页面级聚合、原型对接 → 本任务书。
+- **归档：** MVP V2 任务已完成，当前开发忽略 `docs/AI应用监测_MVP_Cursor实施任务V2.md`；仅当用户明确要求追溯历史背景或审计已完成工作时，才局部查阅 `docs/AI应用监测_MVP_V2_Task索引.md` 与 `.cursor/rules/mvp-v2-backend-tasks.mdc`。
+
+## 用户下任务时的推荐格式
+
+```text
+执行 Task P0-1：平台端元数据与基础字典接口
+```
+
+Agent 应自动完成索引定位、原型文档章节与任务书局部读取，无需用户重复粘贴任务书内容。

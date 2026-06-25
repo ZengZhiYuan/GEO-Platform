@@ -391,7 +391,23 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects" \
 | --- | --- | --- | --- | --- | --- | --- |
 | 分页查询 Prompt 词库 | `GET` | `/api/geo-monitoring/prompt-library` | Query：`page`、`page_size` 默认 100 且 1-500，`industry` | 分页 `PromptLibraryOut[]` | `code=0`，至少返回种子模板 | `page_size` 超限 `422` |
 
-#### 5.4.6 监测设置接口
+#### 5.4.6 平台端元数据与基础字典接口
+
+| 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 获取平台端元数据分组 | `GET` | `/api/geo-monitoring/platform-endpoints` | Query：`enabled` 可选 | `groups[]`，含 `base_platform`、`endpoints[]` | `code=0`；Aidso 端码解析为 `web`/`app`；同组内 `web` 排在 `app` 前 | 无 |
+| 获取 Prompt 意图类型字典 | `GET` | `/api/geo-monitoring/prompt-types` | 无 | `items[]` 共 5 项，含 `compatible_values` | `code=0`；含 `comparison`、`recommendation` 等兼容值 | 无 |
+| 获取信源类型展示字典 | `GET` | `/api/geo-monitoring/source-types` | 无 | `items[]` 与 `storage_mappings[]` | `code=0`；六类存储值均可映射到展示字典 | 无 |
+
+自动化测试文件：`backend/tests/geo_monitoring/test_metadata_api.py`
+
+覆盖场景：Aidso 端码分组、`extra_config` 覆盖、`enabled` 过滤、平台数超过 500 不截断、v1 兼容前缀可访问。
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_metadata_api.py
+```
+
+#### 5.4.7 监测设置接口
 
 | 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
 | --- | --- | --- | --- | --- | --- | --- |

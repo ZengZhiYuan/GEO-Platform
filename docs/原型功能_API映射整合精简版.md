@@ -76,7 +76,9 @@
 
 - 项目卡中的品牌词、竞品、平台数、问题数，需要 `projects + monitor-setup` 合成。
 - “监测中”可暂按 `project.status=active` 与最近 run 状态判断，但这不是严格的监测开关。
-- 平台 logo、平台端分组和端数，需要前端基于 `platform_code` 或静态映射处理。
+- `GET /platform-endpoints`：平台端分组、端类型、logo 与展示名。
+- `GET /prompt-types`：原型五类问题意图及兼容存储值。
+- `GET /source-types`：信源展示字典及六类存储值映射。
 
 建议补齐：
 
@@ -89,7 +91,7 @@
 
 当前推荐调用链：
 
-1. `GET /platforms?enabled=true` 获取平台候选。
+1. `GET /platforms?enabled=true` 或 `GET /platform-endpoints?enabled=true` 获取平台候选。
 2. 可选 `GET /prompt-library` 获取问题模板。
 3. `POST /projects` 创建项目基础信息。
 4. `PUT /projects/{project_id}/monitor-setup` 保存品牌词、竞品、核心词、问题和默认平台，并按需传 `activate_prompt_set=true`。
@@ -201,7 +203,7 @@
 - `GET /projects/{project_id}/source-analysis?platform_codes=&start_at=&end_at=&source_type=&keyword=&metric=&page=&page_size=`
 - `GET /projects/{project_id}/source-analysis/type-trends`
 - `GET /projects/{project_id}/source-analysis/sites`
-- `GET /source-types` 固化分类字典和中文显示名。
+- `GET /source-types` 固化分类字典和中文显示名。✅ 已覆盖
 - `GET /projects/{project_id}/source-analysis/export`
 
 ## 4. 端到端推荐调用链
@@ -245,7 +247,7 @@
 
 | 缺口 | 建议接口/改造 | 影响页面 | 说明 |
 | --- | --- | --- | --- |
-| 平台端元数据 | `GET /platform-endpoints` 或扩展 `AIPlatformOut` | 全部页面 | 当前 Aidso 端信息藏在平台码里，缺分组、端类型、logo、显示名规范。 |
+| 平台端元数据 | `GET /platform-endpoints` ✅ | 全部页面 | 已提供结构化 `base_platform/endpoint_type/endpoint_label/logo_url` 分组；Aidso 端码兼容解析。 |
 | AI 生成 | `/ai/brand-words:generate`、`/ai/competitors:generate`、`/ai/questions:generate` | 创建项目、编辑配置 | 原型核心体验，当前完全缺失。 |
 | 大盘页面级聚合 | `GET /projects/{id}/dashboard/overview` | 数据大盘 | 解决时间范围、平台多选、竞品预览、信源预览、最近问题的一次性聚合。 |
 | 竞品页面级聚合与品牌维度趋势 | `GET /projects/{id}/competitor-analysis`，并为快照增加 `brand_id` 维度 | 竞品分析 | 当前只能做当前快照榜，不能做竞品趋势。 |
@@ -259,8 +261,8 @@
 | 趋势指标编码别名 | 支持 `brand_mention_rate` 作为 `brand_visibility` 的兼容别名，或文档统一改为 `brand_visibility` | 数据大盘、竞品分析 |
 | 平均排名与 SOV 顶层化 | 在 dashboard/overview 返回稳定字段，并纳入快照 | 数据大盘、竞品分析、对话记录 |
 | 项目卡聚合 | `GET /projects/overview` | 项目管理 |
-| Prompt 类型字典 | `GET /prompt-types` | 创建项目、编辑配置 |
-| 信源类型字典 | `GET /source-types` | 信源引用分析 |
+| Prompt 类型字典 | `GET /prompt-types` ✅ | 创建项目、编辑配置 |
+| 信源类型字典 | `GET /source-types` ✅ | 信源引用分析 |
 | 回答详情扩展 | `prompt_text/prompt_type/reasoning_text/search_keywords` | AI 对话记录 |
 | Excel 导出 | `conversation-questions/export`、`source-analysis/export` 或报告格式增加 `xlsx` | AI 对话记录、信源引用分析 |
 | 暂停/恢复监测 | `POST /projects/{id}/pause/resume` | 项目管理 |
