@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import BusinessException
-from app.geo_monitoring.analysis.metrics import compute_rate
-from app.geo_monitoring.models import AIPlatform, MonitorRun, QueryTask
+from app.geo_monitoring.analysis.dto import AnswerInput, BrandMentionInput
+from app.geo_monitoring.analysis.metrics import (
+    compute_brand_rank_rate,
+    compute_brand_visibility,
+    compute_rate,
+)
+from app.geo_monitoring.models import AIPlatform, Answer, Brand, MonitorRun, QueryTask
 from app.geo_monitoring.services.analysis import MetricSnapshot, PlatformAnalysis
 from app.geo_monitoring.services.projects import require_active_project
 from app.geo_monitoring.services.runs import get_run
+
+_OVERVIEW_RECENT_QUESTIONS_LIMIT = 5
+_OVERVIEW_COMPETITOR_PREVIEW_LIMIT = 5
+_OVERVIEW_SOURCE_PREVIEW_LIMIT = 5
 
 _RUN_TERMINAL = frozenset({"completed", "partial_success", "failed", "cancelled"})
 _ANALYZED = frozenset({"completed", "partial_success"})
@@ -363,4 +373,351 @@ def build_project_dashboard(
         "latest_run": _run_summary(run),
         "summary": summary,
         "platforms": platforms,
+    }
+
+
+def _normalize_platform_codes(platform_codes: list[str] | None) -> list[str] | None:
+    if not platform_codes:
+        return None
+    return list(dict.fromkeys(code.strip() for code in platform_codes if code.strip()))
+
+
+def _resolve_platform_codes(
+    run: MonitorRun,
+    platform_codes: list[str] | None,
+) -> list[str]:
+    if platform_codes:
+        return platform_codes
+    return list(run.platform_codes or [])
+
+
+def _load_target_brand(db: Session, project_id: int) -> Brand | None:
+    return db.execute(
+        select(Brand).where(
+            Brand.project_id == project_id,
+            Brand.brand_type == "target",
+            Brand.is_deleted.is_(False),
+            Brand.status == "active",
+        )
+    ).scalar_one_or_none()
+
+
+def _extract_extended_kpis_from_competitor_data(
+    competitor_data: dict[str, Any],
+) -> dict[str, Any]:
+    """扩展 KPI 与竞品分析服务保持一致，避免跨平台 SOV 被错误加权平均。"""
+    if not competitor_data.get("has_analysis_data"):
+        return {
+            "average_rank": None,
+            "share_of_voice": None,
+            "brand_mention_total_count": None,
+        }
+    kpis = competitor_data.get("kpis") or {}
+    mention_count = kpis.get("mention_count")
+    return {
+        "average_rank": kpis.get("average_rank"),
+        "share_of_voice": kpis.get("share_of_voice"),
+        "brand_mention_total_count": mention_count,
+    }
+
+
+def _load_overview_answers(
+    db: Session,
+    *,
+    run_id: int,
+    platform_codes: list[str] | None,
+    start_at: datetime | None,
+    end_at: datetime | None,
+) -> list[Answer]:
+    conditions: list[Any] = [
+        QueryTask.run_id == run_id,
+        QueryTask.is_deleted.is_(False),
+        Answer.is_deleted.is_(False),
+    ]
+    if platform_codes:
+        conditions.append(Answer.platform_code.in_(platform_codes))
+    if start_at is not None:
+        conditions.append(Answer.collected_at >= start_at)
+    if end_at is not None:
+        conditions.append(Answer.collected_at <= end_at)
+    return list(
+        db.execute(
+            select(Answer)
+            .join(QueryTask, QueryTask.id == Answer.task_id)
+            .where(*conditions)
+            .options(
+                selectinload(Answer.brand_results),
+                selectinload(Answer.task),
+            )
+            .order_by(Answer.id)
+        )
+        .scalars()
+        .all()
+    )
+
+
+def _answer_input_from_row(answer: Answer) -> AnswerInput:
+    task_status = answer.task.status if answer.task is not None else "failed"
+    return AnswerInput(
+        answer_id=answer.id,
+        prompt_id=answer.prompt_id,
+        platform_code=answer.platform_code,
+        task_status=task_status,
+        normalized_text=answer.normalized_text or answer.raw_text or "",
+        brand_mentions=tuple(
+            BrandMentionInput(
+                brand_id=result.brand_id,
+                is_mentioned=result.is_mentioned,
+                mention_count=result.mention_count,
+                first_position=result.first_position,
+                sentiment=result.sentiment,
+            )
+            for result in answer.brand_results
+        ),
+    )
+
+
+def _summary_from_filtered_answers(
+    answers: list[Answer],
+    *,
+    target_brand_id: int,
+) -> dict[str, Any] | None:
+    answer_inputs = [_answer_input_from_row(answer) for answer in answers]
+    visibility = compute_brand_visibility(
+        answer_inputs,
+        target_brand_id=target_brand_id,
+    )
+    top1 = compute_brand_rank_rate(
+        answer_inputs,
+        target_brand_id=target_brand_id,
+        max_rank=1,
+    )
+    top3 = compute_brand_rank_rate(
+        answer_inputs,
+        target_brand_id=target_brand_id,
+        max_rank=3,
+    )
+    if visibility.denominator == 0:
+        return None
+
+    return {
+        "scope": "all",
+        "valid_answer_count": visibility.denominator,
+        "brand_mention_count": visibility.numerator,
+        "brand_mention_rate": _decimal_str(visibility.rate),
+        "brand_top1_mention_count": top1.numerator,
+        "brand_top1_mention_rate": _decimal_str(top1.rate),
+        "brand_top3_mention_count": top3.numerator,
+        "brand_top3_mention_rate": _decimal_str(top3.rate),
+    }
+
+
+def _empty_kpis_payload() -> dict[str, Any]:
+    return {
+        "brand_mention_rate": None,
+        "brand_top1_mention_rate": None,
+        "brand_top3_mention_rate": None,
+        "valid_answer_count": None,
+        "brand_mention_count": None,
+        "average_rank": None,
+        "share_of_voice": None,
+        "brand_mention_total_count": None,
+    }
+
+
+def _summary_to_kpis_payload(
+    summary: dict[str, Any] | None,
+    *,
+    extended: dict[str, Any],
+) -> dict[str, Any]:
+    if summary is None:
+        return _empty_kpis_payload()
+    return {
+        "brand_mention_rate": summary.get("brand_mention_rate"),
+        "brand_top1_mention_rate": summary.get("brand_top1_mention_rate"),
+        "brand_top3_mention_rate": summary.get("brand_top3_mention_rate"),
+        "valid_answer_count": summary.get("valid_answer_count"),
+        "brand_mention_count": summary.get("brand_mention_count"),
+        "average_rank": extended.get("average_rank"),
+        "share_of_voice": extended.get("share_of_voice"),
+        "brand_mention_total_count": extended.get("brand_mention_total_count"),
+    }
+
+
+def _empty_competitor_preview() -> dict[str, Any]:
+    return {
+        "boards": {
+            "mention_rate": [],
+            "average_rank": [],
+            "mention_count": [],
+        }
+    }
+
+
+def _competitor_preview_payload(
+    competitor_data: dict[str, Any],
+    *,
+    limit: int,
+) -> dict[str, Any]:
+    boards = competitor_data.get("boards") or {}
+    return {
+        "boards": {
+            "mention_rate": list(boards.get("mention_rate") or [])[:limit],
+            "average_rank": list(boards.get("average_rank") or [])[:limit],
+            "mention_count": list(boards.get("mention_count") or [])[:limit],
+        }
+    }
+
+
+def _source_preview_payload(source_data: dict[str, Any]) -> dict[str, Any]:
+    sites = source_data.get("sites") or {}
+    return {
+        "items": list(sites.get("items") or []),
+        "total": int(sites.get("total") or 0),
+    }
+
+
+def _recent_questions_preview_payload(
+    conversation_data: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "items": list(conversation_data.get("items") or []),
+        "total": int(conversation_data.get("total") or 0),
+    }
+
+
+def _empty_overview_payload(project_id: int) -> dict[str, Any]:
+    return {
+        "project_id": project_id,
+        "run_id": None,
+        "kpis": _empty_kpis_payload(),
+        "platforms": [],
+        "competitor_preview": _empty_competitor_preview(),
+        "source_preview": {"items": [], "total": 0},
+        "recent_questions": {"items": [], "total": 0},
+    }
+
+
+def build_dashboard_overview(
+    db: Session,
+    project_id: int,
+    *,
+    run_id: int | None = None,
+    platform_codes: list[str] | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> dict[str, Any]:
+    """构建数据大盘首屏：KPI、平台表现与竞品/信源/问题预览。"""
+    from app.geo_monitoring.services import competitor_analysis as competitor_analysis_service
+    from app.geo_monitoring.services import conversations as conversations_service
+    from app.geo_monitoring.services import source_analysis as source_analysis_service
+
+    require_active_project(db, project_id)
+    platform_codes = _normalize_platform_codes(platform_codes)
+
+    if run_id is not None:
+        run = get_run(db, run_id)
+        if run.project_id != project_id:
+            raise BusinessException(code=40400, message="监测运行不存在")
+    else:
+        run = _select_latest_run(db, project_id)
+
+    if run is None:
+        return _empty_overview_payload(project_id)
+
+    selected_codes = _resolve_platform_codes(run, platform_codes)
+    catalog = _load_platform_catalog(db, selected_codes)
+    collection_stats = _load_collection_stats(db, run.id)
+
+    analysis_conditions = [
+        PlatformAnalysis.run_id == run.id,
+        PlatformAnalysis.is_deleted.is_(False),
+    ]
+    if platform_codes:
+        analysis_conditions.append(PlatformAnalysis.platform_code.in_(platform_codes))
+    analysis_rows = list(
+        db.execute(select(PlatformAnalysis).where(*analysis_conditions))
+        .scalars()
+        .all()
+    )
+    analysis_by_code = {row.platform_code: row for row in analysis_rows}
+
+    competitor_data = competitor_analysis_service.get_competitor_analysis(
+        db,
+        project_id,
+        run_id=run.id,
+        platform_codes=platform_codes,
+        start_at=start_at,
+        end_at=end_at,
+        brand_scope="top5",
+    )
+
+    use_time_filter = start_at is not None or end_at is not None
+    target_brand = _load_target_brand(db, project_id)
+    if use_time_filter and target_brand is not None:
+        filtered_answers = _load_overview_answers(
+            db,
+            run_id=run.id,
+            platform_codes=platform_codes,
+            start_at=start_at,
+            end_at=end_at,
+        )
+        summary = _summary_from_filtered_answers(
+            filtered_answers,
+            target_brand_id=target_brand.id,
+        )
+    else:
+        summary = _aggregate_analysis_summary(analysis_rows)
+
+    extended = _extract_extended_kpis_from_competitor_data(competitor_data)
+    kpis = _summary_to_kpis_payload(summary, extended=extended)
+
+    platforms: list[dict[str, Any]] = []
+    ordered_codes = selected_codes or sorted(
+        set(collection_stats) | set(analysis_by_code)
+    )
+    for code in ordered_codes:
+        analysis_row = analysis_by_code.get(code)
+        platforms.append(
+            {
+                "platform_code": code,
+                "platform_name": catalog.get(code, code),
+                "analysis": _platform_analysis_payload(analysis_row)
+                if analysis_row is not None
+                else None,
+            }
+        )
+
+    source_data = source_analysis_service.get_source_analysis(
+        db,
+        project_id,
+        run_id=run.id,
+        platform_codes=platform_codes,
+        start_at=start_at,
+        end_at=end_at,
+        page=1,
+        page_size=_OVERVIEW_SOURCE_PREVIEW_LIMIT,
+    )
+    conversation_data = conversations_service.list_conversation_questions(
+        db,
+        project_id,
+        run_id=run.id,
+        platform_codes=platform_codes,
+        start_at=start_at,
+        end_at=end_at,
+        page=1,
+        page_size=_OVERVIEW_RECENT_QUESTIONS_LIMIT,
+    )
+
+    return {
+        "project_id": project_id,
+        "run_id": run.id,
+        "kpis": kpis,
+        "platforms": platforms,
+        "competitor_preview": _competitor_preview_payload(
+            competitor_data,
+            limit=_OVERVIEW_COMPETITOR_PREVIEW_LIMIT,
+        ),
+        "source_preview": _source_preview_payload(source_data),
+        "recent_questions": _recent_questions_preview_payload(conversation_data),
     }

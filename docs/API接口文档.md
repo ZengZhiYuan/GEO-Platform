@@ -1928,7 +1928,62 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/dashboard" \
 
 ---
 
-### 15.2 按指标查询趋势
+### 15.2 数据大盘页面级总览
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 数据大盘页面级总览 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/dashboard/overview` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `run_id` | integer | 否 | 指定运行 ID；不传则取最近已分析或已终态 run |
+| `platform_codes` | string[] | 否 | 平台端编码，可重复 query；仅过滤展示与指标分母 |
+| `start_at` / `end_at` | datetime | 否 | 过滤答案采集时间（ISO8601），传递给预览子聚合 |
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `project_id` | integer | 项目 ID |
+| `run_id` | integer/null | 当前聚合 run；无运行时为 `null` |
+| `kpis` | object | 大盘 KPI |
+| `platforms` | array | 分平台分析表现（`analysis` 未完成时为 `null`） |
+| `competitor_preview` | object | 竞品榜单预览（复用竞品分析服务，各榜最多 5 条） |
+| `source_preview` | object | 信源站点预览（复用信源分析服务，默认前 5 条） |
+| `recent_questions` | object | 最近问题预览（复用对话记录聚合，默认前 5 条） |
+
+**`kpis` 字段：**
+
+| 字段 | 说明 |
+| --- | --- |
+| `brand_mention_rate` | 目标品牌提及率 |
+| `brand_top1_mention_rate` | Top1 提及率 |
+| `brand_top3_mention_rate` | Top3 提及率 |
+| `valid_answer_count` | 有效回答数 |
+| `brand_mention_count` | 提及对话数 |
+| `average_rank` | 平均提及排名；从 `summary_json.metrics.brand_metrics[]` 读取，无法稳定读取时为 `null` |
+| `share_of_voice` | SOV；同上 |
+| `brand_mention_total_count` | 品牌提及次数汇总；同上 |
+
+无运行、或仅有采集未分析 run 时，KPI 字段为 `null`（`brand_mention_count` 等计数型在无分析时亦为 `null`），接口仍返回 `code=0`。
+
+**时间筛选口径：** 传入 `start_at`/`end_at` 时，`kpis` 与扩展 KPI（`average_rank`/`share_of_voice`/`brand_mention_total_count`）按该 run 内答案采集时间重算，与竞品/信源/问题预览一致；`platforms[].analysis` 仍为 run 级 `PlatformAnalysis` 快照，不受时间筛选影响。
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/dashboard/overview" \
+  --data-urlencode "platform_codes=qwen" \
+  --data-urlencode "platform_codes=deepseek"
+```
+
+---
+
+### 15.3 按指标查询趋势
 
 | 项目 | 说明 |
 | --- | --- |

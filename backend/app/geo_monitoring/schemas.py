@@ -1086,3 +1086,44 @@ class CompetitorAnalysisOut(BaseModel):
     boards: CompetitorAnalysisBoardsRead
     trends: CompetitorAnalysisTrendsRead
 
+
+class DashboardOverviewKpiRead(BaseModel):
+    brand_mention_rate: str | None = None
+    brand_top1_mention_rate: str | None = None
+    brand_top3_mention_rate: str | None = None
+    valid_answer_count: int | None = None
+    brand_mention_count: int | None = None
+    average_rank: str | None = None
+    share_of_voice: str | None = None
+    brand_mention_total_count: int | None = None
+
+
+class DashboardOverviewPlatformRead(BaseModel):
+    platform_code: str
+    platform_name: str
+    analysis: dict[str, Any] | None = None
+
+
+class DashboardOverviewCompetitorPreviewRead(BaseModel):
+    boards: CompetitorAnalysisBoardsRead
+
+
+class DashboardOverviewSourcePreviewRead(BaseModel):
+    items: list[SourceAnalysisSiteRead] = Field(default_factory=list)
+    total: int = 0
+
+
+class DashboardOverviewRecentQuestionsRead(BaseModel):
+    items: list[ConversationQuestionRead] = Field(default_factory=list)
+    total: int = 0
+
+
+class DashboardOverviewOut(BaseModel):
+    project_id: int
+    run_id: int | None = None
+    kpis: DashboardOverviewKpiRead
+    platforms: list[DashboardOverviewPlatformRead] = Field(default_factory=list)
+    competitor_preview: DashboardOverviewCompetitorPreviewRead
+    source_preview: DashboardOverviewSourcePreviewRead
+    recent_questions: DashboardOverviewRecentQuestionsRead
+

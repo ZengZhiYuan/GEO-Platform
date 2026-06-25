@@ -11,7 +11,10 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.response import paginate, success
 from app.geo_monitoring.services.analysis import MetricSnapshot
-from app.geo_monitoring.services.dashboard import build_project_dashboard
+from app.geo_monitoring.services.dashboard import (
+    build_dashboard_overview,
+    build_project_dashboard,
+)
 from app.geo_monitoring.services.projects import require_active_project
 
 router = APIRouter()
@@ -24,6 +27,29 @@ def get_project_dashboard(
     db: Session = Depends(get_db),
 ) -> dict:
     payload = build_project_dashboard(db, project_id, run_id=run_id)
+    return success(payload)
+
+
+@router.get(
+    "/projects/{project_id}/dashboard/overview",
+    summary="数据大盘页面级总览",
+)
+def get_project_dashboard_overview(
+    project_id: int = Path(..., ge=1),
+    run_id: int | None = Query(None, ge=1, description="指定运行 ID，默认取最近已分析或已终态 run"),
+    platform_codes: list[str] | None = Query(None),
+    start_at: datetime | None = Query(None),
+    end_at: datetime | None = Query(None),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = build_dashboard_overview(
+        db,
+        project_id,
+        run_id=run_id,
+        platform_codes=platform_codes,
+        start_at=start_at,
+        end_at=end_at,
+    )
     return success(payload)
 
 

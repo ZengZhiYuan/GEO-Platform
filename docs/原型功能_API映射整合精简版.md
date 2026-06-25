@@ -50,6 +50,7 @@
 | 答案列表与详情 | `GET /runs/{run_id}/answers`、`GET /answers/{answer_id}` | 详情包含原文、引用和品牌识别；未暴露 `raw_response_json`、问题文本和问题类型。 |
 | 分析触发与结果 | `POST /runs/{run_id}/analyze`、`GET /runs/{run_id}/analysis` | 返回平台指标、竞品、信源、prompt 竞争力和 Agent 洞察。 |
 | 项目大盘 | `GET /projects/{project_id}/dashboard?run_id=` | 当前是最新 run 或指定 run 的汇总，不支持 `start_at/end_at/platform_codes` 的页面级聚合。 |
+| 大盘首屏总览 | `GET /projects/{project_id}/dashboard/overview?run_id=&platform_codes=&start_at=&end_at=` | 一次返回 KPI、平台表现、竞品/信源/问题预览；复用 P0-3/4/5 聚合服务。✅ 已覆盖 |
 | 趋势 | `GET /projects/{project_id}/trends` | 支持单 `metric_code`、单 `platform_code`、时间范围和分页。 |
 
 ### 2.3 调度与报告域
@@ -129,17 +130,17 @@
 | Top3/首屏提及率 | `summary.brand_top3_mention_rate` 或 `platforms[].analysis.brand_top3_mention_rate` | 已覆盖 |
 | 对话次数 | `summary.valid_answer_count` | 可用，口径为有效回答数 |
 | 提及对话数 | `summary.brand_mention_count` | 可用 |
-| 平均提及排名 | `summary_json.metrics.brand_metrics[]` 中目标品牌行 | 可拼，但非顶层稳定字段 |
-| SOV | `summary_json.metrics.brand_metrics[]` 中目标品牌行 | 可拼，但非顶层稳定字段 |
-| 竞品预览 | `platforms[].analysis.top_competitors` 或 `brand_metrics[]` | 可拼 |
-| 信源预览 | `platforms[].analysis.top_sources` | 可拼 |
-| 最近问题 | 答案、任务、Prompt 多接口拼装 | 缺页面级接口 |
+| 平均提及排名 | `summary_json.metrics.brand_metrics[]` 中目标品牌行；overview `kpis.average_rank` | 可拼；overview 在可读取时稳定返回 |
+| SOV | `summary_json.metrics.brand_metrics[]` 中目标品牌行；overview `kpis.share_of_voice` | 可拼；overview 在可读取时稳定返回 |
+| 竞品预览 | `platforms[].analysis.top_competitors` 或 `brand_metrics[]`；overview `competitor_preview` | 可拼；overview 已覆盖 |
+| 信源预览 | `platforms[].analysis.top_sources`；overview `source_preview` | 可拼；overview 已覆盖 |
+| 最近问题 | 答案、任务、Prompt 多接口拼装；overview `recent_questions` | overview 已覆盖 |
 
 建议补齐：
 
-- `GET /projects/{project_id}/dashboard/overview?platform_codes=&start_at=&end_at=`：一次返回 KPI、平台表现、竞品预览、信源预览和最近问题。
-- 在 `dashboard` 或 overview 中稳定返回 `average_mention_rank/share_of_voice/brand_mention_total_count`。
-- `GET /projects/{project_id}/conversation-questions/recent`：支撑大盘问题预览。
+- `GET /projects/{project_id}/dashboard/overview?platform_codes=&start_at=&end_at=` ✅ 已覆盖
+- 在 `dashboard` 或 overview 中稳定返回 `average_mention_rank/share_of_voice/brand_mention_total_count`（overview `kpis` 在 `brand_metrics[]` 可读时返回，否则 `null`）。
+- `GET /projects/{project_id}/conversation-questions/recent`：已由 overview `recent_questions` 预览替代。
 
 ### 3.4 竞品分析
 

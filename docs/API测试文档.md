@@ -681,6 +681,7 @@ Agent 审计字段包括：
 | 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 获取项目最新分析汇总 | `GET` | `/api/geo-monitoring/projects/{project_id}/dashboard` | Path：`project_id` | `project_id`、`latest_run`、`platforms[]` | `code=0`；有运行时 `latest_run` 非空，无运行时为 `null` | 项目不存在 `40400`；项目未启用 `40001` |
+| 数据大盘页面级总览 | `GET` | `/api/geo-monitoring/projects/{project_id}/dashboard/overview` | Path：`project_id`；Query：可选 `run_id`、`platform_codes[]`、`start_at`、`end_at` | `run_id`、`kpis`、`platforms[]`、`competitor_preview`、`source_preview`、`recent_questions` | 无运行 `run_id=null`、数组为空；有分析数据时 KPI 与平台表现非空；`platform_codes` 过滤平台与预览；未分析 run 不报错 | 项目不存在 `40400` |
 | 按指标、平台和时间范围查询趋势 | `GET` | `/api/geo-monitoring/projects/{project_id}/trends` | Path：`project_id`；Query：必填 `metric_code`，可选 `platform_code`、`start_at`、`end_at`、`page`、`page_size` 默认 50 且 1-200 | 分页趋势点 | `code=0`，趋势点符合筛选条件 | 缺少 `metric_code` 返回 `422`；项目不存在 `40400` |
 
 `latest_run` 字段：
@@ -696,6 +697,14 @@ Agent 审计字段包括：
 `platform_code`、`platform_name`、`collection`（`total_tasks`/`succeeded_tasks`/`failed_tasks`/`cancelled_tasks`）、`analysis`（分析指标，未完成时为 `null`）、`metrics[]`（该平台指标快照）。
 
 可选 Query：`run_id` — 指定某次运行；不传则优先取最近已分析运行，否则取最近采集终态运行。
+
+**overview 自动化测试：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_dashboard_api.py
+```
+
+`overview` 关键字段：`kpis`（含 `average_rank`/`share_of_voice`/`brand_mention_total_count`，与竞品分析目标品牌 KPI 一致；无分析时为 `null`）、`competitor_preview.boards`、`source_preview.items`、`recent_questions.items`。`start_at`/`end_at` 会重算 `kpis` 与预览；`platforms[].analysis` 仍为 run 快照。
 
 趋势点字段：
 
