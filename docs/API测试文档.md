@@ -700,7 +700,7 @@ Agent 审计字段包括：
 | --- | --- | --- | --- | --- | --- | --- |
 | 获取项目最新分析汇总 | `GET` | `/api/geo-monitoring/projects/{project_id}/dashboard` | Path：`project_id` | `project_id`、`latest_run`、`platforms[]` | `code=0`；有运行时 `latest_run` 非空，无运行时为 `null` | 项目不存在 `40400`；项目未启用 `40001` |
 | 数据大盘页面级总览 | `GET` | `/api/geo-monitoring/projects/{project_id}/dashboard/overview` | Path：`project_id`；Query：可选 `run_id`、`platform_codes[]`、`start_at`、`end_at` | `run_id`、`kpis`、`platforms[]`、`competitor_preview`、`source_preview`、`recent_questions` | 无运行 `run_id=null`、数组为空；有分析数据时 KPI 与平台表现非空；`platform_codes` 过滤平台与预览；未分析 run 不报错 | 项目不存在 `40400` |
-| 按指标、平台和时间范围查询趋势 | `GET` | `/api/geo-monitoring/projects/{project_id}/trends` | Path：`project_id`；Query：必填 `metric_code`，可选 `platform_code`、`start_at`、`end_at`、`page`、`page_size` 默认 50 且 1-200 | 分页趋势点 | `code=0`，趋势点符合筛选条件 | 缺少 `metric_code` 返回 `422`；项目不存在 `40400` |
+| 按指标、平台和时间范围查询趋势 | `GET` | `/api/geo-monitoring/projects/{project_id}/trends` | Path：`project_id`；Query：必填 `metric_code`，可选 `brand_id`、`platform_code`、`start_at`、`end_at`、`page`、`page_size` 默认 50 且 1-200 | 分页趋势点 | `code=0`，趋势点符合筛选条件；平台级 `brand_mention_rate` 与 `brand_visibility` 返回相同数据，响应 `metric_code` 为 `brand_visibility`；带 `brand_id` 时 `brand_mention_rate` 查询品牌维度快照 | 缺少 `metric_code` 返回 `422`；项目不存在 `40400` |
 
 `latest_run` 字段：
 
@@ -709,6 +709,12 @@ Agent 审计字段包括：
 `summary` 字段（分析完成后跨平台汇总，`scope=all`）：
 
 `valid_answer_count`、`brand_mention_count`、`brand_mention_rate`、`brand_first_count`、`brand_first_rate`、`brand_top10_mention_count`、`brand_top10_mention_rate`、`brand_mention_total_count`、`positive_rate`、`neutral_rate`、`negative_rate`、`data_completeness_rate`、`metrics[]`（按分子/分母加权汇总，非简单平均；`metrics[]` 不含 `brand_id` 维度快照）。
+
+**P1-4 趋势指标编码兼容验收：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_dashboard_api.py::test_project_trends_brand_mention_rate_alias_maps_to_brand_visibility backend\tests\geo_monitoring\test_dashboard_api.py::test_project_trends_brand_mention_rate_with_brand_id_queries_brand_snapshots --basetemp .pytest-tmp
+```
 
 **P1-1 指标快照验收：**
 

@@ -14,6 +14,7 @@ from app.geo_monitoring.services.analysis import MetricSnapshot
 from app.geo_monitoring.services.dashboard import (
     build_dashboard_overview,
     build_project_dashboard,
+    resolve_trend_metric_code,
 )
 from app.geo_monitoring.services.projects import require_active_project
 
@@ -66,9 +67,10 @@ def list_project_trends(
     db: Session = Depends(get_db),
 ) -> dict:
     require_active_project(db, project_id)
+    resolved_metric_code = resolve_trend_metric_code(metric_code, brand_id=brand_id)
     conditions = [
         MetricSnapshot.project_id == project_id,
-        MetricSnapshot.metric_code == metric_code,
+        MetricSnapshot.metric_code == resolved_metric_code,
         MetricSnapshot.is_deleted.is_(False),
     ]
     if brand_id is not None:

@@ -2156,8 +2156,9 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/dashboard/overview"
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `metric_code` | string | **是** | 指标编码；平台级含 `brand_visibility`、`brand_top1_mention_rate`、`brand_top3_mention_rate`、`brand_top10_mention_rate`、`average_mention_rank`、`share_of_voice`、`brand_mention_total_count`、`positive_rate`、`neutral_rate`、`negative_rate` 等；品牌维度快照另含 `brand_mention_rate`（需结合 `brand_id` 查询，见 `geo_metric_snapshot.brand_id`） |
+| `metric_code` | string | **是** | 指标编码。平台级目标品牌可见度**推荐**使用 `brand_visibility`（分析写入的 canonical 编码）。**兼容别名：** 未传 `brand_id` 时，`brand_mention_rate` 自动映射为 `brand_visibility` 查询平台级快照；传 `brand_id` 时 `brand_mention_rate` 表示品牌维度提及率，不做别名转换。其它平台级编码含 `brand_top1_mention_rate`、`brand_top3_mention_rate`、`brand_top10_mention_rate`、`average_mention_rank`、`share_of_voice`、`brand_mention_total_count`、`positive_rate`、`neutral_rate`、`negative_rate` 等 |
 | `platform_code` | string | 否 | 平台编码 |
+| `brand_id` | integer | 否 | 品牌 ID；不传则仅返回平台级快照（`brand_id=null`）；传入则查询该品牌的品牌维度快照 |
 | `start_at` | datetime | 否 | 起始时间 |
 | `end_at` | datetime | 否 | 结束时间 |
 | `page` | integer | 否 | 默认 1 |
@@ -2170,7 +2171,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/dashboard/overview"
 | `run_id` | 运行 ID |
 | `platform_code` | 平台编码 |
 | `brand_id` | 品牌 ID；平台级指标为 `null`，品牌维度快照为具体品牌 |
-| `metric_code` | 指标编码 |
+| `metric_code` | 指标编码（**始终返回快照中实际写入的 canonical 编码**，如平台级可见度为 `brand_visibility`；即使用兼容别名 `brand_mention_rate` 查询，响应仍为 `brand_visibility`） |
 | `numerator` / `denominator` | 分子/分母 |
 | `metric_value` | 指标值 |
 | `prompt_set_version` | 提示词集版本 |
@@ -2180,8 +2181,18 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/dashboard/overview"
 **调用示例：**
 
 ```bash
+# 推荐：平台级目标品牌可见度趋势
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/trends" \
+  --data-urlencode "metric_code=brand_visibility"
+
+# 兼容：旧前端/文档使用 brand_mention_rate 查询平台级可见度（映射为 brand_visibility）
 curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/trends" \
   --data-urlencode "metric_code=brand_mention_rate"
+
+# 品牌维度提及率趋势（需 brand_id）
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/trends" \
+  --data-urlencode "metric_code=brand_mention_rate" \
+  --data-urlencode "brand_id=2"
 ```
 
 ---
@@ -2426,7 +2437,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/source-analysis/exp
 - 榜单优先聚合 `PlatformAnalysis.summary_json.metrics.brand_metrics[]`；单行缺失时对该平台退化使用 `top_competitors` 与目标品牌平台指标（按平台逐行处理，避免混合快照漏算）。
 - 传入 `start_at`/`end_at` 时仅在已存在 `PlatformAnalysis` 的前提下按答案重算；未分析 run 即使带时间过滤也返回空榜；`top1_rate` 与其它 KPI 同步按过滤后答案计算，且 Top1 口径与 `compute_brand_rank_rate(max_rank=1)` 一致（按品牌出现位置排序后的相对排名，而非字符 `first_position <= 1`）。
 - `mention_count` 来自 `BrandResult.mention_count` 或分析快照；`average_rank`/`share_of_voice` 无可靠值时返回 `null`。
-- `geo_metric_snapshot` 已支持可选 `brand_id` 维度；分析完成后写入平台级与品牌级快照（`brand_mention_rate`、`average_mention_rank`、`share_of_voice`、`brand_mention_total_count`）。`GET /trends` 可按 `metric_code` + `brand_id` 查询品牌历史序列；`competitor-analysis.trends` 仍待 P1-4 编码兼容后填充。
+- `geo_metric_snapshot` 已支持可选 `brand_id` 维度；分析完成后写入平台级与品牌级快照。`GET /trends` 可按 `metric_code` + `brand_id` 查询品牌历史序列；平台级未传 `brand_id` 时 `brand_mention_rate` 作为 `brand_visibility` 的兼容别名。`competitor-analysis.trends` 仍为 P0 空数组占位，竞品历史趋势请直接调用 `GET /trends` 并传入 `brand_id`。
 
 **出参 `data` 字段：**
 

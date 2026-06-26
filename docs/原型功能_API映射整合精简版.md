@@ -19,7 +19,7 @@
 | 核心数据模型 | 后端以 `run_id` 为一次采集分析批次中心；`dashboard` 默认取最近已分析或已终态 run，也可指定 `run_id`。 | 页面“时间范围聚合”不能直接等同于 `dashboard`。 |
 | 平台端 | 当前有普通平台码 `doubao/qwen/...`，也有 Aidso 平台端码 `aidso_doubao_web/app` 等；但 schema 中没有独立 `base_platform/endpoint_type/logo_url` 字段。 | 可以先把 Aidso 平台端码当展示键使用，长期建议补结构化平台端元数据。 |
 | 大盘提及率字段 | `dashboard.summary.brand_mention_rate`、`platforms[].analysis.brand_mention_rate` 是已落地展示字段。 | 大盘 KPI 直接用该字段。 |
-| 趋势 metric_code | 当前代码写入的目标品牌可见度趋势为 `brand_visibility`，不是旧文档中的 `brand_mention_rate`。同时写入 `brand_top1_mention_rate`、`brand_top3_mention_rate`、`citation_rate`、`source_coverage`、`recommendation_combined_rate`。 | 前端趋势先使用当前实际编码；如产品坚持 `brand_mention_rate`，后端应增加别名兼容。 |
+| 趋势 metric_code | 当前代码写入的目标品牌可见度趋势为 `brand_visibility`；`GET /trends` 在未传 `brand_id` 时将 `brand_mention_rate` 兼容映射为 `brand_visibility`。同时写入 `brand_top1_mention_rate`、`brand_top3_mention_rate`、`citation_rate`、`source_coverage`、`recommendation_combined_rate`。 | 新代码优先 `brand_visibility`；旧前端可继续传 `brand_mention_rate` 查询平台级趋势。 |
 | 竞品指标 | `summary_json.metrics.brand_metrics[]` 中有目标品牌和竞品的当前快照指标，包括 `mention_rate_percent`、`average_mention_rank`、`share_of_voice` 等。 | 可用于当前榜单；不能用于竞品历史趋势。 |
 | 对话记录 | `/runs/{run_id}/answers` 是答案粒度，即 prompt × platform；不是“按 AI 问题聚合”的页面表。 | 原型表格需要新增聚合接口，避免前端全量拉取答案后自算。 |
 | 信源分析 | 当前有答案引用 `citations[]` 和平台分析 `top_sources`；`source_type` 代码内主要映射 6 类。 | 原型 8 类信源需要统一字典和聚合接口。 |
@@ -262,7 +262,7 @@
 
 | 缺口 | 建议接口/改造 | 影响页面 |
 | --- | --- | --- |
-| 趋势指标编码别名 | 支持 `brand_mention_rate` 作为 `brand_visibility` 的兼容别名，或文档统一改为 `brand_visibility` | 数据大盘、竞品分析 |
+| 趋势指标编码别名 | `GET /trends` 支持平台级 `brand_mention_rate` → `brand_visibility` 兼容别名 ✅ | 数据大盘、竞品分析 |
 | 平均排名与 SOV 顶层化 | 在 dashboard/overview 返回稳定字段，并纳入快照 | 数据大盘、竞品分析、对话记录 |
 | 项目卡聚合 | `GET /projects/overview` ✅ | 项目管理 |
 | Prompt 类型字典 | `GET /prompt-types` ✅ | 创建项目、编辑配置 |
@@ -288,8 +288,8 @@
 以下说法在两份旧文档中容易造成误解，新对接中应避免直接引用：
 
 - “平台端完全无后端模型”：不准确。当前 Aidso 已用 `aidso_*_web/app` 平台码承载端信息，但缺结构化 endpoint 字段。
-- “趋势用 `metric_code=brand_mention_rate`”：不贴合当前代码。当前写入的是 `brand_visibility`，除非后端增加别名。
-- “竞品趋势可由 trends 获取”：不准确。当前 `geo_metric_snapshot` 没有 `brand_id` 维度，竞品趋势取不到。
+- “趋势用 `metric_code=brand_mention_rate`”：平台级已兼容映射为 `brand_visibility`；品牌维度需传 `brand_id`，此时 `brand_mention_rate` 为真实品牌快照编码。
+- “竞品趋势可由 trends 获取”：需区分接口。`GET /projects/{id}/trends?metric_code=...&brand_id=...` 已可查询 `geo_metric_snapshot` 品牌维度历史序列；`GET /competitor-analysis` 的 `trends` 字段仍为 P0 空数组占位，竞品页趋势图应直接调用 `/trends` 并传入竞品 `brand_id`。
 - “平均排名、SOV 完全没有”：不准确。当前 `summary_json.metrics.brand_metrics[]` 有当前快照值，但没有稳定顶层字段和趋势快照。
 - “信源类型就是原型 8 类”：不准确。当前代码主要映射 6 类，需字典统一。
 - “对话记录主表直接用 answers 分页”：不贴合原型。`answers` 是答案粒度，原型需要问题聚合粒度。

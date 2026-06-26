@@ -32,6 +32,18 @@ _OVERVIEW_RECENT_QUESTIONS_LIMIT = 5
 _OVERVIEW_COMPETITOR_PREVIEW_LIMIT = 5
 _OVERVIEW_SOURCE_PREVIEW_LIMIT = 5
 
+# 平台级目标品牌可见度在快照中写入 brand_visibility；brand_mention_rate 为历史/展示别名。
+_TREND_METRIC_ALIASES: dict[str, str] = {
+    "brand_mention_rate": "brand_visibility",
+}
+
+
+def resolve_trend_metric_code(metric_code: str, *, brand_id: int | None) -> str:
+    """解析趋势查询指标编码；平台级 brand_mention_rate 兼容映射为 brand_visibility。"""
+    if brand_id is not None:
+        return metric_code
+    return _TREND_METRIC_ALIASES.get(metric_code, metric_code)
+
 _RUN_TERMINAL = frozenset({"completed", "partial_success", "failed", "cancelled"})
 _ANALYZED = frozenset({"completed", "partial_success"})
 

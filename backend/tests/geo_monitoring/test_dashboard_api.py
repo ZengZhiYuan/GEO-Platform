@@ -315,6 +315,62 @@ def test_project_trends_filter_by_metric_and_platform(client, analyzed_run):
     assert body["data"]["items"][0]["platform_code"] == "qwen"
 
 
+def test_project_trends_brand_mention_rate_alias_maps_to_brand_visibility(
+    client, analyzed_run
+):
+    project_id = analyzed_run["project_id"]
+    canonical = client.get(
+        f"/api/geo-monitoring/projects/{project_id}/trends",
+        params={
+            "metric_code": "brand_visibility",
+            "platform_code": "qwen",
+        },
+    ).json()
+    alias = client.get(
+        f"/api/geo-monitoring/projects/{project_id}/trends",
+        params={
+            "metric_code": "brand_mention_rate",
+            "platform_code": "qwen",
+        },
+    ).json()
+    assert alias["code"] == 0
+    assert alias["data"]["total"] == canonical["data"]["total"]
+    assert alias["data"]["total"] >= 1
+    assert alias["data"]["items"] == canonical["data"]["items"]
+    assert alias["data"]["items"][0]["metric_code"] == "brand_visibility"
+
+
+def test_project_trends_brand_mention_rate_with_brand_id_queries_brand_snapshots(
+    client, session_factory, analyzed_run
+):
+    from app.geo_monitoring.services.analysis import MetricSnapshot
+
+    project_id = analyzed_run["project_id"]
+    with session_factory() as db:
+        brand_snapshot = db.execute(
+            select(MetricSnapshot).where(
+                MetricSnapshot.run_id == analyzed_run["run_id"],
+                MetricSnapshot.brand_id.is_not(None),
+                MetricSnapshot.metric_code == "brand_mention_rate",
+            )
+        ).scalars().first()
+    assert brand_snapshot is not None
+
+    response = client.get(
+        f"/api/geo-monitoring/projects/{project_id}/trends",
+        params={
+            "metric_code": "brand_mention_rate",
+            "brand_id": brand_snapshot.brand_id,
+            "platform_code": "qwen",
+        },
+    )
+    body = response.json()
+    assert body["code"] == 0
+    assert body["data"]["total"] >= 1
+    assert body["data"]["items"][0]["metric_code"] == "brand_mention_rate"
+    assert body["data"]["items"][0]["brand_id"] == brand_snapshot.brand_id
+
+
 def test_analyze_rejects_missing_run(client):
     response = client.post("/api/geo-monitoring/runs/999999/analyze")
     assert response.json()["code"] == 40400
