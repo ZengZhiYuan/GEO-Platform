@@ -255,6 +255,13 @@ X-Request-ID: 可选，自定义请求 ID
 | 获取项目 | `GET` | `/api/geo-monitoring/projects/{project_id}` | Path：`project_id >= 1` | `ProjectOut` | `data.id = project_id` | 不存在返回 `code=40400`、`message=监测项目不存在` |
 | 更新项目 | `PUT` | `/api/geo-monitoring/projects/{project_id}` | Path：`project_id >= 1`；Body：`ProjectUpdate` | `ProjectOut` | 返回字段已更新，`updated_at` 变化 | 不存在返回 `40400`；状态非法返回 `422` |
 | 删除项目 | `DELETE` | `/api/geo-monitoring/projects/{project_id}` | Path：`project_id >= 1` | `{ "id": project_id }` | 返回删除 ID，后续获取返回不存在 | 项目已有监测运行引用时 HTTP `409`、`code=40903` |
+| 项目切换器列表 | `GET` | `/api/geo-monitoring/projects/options` | — | `{ "items": ProjectOption[] }` | `code=0`；每项含 `id/project_name/status/monitoring_paused` | — |
+| 项目卡片概览 | `GET` | `/api/geo-monitoring/projects/overview` | Query：`page`、`page_size`、`project_name`、`status` | 分页项目卡片摘要 | `platform_count` 按 `base_platform` 去重；`endpoint_count` 为平台编码数 | — |
+| 暂停监测 | `POST` | `/api/geo-monitoring/projects/{project_id}/pause` | Path：`project_id` | `ProjectOut` | `monitoring_paused=true` | 不存在 `40400` |
+| 恢复监测 | `POST` | `/api/geo-monitoring/projects/{project_id}/resume` | Path：`project_id` | `ProjectOut` | `monitoring_paused=false` | 不存在 `40400` |
+| 删除前检查 | `GET` | `/api/geo-monitoring/projects/{project_id}/delete-check` | Path：`project_id` | `run_count/report_count/schedule_count/can_delete/blocking_reasons` | 有运行则 `can_delete=false`；`blocking_reasons` 仅含运行阻塞 | 不存在 `40400` |
+| 暂停后调度触发 | `POST` | `/api/geo-monitoring/schedules/{schedule_id}/trigger` | Path：`schedule_id`（项目已暂停） | — | — | `code=40054`，消息含「暂停」 |
+| 暂停后创建运行 | `POST` | `/api/geo-monitoring/runs` | Body：`project_id`（已暂停项目） | — | — | `code=40054`，消息含「暂停」 |
 
 创建示例：
 
@@ -262,6 +269,12 @@ X-Request-ID: 可选，自定义请求 ID
 curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects" \
   -H "Content-Type: application/json" \
   -d '{"project_name":"杭州宋城文旅监测","industry":"文旅演艺","timezone":"Asia/Shanghai"}'
+```
+
+专项 pytest：
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_project_overview_api.py
 ```
 
 ## 5. 品牌与别名模块

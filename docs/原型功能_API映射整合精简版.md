@@ -83,10 +83,10 @@
 
 建议补齐：
 
-- `GET /projects/overview`：一次返回项目卡所需摘要，避免每个项目再调 `monitor-setup/dashboard`。
-- `POST /projects/{project_id}/pause`、`POST /projects/{project_id}/resume`：区分暂停监测与禁用项目。
-- `GET /projects/{project_id}/delete-check`：删除前返回关联 run、报告和调度影响。
-- `GET /projects/options`：用于顶部项目切换器的轻量列表。
+- `GET /projects/overview`：一次返回项目卡所需摘要，避免每个项目再调 `monitor-setup/dashboard`。✅ 已覆盖（P1-2）
+- `POST /projects/{project_id}/pause`、`POST /projects/{project_id}/resume`：区分暂停监测与禁用项目。✅ 已覆盖（P1-2）
+- `GET /projects/{project_id}/delete-check`：删除前返回关联 run、报告和调度影响。✅ 已覆盖（P1-2）
+- `GET /projects/options`：用于顶部项目切换器的轻量列表。✅ 已覆盖（P1-2）
 
 ### 3.2 创建监测项目向导
 
@@ -264,13 +264,13 @@
 | --- | --- | --- |
 | 趋势指标编码别名 | 支持 `brand_mention_rate` 作为 `brand_visibility` 的兼容别名，或文档统一改为 `brand_visibility` | 数据大盘、竞品分析 |
 | 平均排名与 SOV 顶层化 | 在 dashboard/overview 返回稳定字段，并纳入快照 | 数据大盘、竞品分析、对话记录 |
-| 项目卡聚合 | `GET /projects/overview` | 项目管理 |
+| 项目卡聚合 | `GET /projects/overview` ✅ | 项目管理 |
 | Prompt 类型字典 | `GET /prompt-types` ✅ | 创建项目、编辑配置 |
 | 信源类型字典 | `GET /source-types` ✅ | 信源引用分析 |
 | 回答详情扩展 | `prompt_text/prompt_type/reasoning_text/search_keywords` | AI 对话记录 |
 | Excel 导出 | `conversation-questions/export`、`source-analysis/export` 或报告格式增加 `xlsx` | AI 对话记录、信源引用分析 |
-| 暂停/恢复监测 | `POST /projects/{id}/pause/resume` | 项目管理 |
-| 删除影响检查 | `GET /projects/{id}/delete-check` | 项目管理 |
+| 暂停/恢复监测 | `POST /projects/{id}/pause/resume` ✅ | 项目管理 |
+| 删除影响检查 | `GET /projects/{id}/delete-check` ✅ | 项目管理 |
 
 ### P2：后续体验增强
 

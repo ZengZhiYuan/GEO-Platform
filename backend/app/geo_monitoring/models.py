@@ -55,6 +55,9 @@ class MonitorProject(BaseModel):
     default_platform_codes: Mapped[list[str]] = mapped_column(
         JSON_VALUE, default=list, server_default=text("'[]'"), nullable=False
     )
+    monitoring_paused: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
 
 
 # 品牌：目标品牌、竞品或候选品牌，归属监测项目。

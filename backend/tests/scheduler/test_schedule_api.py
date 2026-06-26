@@ -86,3 +86,21 @@ def test_delete_schedule(client, schedule_setup):
 
     assert deleted["code"] == 0
     assert missing["code"] != 0
+
+
+def test_paused_project_blocks_schedule_trigger(client, schedule_setup):
+    project_id = schedule_setup["project_id"]
+    schedule = client.post(
+        f"/api/geo-monitoring/projects/{project_id}/schedules",
+        json={"name": "manual-paused", "cron_expr": "0 9 * * *"},
+    ).json()["data"]
+
+    pause = client.post(f"/api/geo-monitoring/projects/{project_id}/pause")
+    assert pause.json()["code"] == 0
+
+    triggered = client.post(
+        f"/api/geo-monitoring/schedules/{schedule['id']}/trigger"
+    ).json()
+
+    assert triggered["code"] == 40054
+    assert "暂停" in triggered["message"]

@@ -14,7 +14,7 @@ from app.geo_monitoring.repositories import platforms as platform_repo
 from app.geo_monitoring.repositories import prompts as prompt_repo
 from app.geo_monitoring.repositories import runs as run_repo
 from app.geo_monitoring.schemas import RunCreate, RunDetailRead
-from app.geo_monitoring.services.projects import require_active_project
+from app.geo_monitoring.services.projects import require_active_project, require_monitoring_not_paused
 
 RUN_TERMINAL_STATUSES = frozenset(
     {"completed", "partial_success", "failed", "cancelled"}
@@ -281,6 +281,7 @@ def _start_collection(db: Session, run_id: int) -> None:
 # 创建监测运行、扇出 QueryTask 并启动采集
 def create_run(db: Session, payload: RunCreate) -> MonitorRun:
     project = require_active_project(db, payload.project_id)
+    require_monitoring_not_paused(project)
     prompt_set = _resolve_prompt_set(db, project.id, payload.prompt_set_id)
     prompts = _enabled_prompts(db, prompt_set.id)
     platform_codes = payload.platform_codes

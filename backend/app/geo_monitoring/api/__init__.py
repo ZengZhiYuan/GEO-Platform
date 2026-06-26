@@ -13,6 +13,7 @@ from app.geo_monitoring.api.dashboard import router as dashboard_router
 from app.geo_monitoring.api.metadata import router as metadata_router
 from app.geo_monitoring.api.monitor_setup import router as monitor_setup_router
 from app.geo_monitoring.api.platforms import router as platforms_router
+from app.geo_monitoring.api.project_overview import router as project_overview_router
 from app.geo_monitoring.api.projects import router as projects_router
 from app.geo_monitoring.api.prompt_library import router as prompt_library_router
 from app.geo_monitoring.api.prompts import router as prompts_router
@@ -23,6 +24,7 @@ from app.geo_monitoring.api.source_analysis import router as source_analysis_rou
 
 _SUB_ROUTERS = (
     ai_generation_router,
+    project_overview_router,
     projects_router,
     brands_router,
     core_keywords_router,

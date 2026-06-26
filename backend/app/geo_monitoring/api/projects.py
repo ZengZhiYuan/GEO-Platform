@@ -12,6 +12,7 @@ from app.geo_monitoring.schemas import (
     ProjectUpdate,
 )
 from app.geo_monitoring.services import projects as project_service
+from app.geo_monitoring.services import project_overview as project_overview_service
 
 router = APIRouter()
 
@@ -70,3 +71,27 @@ def delete_project(
 ) -> dict:
     project_service.delete_project(db, project_id)
     return success({"id": project_id})
+
+
+@router.post("/projects/{project_id}/pause", summary="暂停项目监测")
+def pause_project(
+    project_id: int = Path(..., ge=1), db: Session = Depends(get_db)
+) -> dict:
+    project = project_service.pause_project(db, project_id)
+    return success(ProjectOut.model_validate(project).model_dump(mode="json"))
+
+
+@router.post("/projects/{project_id}/resume", summary="恢复项目监测")
+def resume_project(
+    project_id: int = Path(..., ge=1), db: Session = Depends(get_db)
+) -> dict:
+    project = project_service.resume_project(db, project_id)
+    return success(ProjectOut.model_validate(project).model_dump(mode="json"))
+
+
+@router.get("/projects/{project_id}/delete-check", summary="删除前关联检查")
+def delete_check_project(
+    project_id: int = Path(..., ge=1), db: Session = Depends(get_db)
+) -> dict:
+    payload = project_overview_service.get_delete_check(db, project_id)
+    return success(payload.model_dump(mode="json"))

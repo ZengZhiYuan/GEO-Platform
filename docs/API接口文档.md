@@ -134,6 +134,7 @@
 | `report_title` | string/null | 报告标题 |
 | `report_subtitle` | string/null | 报告副标题 |
 | `default_platform_codes` | string[] | 项目默认监测平台编码列表 |
+| `monitoring_paused` | boolean | 是否暂停监测（不影响历史数据，仅阻止调度与新运行） |
 | `created_at` | string (ISO8601) | 创建时间 |
 | `updated_at` | string (ISO8601) | 更新时间 |
 
@@ -634,6 +635,157 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/projects/1" \
 
 ```bash
 curl -X DELETE "http://127.0.0.1:8000/api/geo-monitoring/projects/1"
+```
+
+---
+
+### 4.6 项目切换器轻量列表
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 项目切换器轻量列表 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/options` |
+
+**出参 `data`：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `items` | array | 轻量项目列表 |
+| `items[].id` | integer | 项目 ID |
+| `items[].project_name` | string | 项目名称 |
+| `items[].status` | string | 项目状态 |
+| `items[].monitoring_paused` | boolean | 是否暂停监测 |
+
+**说明：** 返回全部未删除项目的轻量列表，无分页截断。
+
+**调用示例：**
+
+```bash
+curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/projects/options"
+```
+
+---
+
+### 4.7 项目卡片批量概览
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 项目卡片批量概览 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/overview` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `page` | integer | 否 | `1` | 页码 |
+| `page_size` | integer | 否 | `10` | 1–100 |
+| `project_name` | string | 否 | — | 项目名称筛选 |
+| `status` | string | 否 | — | `active` / `disabled` / `archived` |
+
+**出参：** 分页结构，`items` 为项目卡片摘要数组，字段包括：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | integer | 项目 ID |
+| `project_name` | string | 项目名称 |
+| `industry` | string | 行业 |
+| `status` | string | 项目状态 |
+| `monitoring_paused` | boolean | 是否暂停监测 |
+| `target_brand_name` | string/null | 目标品牌名 |
+| `brand_word_count` | integer | 目标品牌启用别名数 |
+| `competitor_count` | integer | 竞品数量 |
+| `question_count` | integer | 激活问题集中已启用问题数 |
+| `platform_count` | integer | 平台数（按 `base_platform` 去重） |
+| `endpoint_count` | integer | 端数（`selected_platform_codes` 长度） |
+| `selected_platform_codes` | string[] | 已选平台编码 |
+| `latest_run` | object/null | 最近一次运行摘要 |
+| `updated_at` | string | 更新时间 |
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/overview" \
+  --data-urlencode "page=1" \
+  --data-urlencode "page_size=10"
+```
+
+---
+
+### 4.8 暂停项目监测
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 暂停项目监测 |
+| **请求方式** | `POST` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/pause` |
+
+**Path 入参：** `project_id`（integer，≥ 1）
+
+**出参 `data`：** [ProjectOut](#21-projectout项目)，`monitoring_paused=true`
+
+**说明：** 暂停后调度触发与新运行创建将被拒绝，历史数据与查询接口不受影响。
+
+**常见错误：** `40400` 项目不存在
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects/1/pause"
+```
+
+---
+
+### 4.9 恢复项目监测
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 恢复项目监测 |
+| **请求方式** | `POST` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/resume` |
+
+**Path 入参：** `project_id`（integer，≥ 1）
+
+**出参 `data`：** [ProjectOut](#21-projectout项目)，`monitoring_paused=false`
+
+**常见错误：** `40400` 项目不存在
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects/1/resume"
+```
+
+---
+
+### 4.10 删除前关联检查
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 删除前关联检查 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/delete-check` |
+
+**Path 入参：** `project_id`（integer，≥ 1）
+
+**出参 `data`：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `project_id` | integer | 项目 ID |
+| `run_count` | integer | 关联监测运行数 |
+| `report_count` | integer | 关联报告数 |
+| `schedule_count` | integer | 关联调度数 |
+| `can_delete` | boolean | 是否可删除（与 DELETE 接口一致：有运行则不可删） |
+| `blocking_reasons` | string[] | 阻止删除的原因（仅在有监测运行时返回） |
+
+**常见错误：** `40400` 项目不存在
+
+**调用示例：**
+
+```bash
+curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/projects/1/delete-check"
 ```
 
 ---

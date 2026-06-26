@@ -148,8 +148,51 @@ class ProjectOut(BaseModel):
     report_title: str | None
     report_subtitle: str | None
     default_platform_codes: list[str] = Field(default_factory=list)
+    monitoring_paused: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+class ProjectOptionRead(BaseModel):
+    id: int
+    project_name: str
+    status: str
+    monitoring_paused: bool = False
+
+
+class ProjectOverviewLatestRunRead(BaseModel):
+    run_id: int
+    run_no: str
+    status: str
+    collection_status: str
+    analysis_status: str
+    completed_at: datetime | None = None
+
+
+class ProjectOverviewItemRead(BaseModel):
+    id: int
+    project_name: str
+    industry: str
+    status: str
+    monitoring_paused: bool = False
+    target_brand_name: str | None = None
+    brand_word_count: int = 0
+    competitor_count: int = 0
+    question_count: int = 0
+    platform_count: int = 0
+    endpoint_count: int = 0
+    selected_platform_codes: list[str] = Field(default_factory=list)
+    latest_run: ProjectOverviewLatestRunRead | None = None
+    updated_at: datetime
+
+
+class ProjectDeleteCheckRead(BaseModel):
+    project_id: int
+    run_count: int = 0
+    report_count: int = 0
+    schedule_count: int = 0
+    can_delete: bool = True
+    blocking_reasons: list[str] = Field(default_factory=list)
 
 
 class BrandCreate(BaseModel):

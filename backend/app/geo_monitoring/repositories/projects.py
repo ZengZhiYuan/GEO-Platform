@@ -47,6 +47,19 @@ def list_projects(
     return items, total
 
 
+# 查询全部未删除项目，按 ID 倒序（供轻量切换器等全量列表使用）
+def list_all_projects(db: Session) -> list[MonitorProject]:
+    return list(
+        db.execute(
+            select(MonitorProject)
+            .where(MonitorProject.is_deleted.is_(False))
+            .order_by(MonitorProject.id.desc())
+        )
+        .scalars()
+        .all()
+    )
+
+
 # 将监测项目实体加入当前会话
 def add(db: Session, project: MonitorProject) -> None:
     db.add(project)

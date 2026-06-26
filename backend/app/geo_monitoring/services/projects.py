@@ -27,6 +27,12 @@ def require_active_project(db: Session, project_id: int) -> MonitorProject:
     return project
 
 
+# 校验项目监测未暂停
+def require_monitoring_not_paused(project: MonitorProject) -> None:
+    if project.monitoring_paused:
+        raise BusinessException(message="项目监测已暂停，无法启动新的监测运行", code=40054)
+
+
 # 分页列出监测项目
 def list_projects(
     db: Session,
@@ -78,3 +84,21 @@ def delete_project(db: Session, project_id: int) -> None:
     project.is_deleted = True
     project.deleted_at = datetime.now(timezone.utc)
     db.commit()
+
+
+# 暂停项目监测：不影响历史数据，仅阻止调度与新运行
+def pause_project(db: Session, project_id: int) -> MonitorProject:
+    project = get_project(db, project_id)
+    project.monitoring_paused = True
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+# 恢复项目监测
+def resume_project(db: Session, project_id: int) -> MonitorProject:
+    project = get_project(db, project_id)
+    project.monitoring_paused = False
+    db.commit()
+    db.refresh(project)
+    return project
