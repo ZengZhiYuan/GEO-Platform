@@ -8,6 +8,7 @@ from app.core.response import paginate, success
 from app.geo_monitoring.schemas import (
     ProjectCreate,
     ProjectOut,
+    ProjectSetupCreate,
     ProjectStatus,
     ProjectUpdate,
 )
@@ -42,6 +43,14 @@ def list_projects(
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db)) -> dict:
     project = project_service.create_project(db, payload)
     return success(ProjectOut.model_validate(project).model_dump(mode="json"))
+
+
+@router.post("/projects:setup", summary="一步创建项目并保存监测设置")
+def setup_project(
+    payload: ProjectSetupCreate, db: Session = Depends(get_db)
+) -> dict:
+    result = project_service.setup_project(db, payload)
+    return success(result.model_dump(mode="json"))
 
 
 @router.get("/projects/{project_id}", summary="获取监测项目")

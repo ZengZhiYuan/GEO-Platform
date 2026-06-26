@@ -984,6 +984,18 @@ class MonitorSetupSave(BaseModel):
         return list(dict.fromkeys(code.strip() for code in value if code.strip()))
 
 
+class ProjectSetupCreate(BaseModel):
+    project: ProjectCreate
+    monitor_setup: MonitorSetupSave
+    run_after_create: bool = False
+
+
+class ProjectSetupOut(BaseModel):
+    project: ProjectOut
+    monitor_setup: dict[str, Any]
+    run: MonitorRunOut | None = None
+
+
 class ConversationSentimentSummary(BaseModel):
     positive: int = 0
     neutral: int = 0

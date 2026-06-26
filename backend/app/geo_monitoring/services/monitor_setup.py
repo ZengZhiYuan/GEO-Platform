@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
 from app.geo_monitoring.models import (
-    AIPlatform,
     Brand,
     BrandAlias,
     CoreKeyword,
@@ -374,31 +373,38 @@ def _replace_ai_questions(
         prompt_set.prompt_count += 1
 
 
-def save_monitor_setup(db: Session, project_id: int, payload: MonitorSetupSave) -> dict:
-    project = require_active_project(db, project_id)
+def persist_monitor_setup(
+    db: Session, project: MonitorProject, payload: MonitorSetupSave
+) -> PromptSet:
     if payload.brand is None:
         raise BusinessException(message="品牌设置不能为空", code=40028)
     selected_platform_codes = _validate_platform_codes(
         db, payload.selected_platform_codes
     )
+    target = _upsert_target_brand(db, project.id, payload)
+    _replace_competitors(db, project.id, payload)
+    keywords = _replace_core_keywords(db, project.id, payload)
+    keyword_by_name = {item.keyword: item for item in keywords}
+    prompt_set = _ensure_draft_prompt_set(db, project.id)
+    if payload.ai_questions:
+        _replace_ai_questions(
+            db,
+            project_id=project.id,
+            prompt_set=prompt_set,
+            payload=payload,
+            target_brand=target,
+            keyword_by_name=keyword_by_name,
+        )
+    project.default_platform_codes = selected_platform_codes
+    if payload.brand.official_domain:
+        project.official_domain = payload.brand.official_domain
+    return prompt_set
+
+
+def save_monitor_setup(db: Session, project_id: int, payload: MonitorSetupSave) -> dict:
+    project = require_active_project(db, project_id)
     try:
-        target = _upsert_target_brand(db, project_id, payload)
-        competitors = _replace_competitors(db, project_id, payload)
-        keywords = _replace_core_keywords(db, project_id, payload)
-        keyword_by_name = {item.keyword: item for item in keywords}
-        prompt_set = _ensure_draft_prompt_set(db, project_id)
-        if payload.ai_questions:
-            _replace_ai_questions(
-                db,
-                project_id=project_id,
-                prompt_set=prompt_set,
-                payload=payload,
-                target_brand=target,
-                keyword_by_name=keyword_by_name,
-            )
-        project.default_platform_codes = selected_platform_codes
-        if payload.brand.official_domain:
-            project.official_domain = payload.brand.official_domain
+        prompt_set = persist_monitor_setup(db, project, payload)
         db.commit()
         if payload.activate_prompt_set and prompt_set.prompt_count > 0:
             activate_prompt_set(db, prompt_set.id)

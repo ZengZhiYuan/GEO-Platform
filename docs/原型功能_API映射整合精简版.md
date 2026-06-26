@@ -33,6 +33,7 @@
 | 能力 | 已有接口 | 说明 |
 | --- | --- | --- |
 | 项目 CRUD | `GET/POST /projects`、`GET/PUT/DELETE /projects/{project_id}` | `status` 可改为 `active/disabled/archived`，但不等同独立“暂停监测”语义。 |
+| 一步创建完整项目 | `POST /projects:setup` ✅ | 创建向导事务接口：项目 + monitor-setup 一次提交；可选 `run_after_create`。 |
 | 一站式监测配置 | `GET/PUT /projects/{project_id}/monitor-setup` | 当前创建向导和编辑配置最重要接口，覆盖品牌、品牌词、竞品、核心词、问题、默认平台。 |
 | 品牌与别名 | `/projects/{project_id}/brands`、`/brands/{brand_id}/aliases` 等 | 可做细粒度编辑，但原型更适合使用 `monitor-setup` 整体保存。 |
 | 核心词 | `/projects/{project_id}/core-keywords`、`/core-keywords/{keyword_id}` | 可支撑品类/核心关键词。 |
@@ -210,8 +211,9 @@
 ## 4. 端到端推荐调用链
 
 ```text
-1. 创建项目
+1. 创建项目（二选一）
    POST /projects
+   或 POST /projects:setup（推荐：项目 + monitor-setup 同事务，可选 run_after_create）
 
 2. 初始化配置页
    GET /platforms?enabled=true
@@ -276,9 +278,9 @@
 
 | 缺口 | 建议 | 说明 |
 | --- | --- | --- |
+| 一步创建完整项目 | `POST /projects:setup` ✅ | 创建向导事务接口：`project` + `monitor_setup` 一次提交；`run_after_create=true` 时返回新 run。 |
 | 创建向导草稿 | `POST/PUT /project-drafts` | 支持离开后恢复。 |
 | 当前项目偏好 | `GET/PUT /users/me/preferences/current-project` | 支持跨页面记忆当前项目。 |
-| 一步创建并运行 | `POST /projects:setup-and-run` | 把创建、配置、激活、运行做成事务或编排接口。 |
 | 行业基准 | `GET /benchmarks` | 支撑行业平均、市场地位等参照卡。 |
 | 高频评价标签 | LLM 聚类或规则聚类接口 | 原型增强项，成本较高。 |
 | 调度配置页 | 复用现有 schedules 接口 | 后端已就绪，原型未覆盖。 |

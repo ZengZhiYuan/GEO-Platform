@@ -190,7 +190,9 @@ def delete_prompt(db: Session, prompt_id: int) -> None:
 
 
 # 激活草稿提示词集：归档旧 active 版本并写入校验和
-def activate_prompt_set(db: Session, prompt_set_id: int) -> PromptSet:
+def activate_prompt_set(
+    db: Session, prompt_set_id: int, *, commit: bool = True
+) -> PromptSet:
     prompt_set = get_prompt_set(db, prompt_set_id)
     _require_draft(prompt_set)
     prompts = prompt_repo.list_prompts_for_activation(db, prompt_set_id)
@@ -212,6 +214,7 @@ def activate_prompt_set(db: Session, prompt_set_id: int) -> PromptSet:
     prompt_set.checksum = sha256(checksum_source.encode("utf-8")).hexdigest()
     prompt_set.status = "active"
     prompt_set.activated_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(prompt_set)
+    if commit:
+        db.commit()
+        db.refresh(prompt_set)
     return prompt_set

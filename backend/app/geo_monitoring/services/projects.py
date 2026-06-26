@@ -8,7 +8,15 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BusinessException
 from app.geo_monitoring.models import MonitorProject
 from app.geo_monitoring.repositories import projects as project_repo
-from app.geo_monitoring.schemas import ProjectCreate, ProjectUpdate
+from app.geo_monitoring.schemas import (
+    MonitorSetupSave,
+    ProjectCreate,
+    ProjectOut,
+    ProjectSetupCreate,
+    ProjectSetupOut,
+    ProjectUpdate,
+    RunCreate,
+)
 
 
 # 按 ID 查询监测项目，不存在则抛业务异常
@@ -58,6 +66,72 @@ def create_project(db: Session, payload: ProjectCreate) -> MonitorProject:
     db.commit()
     db.refresh(project)
     return project
+
+
+def _validate_run_after_create_preconditions(
+    monitor_setup: MonitorSetupSave,
+    prompt_set,
+) -> None:
+    if prompt_set.prompt_count <= 0:
+        raise BusinessException(
+            message="创建后运行需要至少一个监测问题",
+            code=40901,
+            status_code=409,
+        )
+    if not monitor_setup.activate_prompt_set:
+        raise BusinessException(message="创建后运行需要激活问题集", code=40055)
+
+
+# 一步创建项目并保存监测设置，失败时不留下半成品项目
+def setup_project(db: Session, payload: ProjectSetupCreate) -> ProjectSetupOut:
+    from app.geo_monitoring.services import monitor_setup as monitor_setup_service
+    from app.geo_monitoring.services import runs as run_service
+    from app.geo_monitoring.services.prompts import activate_prompt_set
+    from app.geo_monitoring.schemas import MonitorRunOut
+
+    project = MonitorProject(**payload.project.model_dump(), status="active")
+    try:
+        project_repo.add(db, project)
+        db.flush()
+        prompt_set = monitor_setup_service.persist_monitor_setup(
+            db, project, payload.monitor_setup
+        )
+        if payload.run_after_create:
+            _validate_run_after_create_preconditions(
+                payload.monitor_setup, prompt_set
+            )
+        if (
+            payload.monitor_setup.activate_prompt_set
+            and prompt_set.prompt_count > 0
+        ):
+            activate_prompt_set(db, prompt_set.id, commit=False)
+        if payload.run_after_create:
+            db.flush()
+            run_service.prepare_run_create(
+                db, RunCreate(project_id=project.id)
+            )
+        db.commit()
+        db.refresh(project)
+    except BusinessException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise
+
+    monitor_setup = monitor_setup_service.get_monitor_setup(db, project.id)
+    run_out: MonitorRunOut | None = None
+    if payload.run_after_create:
+        run = run_service.create_run(
+            db, RunCreate(project_id=project.id)
+        )
+        run_out = MonitorRunOut.model_validate(run)
+
+    return ProjectSetupOut(
+        project=ProjectOut.model_validate(project),
+        monitor_setup=monitor_setup,
+        run=run_out,
+    )
 
 
 # 更新监测项目字段

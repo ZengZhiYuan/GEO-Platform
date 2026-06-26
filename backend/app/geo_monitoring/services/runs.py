@@ -106,6 +106,24 @@ def _resolve_platforms(
     return platforms
 
 
+def prepare_run_create(db: Session, payload: RunCreate):
+    """校验并解析创建运行所需的项目、问题集、提示词与平台，不落库。"""
+    project = require_active_project(db, payload.project_id)
+    require_monitoring_not_paused(project)
+    prompt_set = _resolve_prompt_set(db, project.id, payload.prompt_set_id)
+    prompts = _enabled_prompts(db, prompt_set.id)
+    platform_codes = payload.platform_codes
+    if platform_codes is None and project.default_platform_codes:
+        platform_codes = list(project.default_platform_codes)
+    platforms = _resolve_platforms(
+        db,
+        platform_codes,
+        collection_source=payload.collection_source.value,
+    )
+    resolved_platform_codes = [platform.platform_code for platform in platforms]
+    return project, prompt_set, prompts, platforms, resolved_platform_codes
+
+
 # 将 MonitorRun 转为含进度率的详情 DTO
 def _to_run_detail(run: MonitorRun) -> RunDetailRead:
     total_tasks = run.total_tasks or run.expected_query_count
@@ -280,19 +298,9 @@ def _start_collection(db: Session, run_id: int) -> None:
 
 # 创建监测运行、扇出 QueryTask 并启动采集
 def create_run(db: Session, payload: RunCreate) -> MonitorRun:
-    project = require_active_project(db, payload.project_id)
-    require_monitoring_not_paused(project)
-    prompt_set = _resolve_prompt_set(db, project.id, payload.prompt_set_id)
-    prompts = _enabled_prompts(db, prompt_set.id)
-    platform_codes = payload.platform_codes
-    if platform_codes is None and project.default_platform_codes:
-        platform_codes = list(project.default_platform_codes)
-    platforms = _resolve_platforms(
-        db,
-        platform_codes,
-        collection_source=payload.collection_source.value,
+    project, prompt_set, prompts, platforms, platform_codes = prepare_run_create(
+        db, payload
     )
-    platform_codes = [platform.platform_code for platform in platforms]
     task_count = len(prompts) * len(platforms)
     run = MonitorRun(
         run_no=_new_run_no(),
@@ -470,7 +478,6 @@ def retry_failed_tasks(db: Session, run_id: int) -> tuple[MonitorRun, int]:
         db.refresh(run)
         return run, 0
 
-    now = datetime.now(timezone.utc)
     # 清空错误信息并将失败任务重置为 pending
     for task in failed_tasks:
         task.attempt_count += 1

@@ -563,6 +563,55 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects" \
 
 ---
 
+### 4.2.1 一步创建项目并保存监测设置
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 一步创建项目并保存监测设置 |
+| **请求方式** | `POST` |
+| **接口路径** | `/api/geo-monitoring/projects:setup` |
+
+将 `POST /projects` 与 `PUT /monitor-setup` 合并为单次事务：任一步骤失败时不留下半成品项目。现有分步接口保持不变。
+
+**Body 入参：**
+
+| 字段 | 类型 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `project` | object | 是 | — | 同 [4.2 创建监测项目](#42-创建监测项目) Body |
+| `monitor_setup` | object | 是 | — | 同 [监测设置保存](#107-保存监测设置) Body（`MonitorSetupSave`） |
+| `run_after_create` | boolean | 否 | `false` | 为 `true` 时在项目与配置落库成功后立即创建监测运行 |
+
+**出参 `data`：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `project` | [ProjectOut](#21-projectout项目) | 新创建的项目 |
+| `monitor_setup` | object | 同 GET monitor-setup 响应结构 |
+| `run` | [MonitorRunOut](#monitorrunout) / null | `run_after_create=true` 且激活问题集成功时返回新运行，否则为 `null` |
+
+**常见错误：** 与 monitor-setup 保存一致，如 `40028` 品牌为空、`40025` 平台不可用；上述校验失败时不会创建项目记录。`run_after_create=true` 时额外要求：`activate_prompt_set=true`（否则 `40055`）、至少一个监测问题（否则 HTTP `409`、`40901`），且默认 `collection_source=official` 下所选平台须可创建运行（如 Aidso 端码会返回 `40031`）；不满足时在提交前回滚，不留半成品项目。
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects:setup" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project": {"project_name":"杭州宋城文旅监测","industry":"文旅演艺"},
+    "monitor_setup": {
+      "brand": {"brand_name":"宋城演艺","brand_words":["宋城"]},
+      "competitors": [],
+      "core_keywords": [{"keyword":"文旅演艺"}],
+      "ai_questions": [{"core_keyword":"文旅演艺","prompt_text":"推荐国内有哪些文旅演艺项目？"}],
+      "selected_platform_codes": ["qwen"],
+      "activate_prompt_set": true
+    },
+    "run_after_create": false
+  }'
+```
+
+---
+
 ### 4.3 获取监测项目
 
 | 项目 | 说明 |
