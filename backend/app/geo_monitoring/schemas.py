@@ -1203,3 +1203,37 @@ class DashboardOverviewOut(BaseModel):
     source_preview: DashboardOverviewSourcePreviewRead
     recent_questions: DashboardOverviewRecentQuestionsRead
 
+
+class ProjectDraftCreate(BaseModel):
+    draft_key: str | None = Field(default=None, max_length=128)
+    current_step: int = Field(default=1, ge=1, le=3)
+    project: dict[str, Any] = Field(default_factory=dict)
+    monitor_setup: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("draft_key")
+    @classmethod
+    def strip_draft_key(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class ProjectDraftUpdate(BaseModel):
+    draft_key: str | None = Field(default=None, max_length=128)
+    current_step: int | None = Field(default=None, ge=1, le=3)
+    project: dict[str, Any] | None = None
+    monitor_setup: dict[str, Any] | None = None
+
+    @field_validator("draft_key")
+    @classmethod
+    def strip_draft_key(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class ProjectDraftOut(BaseModel):
+    id: int
+    draft_key: str | None
+    current_step: int
+    project: dict[str, Any] = Field(default_factory=dict)
+    monitor_setup: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+

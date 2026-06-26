@@ -612,6 +612,60 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects:setup" \
 
 ---
 
+### 4.2.2 创建向导草稿
+
+创建监测项目向导的草稿存储，支持用户离开页面后恢复未完成配置。草稿数据为 JSON，结构与 `projects:setup` 的 `project` + `monitor_setup` 字段对齐，允许各步骤部分填写。
+
+| 项目 | 说明 |
+| --- | --- |
+| **创建草稿** | `POST /api/geo-monitoring/project-drafts` |
+| **按 draft_key 更新或创建** | `PUT /api/geo-monitoring/project-drafts`（与 `current` 等价） |
+| **按 ID 更新** | `PUT /api/geo-monitoring/project-drafts/{draft_id}`（Query 必填 `draft_key`） |
+| **按 ID 获取** | `GET /api/geo-monitoring/project-drafts/{draft_id}`（Query 必填 `draft_key`） |
+| **按 draft_key 获取最新** | `GET /api/geo-monitoring/project-drafts/current?draft_key=...` |
+| **按 draft_key 更新或创建** | `PUT /api/geo-monitoring/project-drafts/current` |
+
+**Body 入参（创建 / current 更新）：**
+
+| 字段 | 类型 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `draft_key` | string | 否 | — | 客户端会话标识，用于跨页面恢复；`current` 接口必填 |
+| `current_step` | integer | 否 | `1` | 向导当前步骤，1–3 |
+| `project` | object | 否 | `{}` | 部分项目字段，同 `ProjectCreate` 子集 |
+| `monitor_setup` | object | 否 | `{}` | 部分监测设置，同 `MonitorSetupSave` 子集 |
+
+**按 ID 更新 Body：** 各字段可选；`project` / `monitor_setup` 与已有草稿递归深度合并（嵌套对象合并字段，列表字段整体替换）。**Query 必填 `draft_key`**，须与草稿所属会话一致，不匹配时返回 `40400`（避免跨会话枚举读取）。
+
+**出参 `data`（ProjectDraftOut）：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | integer | 草稿 ID |
+| `draft_key` | string / null | 客户端会话标识 |
+| `current_step` | integer | 当前步骤 |
+| `project` | object | 已保存的项目字段 |
+| `monitor_setup` | object | 已保存的监测设置字段 |
+| `created_at` / `updated_at` | string | ISO8601 时间 |
+
+**常见错误：** `40400` 草稿不存在或 `draft_key` 不匹配；`current` / `PUT /project-drafts` 更新时 `draft_key` 为空返回 `422`；`current_step` 越界返回 `422`
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/project-drafts" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "draft_key": "wizard-session-1",
+    "current_step": 1,
+    "project": {"project_name": "杭州宋城", "industry": "文旅演艺"},
+    "monitor_setup": {"selected_platform_codes": ["qwen"]}
+  }'
+```
+
+**当前项目偏好（延后）：** `GET/PUT /users/me/preferences/current-project` 依赖用户账号体系，当前 MVP 未实现用户认证，该接口暂不提供；跨页面项目记忆可由前端本地存储 `project_id`，待用户体系接入后再补偏好接口。
+
+---
+
 ### 4.3 获取监测项目
 
 | 项目 | 说明 |

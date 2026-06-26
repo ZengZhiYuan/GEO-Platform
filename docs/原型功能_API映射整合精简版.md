@@ -111,7 +111,7 @@
 - `POST /projects/{project_id}/ai/competitors:generate` ✅ 已覆盖
 - `POST /projects/{project_id}/ai/questions:generate` ✅ 已覆盖
 - `POST /projects:setup`：把创建项目和保存配置包成事务，减少半成品项目。
-- `POST/PUT /project-drafts`：支持向导草稿恢复，属于体验增强。
+- `POST/PUT /project-drafts`：支持向导草稿恢复，属于体验增强。✅ 已覆盖（P2-2）
 
 ### 3.3 数据大盘
 
@@ -279,8 +279,8 @@
 | 缺口 | 建议 | 说明 |
 | --- | --- | --- |
 | 一步创建完整项目 | `POST /projects:setup` ✅ | 创建向导事务接口：`project` + `monitor_setup` 一次提交；`run_after_create=true` 时返回新 run。 |
-| 创建向导草稿 | `POST/PUT /project-drafts` | 支持离开后恢复。 |
-| 当前项目偏好 | `GET/PUT /users/me/preferences/current-project` | 支持跨页面记忆当前项目。 |
+| 创建向导草稿 | `POST/PUT /project-drafts` ✅ | 支持离开后恢复；`GET` + `draft_key` 查询最新草稿。 |
+| 当前项目偏好 | `GET/PUT /users/me/preferences/current-project` | 支持跨页面记忆当前项目；**延后**（尚无用户体系，P2-2 未实现）。 |
 | 行业基准 | `GET /benchmarks` | 支撑行业平均、市场地位等参照卡。 |
 | 高频评价标签 | LLM 聚类或规则聚类接口 | 原型增强项，成本较高。 |
 | 调度配置页 | 复用现有 schedules 接口 | 后端已就绪，原型未覆盖。 |

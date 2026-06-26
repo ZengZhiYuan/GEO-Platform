@@ -253,6 +253,12 @@ X-Request-ID: 可选，自定义请求 ID
 | 分页查询项目 | `GET` | `/api/geo-monitoring/projects` | Query：`page` 默认 1，`page_size` 默认 10 且 1-100，`project_name`，`status` | 分页 `ProjectOut[]` | `code=0`，`data.items` 为数组，分页字段正确 | `status` 非枚举值返回 `422` |
 | 创建项目 | `POST` | `/api/geo-monitoring/projects` | Body：`ProjectCreate` | `ProjectOut` | 返回新 `id`，字段与请求一致，默认 `status=active` | 必填字段为空或超长返回 `422` |
 | 一步创建项目并保存监测设置 | `POST` | `/api/geo-monitoring/projects:setup` | Body：`project`（ProjectCreate）、`monitor_setup`（MonitorSetupSave）、`run_after_create` 默认 false | `{ project, monitor_setup, run? }` | 项目与监测配置同事务落库；`run_after_create=true` 且已激活问题集时返回 `run` | 监测设置校验失败（如 `40025`）时项目不会创建；`run_after_create=true` 需 `activate_prompt_set=true` 且有问题，且平台须兼容默认 official 采集源（`40055`/`40901`/`40031`），否则同事务回滚 |
+| 创建向导草稿 | `POST` | `/api/geo-monitoring/project-drafts` | Body：`draft_key?`、`current_step`（1–3）、`project`、`monitor_setup` | `ProjectDraftOut` | 保存未完成向导数据 | `draft_key` 供客户端恢复 |
+| 按 key 更新或创建草稿 | `PUT` | `/api/geo-monitoring/project-drafts` | Body 同创建；`draft_key` 必填 | `ProjectDraftOut` | upsert（与 `current` 等价） | `draft_key` 为空 `422` |
+| 更新向导草稿 | `PUT` | `/api/geo-monitoring/project-drafts/{draft_id}` | Query：`draft_key` 必填；Body 可选字段 | `ProjectDraftOut` | 与已有草稿递归深度合并 | `40400` 不存在或 key 不匹配 |
+| 获取向导草稿 | `GET` | `/api/geo-monitoring/project-drafts/{draft_id}` | Query：`draft_key` 必填 | `ProjectDraftOut` | 按 ID + key 恢复 | `40400` |
+| 获取最新向导草稿 | `GET` | `/api/geo-monitoring/project-drafts/current` | Query：`draft_key` | `ProjectDraftOut` | 按会话 key 取最新一条 | `40400` |
+| 按 key 更新或创建草稿 | `PUT` | `/api/geo-monitoring/project-drafts/current` | Body 同创建；`draft_key` 必填 | `ProjectDraftOut` | upsert | `draft_key` 为空 `422` |
 | 获取项目 | `GET` | `/api/geo-monitoring/projects/{project_id}` | Path：`project_id >= 1` | `ProjectOut` | `data.id = project_id` | 不存在返回 `code=40400`、`message=监测项目不存在` |
 | 更新项目 | `PUT` | `/api/geo-monitoring/projects/{project_id}` | Path：`project_id >= 1`；Body：`ProjectUpdate` | `ProjectOut` | 返回字段已更新，`updated_at` 变化 | 不存在返回 `40400`；状态非法返回 `422` |
 | 删除项目 | `DELETE` | `/api/geo-monitoring/projects/{project_id}` | Path：`project_id >= 1` | `{ "id": project_id }` | 返回删除 ID，后续获取返回不存在 | 项目已有监测运行引用时 HTTP `409`、`code=40903` |
@@ -276,6 +282,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects" \
 
 ```powershell
 backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_project_setup_api.py --basetemp .pytest-tmp
+backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_project_drafts_api.py
 backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_project_overview_api.py
 ```
 

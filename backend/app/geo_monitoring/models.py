@@ -642,3 +642,26 @@ class MonitorSchedule(BaseModel):
     misfire_policy: Mapped[str] = mapped_column(
         String(20), default="fire_once", server_default="fire_once", nullable=False
     )
+
+
+# 创建向导草稿：保存未完成的向导步骤数据，支持离开后恢复。
+class ProjectDraft(BaseModel):
+    __tablename__ = "geo_project_draft"
+    __table_args__ = (
+        CheckConstraint(
+            "current_step >= 1 AND current_step <= 3",
+            name="ck_geo_project_draft_current_step",
+        ),
+        Index("ix_geo_project_draft_key_updated", "draft_key", "updated_at"),
+    )
+
+    draft_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    current_step: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
+    project_data: Mapped[dict] = mapped_column(
+        JSON_VALUE, default=dict, server_default=text("'{}'"), nullable=False
+    )
+    monitor_setup_data: Mapped[dict] = mapped_column(
+        JSON_VALUE, default=dict, server_default=text("'{}'"), nullable=False
+    )
