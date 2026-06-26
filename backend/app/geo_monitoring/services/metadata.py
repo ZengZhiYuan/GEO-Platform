@@ -186,6 +186,20 @@ def _serialize_endpoint(platform: AIPlatform) -> dict[str, Any]:
     }
 
 
+def serialize_platform_endpoint_summary(platform: AIPlatform) -> dict[str, Any]:
+    """序列化首页项目卡片所需的平台端摘要，口径与 platform-endpoints 一致。"""
+    payload = _serialize_endpoint(platform)
+    return {
+        "platform_code": payload["platform_code"],
+        "platform_name": payload["platform_name"],
+        "base_platform": payload["base_platform"],
+        "endpoint_type": payload["endpoint_type"],
+        "endpoint_label": payload["endpoint_label"],
+        "logo_url": payload["logo_url"],
+        "enabled": payload["enabled"],
+    }
+
+
 def list_platform_endpoints(
     db: Session,
     *,

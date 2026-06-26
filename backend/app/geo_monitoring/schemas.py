@@ -169,6 +169,26 @@ class ProjectOverviewLatestRunRead(BaseModel):
     completed_at: datetime | None = None
 
 
+class ProjectOverviewCompetitorRead(BaseModel):
+    brand_id: int
+    brand_name: str
+
+
+class ProjectOverviewPlatformEndpointRead(BaseModel):
+    platform_code: str
+    platform_name: str
+    base_platform: str
+    endpoint_type: str
+    endpoint_label: str
+    logo_url: str | None = None
+    enabled: bool
+
+
+class ProjectOverviewBadgeRead(BaseModel):
+    code: str
+    label: str
+
+
 class ProjectOverviewItemRead(BaseModel):
     id: int
     project_name: str
@@ -177,12 +197,19 @@ class ProjectOverviewItemRead(BaseModel):
     monitoring_paused: bool = False
     target_brand_name: str | None = None
     brand_word_count: int = 0
+    brand_words: list[str] = Field(default_factory=list)
     competitor_count: int = 0
+    competitors: list[ProjectOverviewCompetitorRead] = Field(default_factory=list)
     question_count: int = 0
     platform_count: int = 0
     endpoint_count: int = 0
     selected_platform_codes: list[str] = Field(default_factory=list)
+    platform_endpoints: list[ProjectOverviewPlatformEndpointRead] = Field(
+        default_factory=list
+    )
+    homepage_badges: list[ProjectOverviewBadgeRead] = Field(default_factory=list)
     latest_run: ProjectOverviewLatestRunRead | None = None
+    last_updated_at: datetime
     updated_at: datetime
 
 

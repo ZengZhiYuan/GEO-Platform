@@ -2,7 +2,7 @@
 
 > 面向 Cursor / Agent 进行后端接口开发使用。
 > 事实来源：`docs/原型功能_API映射整合精简版.md`。该文档已替代 `docs/原型功能-API映射_v1.md` 与 `docs/原型功能_API映射与缺口清单.md` 中重复、冲突的口径。
-> 更新日期：2026-06-25
+> 更新日期：2026-06-26
 > API 主前缀：`/api/geo-monitoring`；兼容前缀：`/api/v1/geo-monitoring`。
 > 开发约束：后端命令必须使用 `backend/.venv`，测试先行，完成后同步 API 文档与测试文档。
 
@@ -12,14 +12,21 @@
 
 本任务书的目标是补齐原型六个页面落地所需的接口能力，并消除旧文档中不贴合当前项目的表述：
 
-- 项目管理页：轻量项目切换、项目卡片聚合、暂停/恢复、删除影响检查。
+- 项目管理首页：所有项目列表、项目卡片聚合、进入监测详情、编辑配置、暂停/恢复、删除影响检查。
 - 创建监测项目页：平台端元数据、Prompt 类型字典、AI 生成品牌词/竞品/问题。
 - 数据大盘页：页面级总览、KPI、平台表现、竞品预览、信源预览、最近问题。
 - 竞品分析页：当前 run 的目标品牌与竞品榜单，并为后续品牌维度趋势留好契约。
 - AI 对话记录页：按问题聚合的主表、平台端指标、回答弹窗、导出。
 - 信源引用分析页：信源 KPI、类型分布、站点影响力矩阵、类型趋势、导出。
 
-优先级以 `docs/原型功能_API映射整合精简版.md` 第 5 节为准：
+2026-06-26 新版首页原型补充：
+
+- 用户进入系统后直接展示所有项目，不再以顶部项目切换下拉作为首屏入口。
+- 首页项目卡片必须展示项目名、当前/监测状态、品牌词、竞品、监测平台端图标与平台/端数量、问题数、更新时间。
+- 每个项目卡片提供四类动作：`进入`、`编辑配置`、`暂停/监测`、`删除`。
+- `GET /projects/overview` 是首页首屏主接口；`GET /projects/options` 仅保留给兼容场景或其它轻量选择器，不再作为首页必需接口。
+
+优先级以 `docs/原型功能_API映射整合精简版.md` 的当前页面映射和本文 Task 定义为准：
 
 - P0：补齐原型核心闭环。
 - P1：统一指标口径与提升对接质量。
@@ -53,13 +60,14 @@
 | 竞品分析 | 1、2.2、3.4、5.P0/P1、6 |
 | 对话记录 | 1、2.2、3.5、5.P0/P1、6 |
 | 信源分析 | 1、2.2、3.6、5.P0/P1、6 |
-| 项目概览 | 3.1、5.P1/P2 |
+| 项目概览 / 新版首页 | 1、2、3、4、12 |
 
 ## 3. 当前能力基线
 
 ### 3.1 已有接口
 
 - 项目：`GET/POST /projects`、`GET/PUT/DELETE /projects/{project_id}`。
+- 项目概览：`GET /projects/overview`、`GET /projects/options`、`POST /projects/{project_id}/pause`、`POST /projects/{project_id}/resume`、`GET /projects/{project_id}/delete-check`。
 - 监测设置：`GET/PUT /projects/{project_id}/monitor-setup`。
 - 平台：`GET /platforms`、`GET/PUT /platforms/{platform_code}`。
 - Prompt：`GET /prompt-library`、`/projects/{project_id}/prompt-sets`、`/prompt-sets/{id}/prompts`、`/prompts/{id}`。
@@ -75,11 +83,11 @@
 - `dashboard` 当前默认取最近已分析或已终态 run，也支持指定 `run_id`；它不是时间范围聚合接口。
 - 当前趋势写入的目标品牌可见度指标是 `brand_visibility`，不是旧文档里的 `brand_mention_rate`。
 - `dashboard.summary.brand_mention_rate`、`platforms[].analysis.brand_mention_rate` 已可用于大盘提及率展示。
-- 当前 `summary_json.metrics.brand_metrics[]` 有目标品牌和竞品的当前快照指标，可用于榜单；不能直接当作竞品历史趋势。
+- 当前 `summary_json.metrics.brand_metrics[]` 有目标品牌和竞品的当前快照指标，可用于榜单；竞品历史趋势应使用 `GET /projects/{project_id}/trends?metric_code=...&brand_id=...` 查询品牌维度快照。
 - `/runs/{run_id}/answers` 是答案粒度，即 prompt × platform；原型 AI 对话记录主表需要按问题聚合。
 - Aidso 平台端已经通过 `aidso_*_web/app` 平台码承载端信息，但没有独立 `base_platform/endpoint_type/logo_url` 字段。
 - 信源类型当前代码主要映射为 `web/official/media/social/video/ecommerce` 六类，原型展示需要统一字典和映射。
-- 当前报告格式为 `md/html/pdf`；AI 对话记录和信源页的 Excel/CSV 导出尚未落地。
+- 当前报告格式为 `md/html/pdf`；AI 对话记录和信源页导出已按 CSV 文件流落地，不是 Excel。
 
 ### 3.3 优先复用的数据源
 
@@ -459,20 +467,20 @@ backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_
 
 ### Task P1-2：项目概览、暂停恢复与删除检查
 
-**目标：** 支撑项目管理页卡片与管理动作。该项在最新缺口优先级中属于 P1/P2，不再放入 P0。
+**目标：** 支撑项目管理页基础卡片与管理动作。该项已覆盖“批量项目概览 + 暂停/恢复 + 删除检查”的后端基础能力；新版首页截图中的明细展示增强见 Task P1-5。
 
 **接口：**
 
-- `GET /projects/options`
 - `GET /projects/overview`
+- `GET /projects/options`（兼容/辅助；新版首页首屏不再必需）
 - `POST /projects/{project_id}/pause`
 - `POST /projects/{project_id}/resume`
 - `GET /projects/{project_id}/delete-check`
 
 **关键逻辑：**
 
-1. `projects/options` 返回顶部项目切换器所需轻量列表。
-2. `projects/overview` 批量返回项目卡片摘要，避免前端对每个项目调用 `monitor-setup/dashboard`。
+1. `projects/overview` 是项目管理首页首屏主接口，批量返回项目卡片摘要，避免前端对每个项目调用 `monitor-setup/dashboard`。
+2. `projects/options` 仅作为兼容轻量项目选择器保留，不再作为新版首页入口依赖。
 3. 平台数按 `base_platform` 去重，端数按 `selected_platform_codes.length`。
 4. 暂停只影响调度和新运行，不删除项目、不禁用历史数据。
 5. 删除检查返回运行数、报告数、调度数、是否可删除、阻塞原因。
@@ -515,6 +523,52 @@ backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_
 1. `GET /projects/{project_id}/trends?metric_code=brand_mention_rate` 兼容映射到当前实际写入的 `brand_visibility`。
 2. 响应中保留请求的 `metric_code` 还是返回实际编码，需要在 `docs/API接口文档.md` 明确。
 3. 新代码和新文档优先使用 `brand_visibility`。
+
+### Task P1-5：新版首页项目列表卡片增强
+
+**目标：** 对齐 2026-06-26 新版首页原型。用户进入系统后直接看到所有项目列表；每个项目卡片直接展示品牌词、竞品、监测平台端、问题数和更新时间，并提供 `进入`、`编辑配置`、`暂停/监测`、`删除` 四个动作。
+
+**接口：**
+
+- 扩展 `GET /projects/overview`
+- 复用 `GET /projects/{project_id}/monitor-setup`
+- 复用 `POST /projects/{project_id}/pause`
+- 复用 `POST /projects/{project_id}/resume`
+- 复用 `GET /projects/{project_id}/delete-check`
+- 复用 `DELETE /projects/{project_id}`
+
+**建议扩展 `projects/overview.items[]` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `brand_words` | string[] | 首页“品牌词”标签；来自目标品牌启用别名，按稳定顺序返回，建议默认最多 10 个 |
+| `competitors` | object[] | 首页“竞品”标签；每项至少含 `brand_id`、`brand_name`，默认返回全部启用竞品或限制前 10 个并给出总数 |
+| `platform_endpoints` | object[] | 首页平台端图标列表；每项含 `platform_code`、`platform_name`、`base_platform`、`endpoint_type`、`endpoint_label`、`logo_url`、`enabled` |
+| `homepage_badges` | object[] | 首页状态标签，如 `monitoring`、`paused`；`当前`标签如需持久化需先确认用户体系，否则由前端基于当前路由/本地状态处理 |
+| `last_updated_at` | datetime | 首页“更新”时间；优先取最近 run 完成时间，否则取项目更新时间 |
+
+**按钮动作契约：**
+
+1. `进入`：前端跳转监测详情页，目标页调用 `GET /projects/{project_id}/dashboard/overview`，无需新增后端入口接口。
+2. `编辑配置`：打开配置弹层或页面，先调 `GET /projects/{project_id}/monitor-setup`，保存走 `PUT /projects/{project_id}/monitor-setup`，保存后刷新 `GET /projects/overview`。
+3. `暂停`：当 `monitoring_paused=false` 时调用 `POST /projects/{project_id}/pause`；成功后刷新当前页。
+4. `监测`/`恢复监测`：当 `monitoring_paused=true` 时调用 `POST /projects/{project_id}/resume`；成功后刷新当前页。
+5. `删除`：先调用 `GET /projects/{project_id}/delete-check`；`can_delete=true` 且用户二次确认后再调用 `DELETE /projects/{project_id}`。
+
+**关键逻辑：**
+
+1. 首页首屏只依赖 `GET /projects/overview`，不再强制调用 `GET /projects/options`。
+2. `projects/overview` 需要批量加载目标品牌别名、竞品名称、激活问题数量、平台端元数据和最近运行，避免 N+1。
+3. 平台图标信息优先复用 `platform-endpoints` 的解析规则，避免同一平台端在不同接口展示不一致。
+4. 暂停项目的新运行和调度触发继续返回 `40054`；历史分析、报告和详情页不受影响。
+5. “当前”标签不应为了首页强行引入用户偏好表；如果产品要求跨设备记忆，再回到 P2 用户偏好能力。
+
+**涉及文件：**
+
+- Modify: `backend/app/geo_monitoring/services/project_overview.py`
+- Modify: `backend/app/geo_monitoring/schemas.py`
+- Test: `backend/tests/geo_monitoring/test_project_overview_api.py`
+- Docs: `docs/API接口文档.md`、`docs/API测试文档.md`、`docs/原型功能_API映射整合精简版.md`
 
 ## 7. P2 开发任务
 
@@ -582,9 +636,10 @@ backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_
 6. P0-6 Dashboard 页面级总览接口。
 7. P1-1 补齐指标口径与快照。
 8. P1-2 项目概览、暂停恢复与删除检查。
-9. P1-3 回答详情扩展与导出接口。
-10. P1-4 趋势指标编码兼容。
-11. P2 系统体验增强。
+9. P1-5 新版首页项目列表卡片增强。
+10. P1-3 回答详情扩展与导出接口。
+11. P1-4 趋势指标编码兼容。
+12. P2 系统体验增强。
 
 说明：对话记录、信源、竞品接口会沉淀可复用聚合服务，Dashboard overview 应复用这些服务，因此放在 P0 最后完成。
 
@@ -612,6 +667,12 @@ API 文档边界测试：
 
 ```powershell
 backend\.venv\Scripts\python.exe -m pytest -v backend\tests\test_documentation_boundary.py backend\tests\test_api_contract.py
+```
+
+新版首页项目列表专项验收：
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_project_overview_api.py
 ```
 
 如果本次任务改动了源码且验收通过，按仓库规则更新 CodeGraph：

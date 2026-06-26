@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -20,11 +22,20 @@ from app.geo_monitoring.reports.storage import GeoReport
 from app.geo_monitoring.schemas import (
     ProjectDeleteCheckRead,
     ProjectOptionRead,
+    ProjectOverviewBadgeRead,
+    ProjectOverviewCompetitorRead,
     ProjectOverviewItemRead,
     ProjectOverviewLatestRunRead,
+    ProjectOverviewPlatformEndpointRead,
 )
-from app.geo_monitoring.services.metadata import _resolve_base_platform
+from app.geo_monitoring.services.metadata import (
+    _resolve_base_platform,
+    serialize_platform_endpoint_summary,
+)
 from app.geo_monitoring.services.projects import get_project
+
+_MAX_BRAND_WORDS = 10
+_MAX_COMPETITORS = 10
 
 
 def _build_platform_base_map(db: Session) -> dict[str, str]:
@@ -78,11 +89,133 @@ def _load_competitor_counts(db: Session, project_ids: list[int]) -> dict[int, in
         .where(
             Brand.project_id.in_(project_ids),
             Brand.brand_type == "competitor",
+            Brand.status == "active",
             Brand.is_deleted.is_(False),
         )
         .group_by(Brand.project_id)
     ).all()
     return {project_id: count for project_id, count in rows}
+
+
+def _load_brand_words(
+    db: Session,
+    target_brands: dict[int, Brand],
+) -> dict[int, list[str]]:
+    brand_ids = [brand.id for brand in target_brands.values()]
+    if not brand_ids:
+        return {}
+    rows = list(
+        db.execute(
+            select(BrandAlias)
+            .where(
+                BrandAlias.brand_id.in_(brand_ids),
+                BrandAlias.is_deleted.is_(False),
+                BrandAlias.enabled.is_(True),
+            )
+            .order_by(BrandAlias.brand_id, BrandAlias.id)
+        )
+        .scalars()
+        .all()
+    )
+    brand_to_project = {
+        brand.id: project_id for project_id, brand in target_brands.items()
+    }
+    project_words: dict[int, list[str]] = {}
+    for alias in rows:
+        project_id = brand_to_project.get(alias.brand_id)
+        if project_id is None:
+            continue
+        words = project_words.setdefault(project_id, [])
+        if len(words) < _MAX_BRAND_WORDS:
+            words.append(alias.alias_name)
+    return project_words
+
+
+def _load_competitors(db: Session, project_ids: list[int]) -> dict[int, list[Brand]]:
+    if not project_ids:
+        return {}
+    rows = list(
+        db.execute(
+            select(Brand)
+            .where(
+                Brand.project_id.in_(project_ids),
+                Brand.brand_type == "competitor",
+                Brand.status == "active",
+                Brand.is_deleted.is_(False),
+            )
+            .order_by(Brand.project_id, Brand.id)
+        )
+        .scalars()
+        .all()
+    )
+    project_competitors: dict[int, list[Brand]] = {}
+    for brand in rows:
+        competitors = project_competitors.setdefault(brand.project_id, [])
+        if len(competitors) < _MAX_COMPETITORS:
+            competitors.append(brand)
+    return project_competitors
+
+
+def _build_platform_lookup(db: Session) -> dict[str, AIPlatform]:
+    platforms = list(
+        db.execute(
+            select(AIPlatform).where(AIPlatform.is_deleted.is_(False))
+        )
+        .scalars()
+        .all()
+    )
+    return {platform.platform_code: platform for platform in platforms}
+
+
+def _resolve_platform_endpoints(
+    platform_codes: list[str],
+    platform_lookup: dict[str, AIPlatform],
+) -> list[ProjectOverviewPlatformEndpointRead]:
+    endpoints: list[ProjectOverviewPlatformEndpointRead] = []
+    for code in platform_codes:
+        platform = platform_lookup.get(code)
+        if platform is None:
+            continue
+        payload = serialize_platform_endpoint_summary(platform)
+        endpoints.append(ProjectOverviewPlatformEndpointRead(**payload))
+    return endpoints
+
+
+def _build_homepage_badges(project: MonitorProject) -> list[ProjectOverviewBadgeRead]:
+    if project.monitoring_paused:
+        return [ProjectOverviewBadgeRead(code="paused", label="已暂停")]
+    return [ProjectOverviewBadgeRead(code="monitoring", label="监测中")]
+
+
+def _resolve_last_updated_at(
+    project: MonitorProject,
+    latest_completed_at: datetime | None,
+) -> datetime:
+    if latest_completed_at is not None:
+        return latest_completed_at
+    return project.updated_at
+
+
+def _load_latest_completed_at(
+    db: Session,
+    project_ids: list[int],
+) -> dict[int, datetime]:
+    if not project_ids:
+        return {}
+    rows = db.execute(
+        select(MonitorRun.project_id, func.max(MonitorRun.completed_at))
+        .where(
+            MonitorRun.project_id.in_(project_ids),
+            MonitorRun.is_deleted.is_(False),
+            MonitorRun.completed_at.is_not(None),
+        )
+        .group_by(MonitorRun.project_id)
+    ).all()
+    return {
+        project_id: completed_at
+        for project_id, completed_at in rows
+        if completed_at is not None
+    }
 
 
 def _load_brand_word_counts(
@@ -199,11 +332,15 @@ def list_project_overview(
 
     project_ids = [project.id for project in projects]
     base_map = _build_platform_base_map(db)
+    platform_lookup = _build_platform_lookup(db)
     target_brands = _load_target_brands(db, project_ids)
     competitor_counts = _load_competitor_counts(db, project_ids)
+    competitors_by_project = _load_competitors(db, project_ids)
+    brand_words_by_project = _load_brand_words(db, target_brands)
     brand_word_counts = _load_brand_word_counts(db, target_brands)
     question_counts = _load_question_counts(db, project_ids)
     latest_runs = _load_latest_runs(db, project_ids)
+    latest_completed_at = _load_latest_completed_at(db, project_ids)
 
     items: list[ProjectOverviewItemRead] = []
     for project in projects:
@@ -219,11 +356,24 @@ def list_project_overview(
                 monitoring_paused=project.monitoring_paused,
                 target_brand_name=target_brand.brand_name if target_brand else None,
                 brand_word_count=brand_word_counts.get(project.id, 0),
+                brand_words=brand_words_by_project.get(project.id, []),
                 competitor_count=competitor_counts.get(project.id, 0),
+                competitors=[
+                    ProjectOverviewCompetitorRead(
+                        brand_id=brand.id,
+                        brand_name=brand.brand_name,
+                    )
+                    for brand in competitors_by_project.get(project.id, [])
+                ],
                 question_count=question_counts.get(project.id, 0),
                 platform_count=_count_unique_base_platforms(selected_codes, base_map),
                 endpoint_count=len(selected_codes),
                 selected_platform_codes=selected_codes,
+                platform_endpoints=_resolve_platform_endpoints(
+                    selected_codes,
+                    platform_lookup,
+                ),
+                homepage_badges=_build_homepage_badges(project),
                 latest_run=(
                     ProjectOverviewLatestRunRead(
                         run_id=latest_run.id,
@@ -235,6 +385,10 @@ def list_project_overview(
                     )
                     if latest_run is not None
                     else None
+                ),
+                last_updated_at=_resolve_last_updated_at(
+                    project,
+                    latest_completed_at.get(project.id),
                 ),
                 updated_at=project.updated_at,
             )

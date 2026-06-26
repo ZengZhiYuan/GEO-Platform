@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from app.geo_monitoring.models import (
     AIPlatform,
     Brand,
@@ -117,7 +119,12 @@ def _seed_project_card(
         )
         db.add(run)
         db.commit()
-        return {"project_id": project.id, "run_id": run.id}
+        return {
+            "project_id": project.id,
+            "run_id": run.id,
+            "competitor_id": competitor.id,
+            "prompt_set_id": prompt_set.id,
+        }
 
 
 def test_project_options_returns_lightweight_list(client, session_factory):
@@ -150,13 +157,223 @@ def test_project_overview_returns_card_summary(client, session_factory):
     assert card["project_name"] == "概览测试项目"
     assert card["target_brand_name"] == "目标品牌"
     assert card["brand_word_count"] == 2
+    assert card["brand_words"] == ["品牌词1", "品牌词2"]
     assert card["competitor_count"] == 1
+    assert card["competitors"] == [
+        {"brand_id": seeded["competitor_id"], "brand_name": "竞品A"}
+    ]
     assert card["question_count"] == 2
     assert card["endpoint_count"] == 4
     assert card["platform_count"] == 2
     assert card["monitoring_paused"] is False
+    assert card["homepage_badges"] == [{"code": "monitoring", "label": "监测中"}]
     assert card["latest_run"]["run_id"] == seeded["run_id"]
     assert card["latest_run"]["status"] == "completed"
+    assert card["last_updated_at"] is not None
+    assert len(card["platform_endpoints"]) == 4
+    endpoint_codes = {item["platform_code"] for item in card["platform_endpoints"]}
+    assert endpoint_codes == {
+        "doubao",
+        "aidso_doubao_web",
+        "aidso_doubao_app",
+        "qwen",
+    }
+    sample_endpoint = next(
+        item for item in card["platform_endpoints"] if item["platform_code"] == "doubao"
+    )
+    assert sample_endpoint["platform_name"] == "豆包"
+    assert sample_endpoint["base_platform"] == "doubao"
+    assert sample_endpoint["endpoint_type"] == "other"
+    assert sample_endpoint["endpoint_label"]
+    assert sample_endpoint["enabled"] is True
+
+
+def test_project_overview_platform_endpoints_match_metadata(client, session_factory):
+    _seed_platforms(session_factory)
+    seeded = _seed_project_card(
+        session_factory,
+        platform_codes=["aidso_doubao_web", "aidso_doubao_app"],
+    )
+
+    metadata = client.get("/api/geo-monitoring/platform-endpoints").json()["data"]
+    metadata_by_code = {
+        endpoint["platform_code"]: endpoint
+        for group in metadata["groups"]
+        for endpoint in group["endpoints"]
+    }
+
+    card = next(
+        item
+        for item in client.get("/api/geo-monitoring/projects/overview").json()["data"]["items"]
+        if item["id"] == seeded["project_id"]
+    )
+
+    for endpoint in card["platform_endpoints"]:
+        expected = metadata_by_code[endpoint["platform_code"]]
+        assert endpoint["platform_name"] == expected["platform_name"]
+        assert endpoint["base_platform"] == expected["base_platform"]
+        assert endpoint["endpoint_type"] == expected["endpoint_type"]
+        assert endpoint["endpoint_label"] == expected["endpoint_label"]
+        assert endpoint["logo_url"] == expected["logo_url"]
+        assert endpoint["enabled"] == expected["enabled"]
+
+
+def test_project_overview_homepage_badges_when_paused(client, session_factory):
+    seeded = _seed_project_card(session_factory, monitoring_paused=True)
+
+    card = next(
+        item
+        for item in client.get("/api/geo-monitoring/projects/overview").json()["data"]["items"]
+        if item["id"] == seeded["project_id"]
+    )
+
+    assert card["homepage_badges"] == [{"code": "paused", "label": "已暂停"}]
+
+
+def test_project_overview_last_updated_at_prefers_run_completed_at(
+    client, session_factory
+):
+    _seed_platforms(session_factory)
+    completed_at = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
+    seeded = _seed_project_card(session_factory)
+
+    with session_factory() as db:
+        run = db.get(MonitorRun, seeded["run_id"])
+        run.completed_at = completed_at
+        db.commit()
+
+    card = next(
+        item
+        for item in client.get("/api/geo-monitoring/projects/overview").json()["data"]["items"]
+        if item["id"] == seeded["project_id"]
+    )
+
+    assert card["last_updated_at"].startswith("2026-06-26T12:00:00")
+
+
+def test_project_overview_last_updated_at_falls_back_to_project_updated_at(
+    client, session_factory
+):
+    response = client.post(
+        "/api/geo-monitoring/projects",
+        json={"project_name": "无运行项目", "industry": "文旅"},
+    )
+    project_id = response.json()["data"]["id"]
+
+    card = next(
+        item
+        for item in client.get("/api/geo-monitoring/projects/overview").json()["data"]["items"]
+        if item["id"] == project_id
+    )
+
+    assert card["latest_run"] is None
+    assert card["last_updated_at"] == card["updated_at"]
+
+
+def test_project_overview_last_updated_at_uses_latest_completed_at_not_latest_run_id(
+    client, session_factory
+):
+    _seed_platforms(session_factory)
+    seeded = _seed_project_card(session_factory)
+    earlier_completed = datetime(2026, 6, 26, 10, 0, tzinfo=UTC)
+    later_completed = datetime(2026, 6, 26, 15, 0, tzinfo=UTC)
+
+    with session_factory() as db:
+        first_run = db.get(MonitorRun, seeded["run_id"])
+        first_run.completed_at = earlier_completed
+        second_run = MonitorRun(
+            run_no=f"RUN-OVERVIEW-{seeded['project_id']}-2",
+            project_id=seeded["project_id"],
+            prompt_set_id=seeded["prompt_set_id"],
+            prompt_set_version="v1",
+            platform_codes=["doubao"],
+            status="completed",
+            collection_status="completed",
+            analysis_status="completed",
+            total_tasks=1,
+            expected_query_count=1,
+            succeeded_tasks=1,
+            completed_at=later_completed,
+        )
+        db.add(second_run)
+        db.commit()
+        second_run_id = second_run.id
+
+    card = next(
+        item
+        for item in client.get("/api/geo-monitoring/projects/overview").json()["data"]["items"]
+        if item["id"] == seeded["project_id"]
+    )
+
+    assert card["latest_run"]["run_id"] == second_run_id
+    assert card["last_updated_at"].startswith("2026-06-26T15:00:00")
+
+
+def test_project_overview_last_updated_at_uses_completed_run_when_latest_run_pending(
+    client, session_factory
+):
+    _seed_platforms(session_factory)
+    seeded = _seed_project_card(session_factory)
+    completed_at = datetime(2026, 6, 26, 11, 30, tzinfo=UTC)
+
+    with session_factory() as db:
+        first_run = db.get(MonitorRun, seeded["run_id"])
+        first_run.completed_at = completed_at
+        pending_run = MonitorRun(
+            run_no=f"RUN-OVERVIEW-{seeded['project_id']}-pending",
+            project_id=seeded["project_id"],
+            prompt_set_id=seeded["prompt_set_id"],
+            prompt_set_version="v1",
+            platform_codes=["doubao"],
+            status="pending",
+            collection_status="pending",
+            analysis_status="pending",
+            total_tasks=1,
+            expected_query_count=1,
+            succeeded_tasks=0,
+            completed_at=None,
+        )
+        db.add(pending_run)
+        db.commit()
+        pending_run_id = pending_run.id
+
+    card = next(
+        item
+        for item in client.get("/api/geo-monitoring/projects/overview").json()["data"]["items"]
+        if item["id"] == seeded["project_id"]
+    )
+
+    assert card["latest_run"]["run_id"] == pending_run_id
+    assert card["latest_run"]["completed_at"] is None
+    assert card["last_updated_at"].startswith("2026-06-26T11:30:00")
+
+
+def test_project_overview_competitor_count_excludes_disabled_competitors(
+    client, session_factory
+):
+    seeded = _seed_project_card(session_factory)
+
+    with session_factory() as db:
+        db.add(
+            Brand(
+                project_id=seeded["project_id"],
+                brand_name="已停用竞品",
+                brand_type="competitor",
+                status="disabled",
+            )
+        )
+        db.commit()
+
+    card = next(
+        item
+        for item in client.get("/api/geo-monitoring/projects/overview").json()["data"]["items"]
+        if item["id"] == seeded["project_id"]
+    )
+
+    assert card["competitor_count"] == 1
+    assert card["competitors"] == [
+        {"brand_id": seeded["competitor_id"], "brand_name": "竞品A"}
+    ]
 
 
 def test_project_overview_platform_count_dedupes_base_platform(client, session_factory):

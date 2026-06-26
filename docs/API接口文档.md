@@ -3,6 +3,7 @@
 > 文档依据当前后端源码整理（`backend/app/api/router.py`、`backend/app/main.py`、`backend/app/geo_monitoring/api/`）。  
 > 更新日期：2026-06-26
 > 在线 OpenAPI：`http://127.0.0.1:8000/docs`
+> 原型页面按钮与调用顺序见：`docs/原型功能_API映射整合精简版.md`
 
 ---
 
@@ -24,7 +25,9 @@
 - [14. 分析与 Agent 审计](#14-分析与-agent-审计)
 - [15. 看板与趋势](#15-看板与趋势)
 - [16. AI 对话记录](#16-ai-对话记录)
-- [17. 报告](#17-报告)
+- [17. 信源引用分析](#17-信源引用分析)
+- [18. 竞品分析](#18-竞品分析)
+- [19. 报告](#19-报告)
 - [附录 A：错误码](#附录-a错误码)
 - [附录 B：状态枚举](#附录-b状态枚举)
 
@@ -749,11 +752,11 @@ curl -X DELETE "http://127.0.0.1:8000/api/geo-monitoring/projects/1"
 
 ---
 
-### 4.6 项目切换器轻量列表
+### 4.6 项目轻量列表（兼容/可选）
 
 | 项目 | 说明 |
 | --- | --- |
-| **接口名称** | 项目切换器轻量列表 |
+| **接口名称** | 项目轻量列表（兼容/可选） |
 | **请求方式** | `GET` |
 | **接口路径** | `/api/geo-monitoring/projects/options` |
 
@@ -767,7 +770,7 @@ curl -X DELETE "http://127.0.0.1:8000/api/geo-monitoring/projects/1"
 | `items[].status` | string | 项目状态 |
 | `items[].monitoring_paused` | boolean | 是否暂停监测 |
 
-**说明：** 返回全部未删除项目的轻量列表，无分页截断。
+**说明：** 返回全部未删除项目的轻量列表，无分页截断。新版首页原型已移除顶部项目切换下拉，因此首页首屏不再依赖该接口；它仅保留给兼容页面或其它轻量选择器。
 
 **调用示例：**
 
@@ -777,11 +780,11 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/projects/options"
 
 ---
 
-### 4.7 项目卡片批量概览
+### 4.7 首页项目卡片批量概览
 
 | 项目 | 说明 |
 | --- | --- |
-| **接口名称** | 项目卡片批量概览 |
+| **接口名称** | 首页项目卡片批量概览 |
 | **请求方式** | `GET` |
 | **接口路径** | `/api/geo-monitoring/projects/overview` |
 
@@ -794,7 +797,9 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/projects/options"
 | `project_name` | string | 否 | — | 项目名称筛选 |
 | `status` | string | 否 | — | `active` / `disabled` / `archived` |
 
-**出参：** 分页结构，`items` 为项目卡片摘要数组，字段包括：
+**用途：** 新版首页首屏主接口。用户进入系统后直接展示所有项目列表，不再先选择单个项目。
+
+**当前已实现出参：** 分页结构，`items` 为项目卡片摘要数组，字段包括：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -805,13 +810,40 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/projects/options"
 | `monitoring_paused` | boolean | 是否暂停监测 |
 | `target_brand_name` | string/null | 目标品牌名 |
 | `brand_word_count` | integer | 目标品牌启用别名数 |
+| `brand_words` | string[] | 首页“品牌词”标签，来自目标品牌启用别名，稳定顺序，最多 10 个 |
 | `competitor_count` | integer | 竞品数量 |
+| `competitors` | object[] | 首页“竞品”标签，每项含 `brand_id`、`brand_name`，最多 10 个 |
 | `question_count` | integer | 激活问题集中已启用问题数 |
 | `platform_count` | integer | 平台数（按 `base_platform` 去重） |
 | `endpoint_count` | integer | 端数（`selected_platform_codes` 长度） |
 | `selected_platform_codes` | string[] | 已选平台编码 |
+| `platform_endpoints` | object[] | 首页平台端图标列表，口径与 `GET /platform-endpoints` 一致 |
+| `homepage_badges` | object[] | 首页状态标签，如 `{ "code": "monitoring", "label": "监测中" }`、`{ "code": "paused", "label": "已暂停" }` |
 | `latest_run` | object/null | 最近一次运行摘要 |
-| `updated_at` | string | 更新时间 |
+| `last_updated_at` | string | 首页“更新”展示时间，优先取最近 run 的 `completed_at`，否则取 `updated_at` |
+| `updated_at` | string | 项目更新时间 |
+
+`platform_endpoints[]` 每项字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `platform_code` | string | 平台编码 |
+| `platform_name` | string | 平台名称 |
+| `base_platform` | string | 基础平台编码 |
+| `endpoint_type` | string | `web` / `app` / `other` |
+| `endpoint_label` | string | 端展示文案 |
+| `logo_url` | string/null | Logo 地址 |
+| `enabled` | boolean | 是否启用 |
+
+**首页按钮调用建议：**
+
+| 按钮 | 调用顺序 |
+| --- | --- |
+| 进入 | 前端跳转监测详情页，详情页调用 `GET /projects/{project_id}/dashboard/overview` |
+| 编辑配置 | `GET /projects/{project_id}/monitor-setup` 回填；保存时 `PUT /projects/{project_id}/monitor-setup`；保存后刷新 `GET /projects/overview` |
+| 暂停 | `POST /projects/{project_id}/pause`，成功后刷新 `GET /projects/overview` |
+| 监测/恢复监测 | `POST /projects/{project_id}/resume`，成功后刷新 `GET /projects/overview` |
+| 删除 | `GET /projects/{project_id}/delete-check` → 可删除且用户确认后 `DELETE /projects/{project_id}` → 刷新 `GET /projects/overview` |
 
 **调用示例：**
 
@@ -1245,7 +1277,7 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/projects/1/monitor-setup" 
 
 ---
 
-## 8.3 AI 生成辅助（候选，不落库）
+### 8.3 AI 生成辅助（候选，不落库）
 
 创建项目与编辑配置向导中的「AI 生成品牌词 / 竞品 / 监测问题」辅助接口。MVP 阶段使用确定性规则生成候选，**不写数据库**；用户确认后仍通过 [8.2 保存监测设置](#82-保存监测设置) 落库。
 
@@ -2359,7 +2391,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/trends" \
 
 ## 16. AI 对话记录
 
-P0 按单次运行（`run_id` 指定或默认取最近已分析/终态 run）聚合，**不做跨 run 时间范围汇总**；`start_at`/`end_at` 仅过滤该 run 内答案的 `collected_at`。
+当前按单次运行（`run_id` 指定或默认取最近已分析/终态 run）聚合，**不做跨 run 时间范围汇总**；`start_at`/`end_at` 仅过滤该 run 内答案的 `collected_at`。
 
 ### 16.1 按 AI 问题聚合对话记录主表
 
@@ -2449,7 +2481,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questi
 
 ---
 
-### 16.4 高频评价标签规则聚类
+### 16.3 高频评价标签规则聚类
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2466,7 +2498,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questi
 | `start_at` / `end_at` | datetime | 否 | 过滤答案采集时间 |
 | `limit` | integer | 否 | 返回标签数上限，默认 10，1–50 |
 
-**口径说明：** P2 采用规则聚类（`cluster_method=rule`），基于回答正文关键词匹配预置评价维度（如演出质量、性价比、交通便利等）；非 LLM 聚类，结果稳定、成本低。
+**口径说明：** 当前采用规则聚类（`cluster_method=rule`），基于回答正文关键词匹配预置评价维度（如演出质量、性价比、交通便利等）；非 LLM 聚类，结果稳定、成本低。
 
 **出参 `data` 字段：**
 
@@ -2498,7 +2530,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questi
 
 ---
 
-### 16.3 导出 AI 对话记录主表 CSV
+### 16.4 导出 AI 对话记录主表 CSV
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2623,7 +2655,9 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/source-analysis/exp
 
 ---
 
-### 17.3 竞品分析页面级聚合
+## 18. 竞品分析
+
+### 18.1 竞品分析页面级聚合
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2638,7 +2672,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/source-analysis/exp
 | `run_id` | integer | 否 | 指定运行 ID；不传则与 dashboard 一致取最近已分析或终态 run |
 | `platform_codes` | string[] | 否 | 平台端编码，可重复 query；仅聚合选中平台分析快照 |
 | `start_at` / `end_at` | datetime | 否 | 过滤答案采集时间（ISO8601）；传入后改按 `Answer`/`BrandResult` 重算榜单 |
-| `brand_scope` | string | 否 | `top5`（默认）或 `all`；P0 仅校验并回显，趋势序列暂为空数组 |
+| `brand_scope` | string | 否 | `top5`（默认）或 `all`；控制榜单品牌范围；本接口趋势序列当前为空数组 |
 
 **口径说明：**
 
@@ -2646,7 +2680,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/source-analysis/exp
 - 榜单优先聚合 `PlatformAnalysis.summary_json.metrics.brand_metrics[]`；单行缺失时对该平台退化使用 `top_competitors` 与目标品牌平台指标（按平台逐行处理，避免混合快照漏算）。
 - 传入 `start_at`/`end_at` 时仅在已存在 `PlatformAnalysis` 的前提下按答案重算；未分析 run 即使带时间过滤也返回空榜；`top1_rate` 与其它 KPI 同步按过滤后答案计算，且 Top1 口径与 `compute_brand_rank_rate(max_rank=1)` 一致（按品牌出现位置排序后的相对排名，而非字符 `first_position <= 1`）。
 - `mention_count` 来自 `BrandResult.mention_count` 或分析快照；`average_rank`/`share_of_voice` 无可靠值时返回 `null`。
-- `geo_metric_snapshot` 已支持可选 `brand_id` 维度；分析完成后写入平台级与品牌级快照。`GET /trends` 可按 `metric_code` + `brand_id` 查询品牌历史序列；平台级未传 `brand_id` 时 `brand_mention_rate` 作为 `brand_visibility` 的兼容别名。`competitor-analysis.trends` 仍为 P0 空数组占位，竞品历史趋势请直接调用 `GET /trends` 并传入 `brand_id`。
+- `geo_metric_snapshot` 已支持可选 `brand_id` 维度；分析完成后写入平台级与品牌级快照。`GET /trends` 可按 `metric_code` + `brand_id` 查询品牌历史序列；平台级未传 `brand_id` 时 `brand_mention_rate` 作为 `brand_visibility` 的兼容别名。`competitor-analysis.trends` 当前为空数组占位，竞品历史趋势请直接调用 `GET /trends` 并传入 `brand_id`。
 
 **出参 `data` 字段：**
 
@@ -2658,7 +2692,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/source-analysis/exp
 | `has_analysis_data` | boolean | 是否存在可展示的分析聚合 |
 | `kpis` | object | 目标品牌 KPI：`mention_rate`、`mention_count`、`average_rank`、`top1_rate`、`share_of_voice` |
 | `boards` | object | 三个榜单：`mention_rate`、`average_rank`、`mention_count` |
-| `trends` | object | `{ days, mention_rate, average_rank, mention_count }`；P0 均为空数组 |
+| `trends` | object | `{ days, mention_rate, average_rank, mention_count }`；当前均为空数组，竞品历史趋势请用 `GET /trends?metric_code=...&brand_id=...` |
 
 **`boards.*[]` 字段：**
 
@@ -2683,9 +2717,9 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/competitor-analysis
 
 ---
 
-## 18. 报告
+## 19. 报告
 
-### 18.1 创建并生成监测报告
+### 19.1 创建并生成监测报告
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2718,7 +2752,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 
 ---
 
-### 18.2 分页查询运行报告
+### 19.2 分页查询运行报告
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2732,7 +2766,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 
 ---
 
-### 18.3 获取报告状态与元数据
+### 19.3 获取报告状态与元数据
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2746,7 +2780,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 
 ---
 
-### 18.4 下载报告文件
+### 19.4 下载报告文件
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2773,7 +2807,7 @@ curl -O -J "http://127.0.0.1:8000/api/geo-monitoring/reports/1/download"
 
 ---
 
-### 18.5 删除报告
+### 19.5 删除报告
 
 | 项目 | 说明 |
 | --- | --- |

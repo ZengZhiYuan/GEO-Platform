@@ -1,302 +1,612 @@
-# 原型功能 API 映射与缺口整合精简版
+# 原型功能 API 映射调用手册
 
-> 更新日期：2026-06-25  
-> 整合来源：`docs/原型功能-API映射_v1.md`、`docs/原型功能_API映射与缺口清单.md`  
-> 核对范围：`backend/app/geo_monitoring/api/`、`backend/app/geo_monitoring/schemas.py`、`backend/app/geo_monitoring/services/`、`backend/app/geo_monitoring/agents/nodes.py`、`backend/app/geo_monitoring/reports/renderer.py`
+> 更新日期：2026-06-26
+> 本文定位：说明原型 6 个页面中每个入口、按钮、筛选和弹窗应该调用哪些后端接口，以及推荐调用顺序。
+> 互补文档：接口字段、入参、出参、错误码以 `docs/API接口文档.md` 为准；验收口径和自动化命令以 `docs/API测试文档.md` 为准。
 
-本文用于替代两份原型映射文档中的重复与冲突表述，作为当前项目最贴合的前后端对接基准。结论先行：
+## 1. 当前结论
 
-- 当前后端是以“项目配置 + 监测运行 run + 平台分析快照”为核心的 MVP 后端，已经能支撑创建项目、保存监测配置、启动采集、查看最新大盘、查看答案详情、生成报告。
-- 原型是以“项目 + 时间范围 + 平台端筛选”为核心的页面级看板，很多页面需要一次返回聚合结果。当前后端更偏底层能力，前端可拼出部分效果，但会有 N+1 调用、口径分散和性能风险。
-- 两份旧文档最大的歧义在平台端、趋势指标编码、竞品趋势、信源分类和对话记录聚合。本文统一采用当前代码实际实现作为基准。
+原型图中展示的核心功能已经基本具备后端接口支撑：
 
-## 1. 统一口径
+- 项目管理：首页直接展示所有项目；`GET /projects/overview` 已聚合品牌词/竞品/平台端图标/状态标签/更新时间，并支撑进入监测详情、编辑配置、暂停/恢复、删除前检查等动作。
+- 创建监测项目：向导草稿、平台端字典、Prompt 类型字典、AI 生成品牌词/竞品/问题、一步创建与完整配置保存均已覆盖。
+- 数据大盘：页面级总览、平台/时间筛选、趋势、竞品/信源/问题预览、报告生成下载均已覆盖。
+- 竞品分析：页面级聚合、行业基准、品牌维度趋势快照查询均已覆盖。
+- AI 对话记录：按问题聚合、问题下多平台回答详情、高频评价标签、CSV 导出均已覆盖。
+- 信源引用分析：页面级聚合、信源类型字典、站点矩阵、指标切换、CSV 导出均已覆盖。
 
-| 主题 | 本文采用的统一描述 | 对接建议 |
+需要前端注意的现实差异：
+
+- 对话记录和信源导出当前是 CSV 文件流，不是原型文案里的 Excel。
+- `/projects/{project_id}/competitor-analysis` 的 `trends` 字段仍是空数组占位；竞品趋势图应直接调用 `/projects/{project_id}/trends`，并传 `brand_id`。
+- `GET /projects/{project_id}/trends` 只支持单个 `platform_code`；多平台趋势图需要前端按平台分别请求，或不传平台取平台级汇总快照。
+- AI 生成接口是项目域接口，路径含 `project_id`。若创建向导要在完成前使用 AI 生成按钮，推荐先在第 1 步创建基础项目，后续步骤再调用生成接口。
+
+## 2. 全局页面初始化
+
+### 2.1 所有业务页面通用
+
+推荐页面壳加载顺序：
+
+1. 用户进入系统后直接进入项目管理首页，调用 `GET /api/geo-monitoring/projects/overview?page=1&page_size=10`。
+   - 首页不再展示顶部项目切换下拉。
+   - `GET /projects/options` 仅作为兼容轻量列表保留，不作为首页首屏必需接口。
+   - `GET /projects/overview` 已返回 `platform_endpoints[]`，首页无需再额外调用 `GET /platform-endpoints` 映射图标。
+2. `GET /api/geo-monitoring/platform-endpoints?enabled=true`
+   - 用于平台端多选控件、平台 Logo、Web/App 端展示（创建向导等场景仍需要）。
+3. 按页面需要加载字典：
+   - `GET /api/geo-monitoring/prompt-types`
+   - `GET /api/geo-monitoring/source-types`
+   - `GET /api/geo-monitoring/benchmarks?industry={industry}`
+4. 进入具体页面后调用该页面的主聚合接口。
+
+### 2.2 公共筛选动作
+
+| 原型动作 | 推荐调用 |
+| --- | --- |
+| 进入系统首页 | `GET /projects/overview`，直接展示所有项目 |
+| 平台端多选 | 当前页主接口追加 `platform_codes`；趋势接口如需多平台，按 `platform_code` 分多次请求 |
+| 时间范围筛选 | 当前页主接口追加 `start_at`、`end_at` |
+| 刷新按钮 | 保留当前筛选条件，重新请求当前页主接口及其趋势/预览接口 |
+| 搜索框 | 项目页使用 `project_name`；对话记录使用 `keyword`；信源页使用 `keyword` |
+
+## 3. 页面到主接口速查
+
+| 原型页 | 首屏主接口 | 主要辅助接口 |
 | --- | --- | --- |
-| API 前缀 | 业务接口主前缀为 `/api/geo-monitoring`，兼容前缀为 `/api/v1/geo-monitoring`；全局探针有 `/api/health`、`/api/ready`，监测域探针有 `/api/geo-monitoring/health`、`/api/geo-monitoring/ready`。 | 新页面优先使用 `/api/geo-monitoring`。 |
-| 响应格式 | 除文件下载外，统一为 `{ code, message, data }`；分页 `data` 为 `{ items, total, page, page_size }`。 | 前端统一从 `data` 解包。 |
-| 核心数据模型 | 后端以 `run_id` 为一次采集分析批次中心；`dashboard` 默认取最近已分析或已终态 run，也可指定 `run_id`。 | 页面“时间范围聚合”不能直接等同于 `dashboard`。 |
-| 平台端 | 当前有普通平台码 `doubao/qwen/...`，也有 Aidso 平台端码 `aidso_doubao_web/app` 等；但 schema 中没有独立 `base_platform/endpoint_type/logo_url` 字段。 | 可以先把 Aidso 平台端码当展示键使用，长期建议补结构化平台端元数据。 |
-| 大盘提及率字段 | `dashboard.summary.brand_mention_rate`、`platforms[].analysis.brand_mention_rate` 是已落地展示字段。 | 大盘 KPI 直接用该字段。 |
-| 趋势 metric_code | 当前代码写入的目标品牌可见度趋势为 `brand_visibility`；`GET /trends` 在未传 `brand_id` 时将 `brand_mention_rate` 兼容映射为 `brand_visibility`。同时写入 `brand_top1_mention_rate`、`brand_top3_mention_rate`、`citation_rate`、`source_coverage`、`recommendation_combined_rate`。 | 新代码优先 `brand_visibility`；旧前端可继续传 `brand_mention_rate` 查询平台级趋势。 |
-| 竞品指标 | `summary_json.metrics.brand_metrics[]` 中有目标品牌和竞品的当前快照指标，包括 `mention_rate_percent`、`average_mention_rank`、`share_of_voice` 等。 | 可用于当前榜单；不能用于竞品历史趋势。 |
-| 对话记录 | `/runs/{run_id}/answers` 是答案粒度，即 prompt × platform；不是“按 AI 问题聚合”的页面表。 | 原型表格需要新增聚合接口，避免前端全量拉取答案后自算。 |
-| 信源分析 | 当前有答案引用 `citations[]` 和平台分析 `top_sources`；`source_type` 代码内主要映射 6 类。 | 原型 8 类信源需要统一字典和聚合接口。 |
-| 报告与导出 | 报告支持 `md/html/pdf`；对话记录和信源页的 Excel 导出未落地。 | Excel 应作为独立导出端点或扩展报告格式。 |
-| AI 生成 | 品牌词、竞品、监测问题的 AI 生成接口尚未实现；`prompt-library` 只是静态模板库。 | 创建向导可先用静态模板，原型体验需要补生成接口。 |
-
-## 2. 当前接口能力地图
-
-### 2.1 配置域
-
-| 能力 | 已有接口 | 说明 |
-| --- | --- | --- |
-| 项目 CRUD | `GET/POST /projects`、`GET/PUT/DELETE /projects/{project_id}` | `status` 可改为 `active/disabled/archived`，但不等同独立“暂停监测”语义。 |
-| 一步创建完整项目 | `POST /projects:setup` ✅ | 创建向导事务接口：项目 + monitor-setup 一次提交；可选 `run_after_create`。 |
-| 一站式监测配置 | `GET/PUT /projects/{project_id}/monitor-setup` | 当前创建向导和编辑配置最重要接口，覆盖品牌、品牌词、竞品、核心词、问题、默认平台。 |
-| 品牌与别名 | `/projects/{project_id}/brands`、`/brands/{brand_id}/aliases` 等 | 可做细粒度编辑，但原型更适合使用 `monitor-setup` 整体保存。 |
-| 核心词 | `/projects/{project_id}/core-keywords`、`/core-keywords/{keyword_id}` | 可支撑品类/核心关键词。 |
-| Prompt 集与问题 | `/projects/{project_id}/prompt-sets`、`/prompt-sets/{id}/prompts`、`/prompts/{id}` | 支持问题集版本和激活。 |
-| Prompt 模板库 | `GET /prompt-library` | 只能提供静态模板，不是 AI 生成。 |
-| 平台列表 | `GET /platforms`、`GET/PUT /platforms/{platform_code}` | 返回 `platform_code/platform_name/adapter_type/search_enabled/citation_supported/extra_config`。 |
-
-### 2.2 运行、采集、分析域
-
-| 能力 | 已有接口 | 说明 |
-| --- | --- | --- |
-| 创建运行 | `POST /runs` | 可指定 `project_id/prompt_set_id/platform_codes/collection_source/aidso_thinking_enabled_by_platform`。 |
-| 运行进度 | `GET /runs/{run_id}` | 返回阶段状态、任务数、有效答案数、完整度、错误摘要和 `progress_rate`。 |
-| 运行任务 | `GET /runs/{run_id}/query-tasks` 或 `/tasks` | 支持按 `status/platform_code` 过滤。 |
-| 答案列表与详情 | `GET /runs/{run_id}/answers`、`GET /answers/{answer_id}` | 详情包含原文、引用和品牌识别；未暴露 `raw_response_json`、问题文本和问题类型。 |
-| 分析触发与结果 | `POST /runs/{run_id}/analyze`、`GET /runs/{run_id}/analysis` | 返回平台指标、竞品、信源、prompt 竞争力和 Agent 洞察。 |
-| 项目大盘 | `GET /projects/{project_id}/dashboard?run_id=` | 当前是最新 run 或指定 run 的汇总，不支持 `start_at/end_at/platform_codes` 的页面级聚合。 |
-| 大盘首屏总览 | `GET /projects/{project_id}/dashboard/overview?run_id=&platform_codes=&start_at=&end_at=` | 一次返回 KPI、平台表现、竞品/信源/问题预览；复用 P0-3/4/5 聚合服务。✅ 已覆盖 |
-| 趋势 | `GET /projects/{project_id}/trends` | 支持单 `metric_code`、单 `platform_code`、时间范围和分页。 |
-
-### 2.3 调度与报告域
-
-| 能力 | 已有接口 | 说明 |
-| --- | --- | --- |
-| 定时调度 | `/projects/{project_id}/schedules`、`/schedules/{schedule_id}`、`enable/disable/trigger` | 后端已具备，原型六页未单独设计调度配置页。 |
-| 报告生成 | `POST /runs/{run_id}/reports` | 同步生成 `md/html/pdf` 报告记录和文件。 |
-| 报告下载 | `GET /reports/{report_id}/download` | 文件流下载。 |
+| 项目管理 | `GET /projects/overview` | `/platform-endpoints`、`/monitor-setup`、`/pause`、`/resume`、`/delete-check`、`DELETE /projects/{project_id}` |
+| 创建监测项目向导 | `PUT /project-drafts/current` 或 `POST /projects` 后 `PUT /monitor-setup` | `/platform-endpoints`、`/prompt-types`、`/prompt-library`、`/ai/*:generate`、`/projects:setup` |
+| 数据大盘 | `GET /projects/{project_id}/dashboard/overview` | `/trends`、`/reports`、`/runs` |
+| 竞品分析 | `GET /projects/{project_id}/competitor-analysis` | `/benchmarks`、`/trends` |
+| AI 对话记录 | `GET /projects/{project_id}/conversation-questions` | `/conversation-questions/{prompt_id}/answers`、`/evaluation-tags`、`/export` |
+| 信源引用分析 | `GET /projects/{project_id}/source-analysis` | `/source-types`、`/source-analysis/export`、`/trends?metric_code=citation_rate` |
 
-## 3. 页面映射精简版
+## 4. 原型页 1：项目管理
 
-### 3.1 项目管理
+### 4.1 进入页面
 
-当前可直接使用：
+调用顺序：
 
-- `GET /projects` 获取项目分页列表。
-- `GET /projects/{project_id}/monitor-setup` 获取品牌词、竞品、问题和默认平台。
-- `GET /projects/{project_id}/dashboard` 获取最近运行状态和数据摘要。
-- `PUT /projects/{project_id}` 更新项目基础信息或状态。
-- `DELETE /projects/{project_id}` 删除项目。
+1. `GET /projects/overview?page=1&page_size=10`
 
-需要前端临时拼装：
+页面卡片优先使用 `GET /projects/overview`，它已经聚合：
 
-- 项目卡中的品牌词、竞品、平台数、问题数，需要 `projects + monitor-setup` 合成。
-- “监测中”可暂按 `project.status=active` 与最近 run 状态判断，但这不是严格的监测开关。
-- `GET /platform-endpoints`：平台端分组、端类型、logo 与展示名。
-- `GET /prompt-types`：原型五类问题意图及兼容存储值。
-- `GET /source-types`：信源展示字典及六类存储值映射。
+- 项目基本信息。
+- 目标品牌名。
+- 品牌词数与 `brand_words[]` 标签明细。
+- 竞品数与 `competitors[]` 标签明细。
+- 已启用问题数。
+- 基础平台数与平台端数。
+- `platform_endpoints[]` 平台端图标列表。
+- 最近一次运行摘要。
+- `monitoring_paused` 暂停状态。
+- `homepage_badges[]` 状态标签（`监测中` / `已暂停`）。
+- `last_updated_at` 首页更新时间。
 
-建议补齐：
+新版首页截图期望的卡片展示：
 
-- `GET /projects/overview`：一次返回项目卡所需摘要，避免每个项目再调 `monitor-setup/dashboard`。✅ 已覆盖（P1-2）
-- `POST /projects/{project_id}/pause`、`POST /projects/{project_id}/resume`：区分暂停监测与禁用项目。✅ 已覆盖（P1-2）
-- `GET /projects/{project_id}/delete-check`：删除前返回关联 run、报告和调度影响。✅ 已覆盖（P1-2）
-- `GET /projects/options`：用于顶部项目切换器的轻量列表。✅ 已覆盖（P1-2）
+| 展示区域 | 接口字段 |
+| --- | --- |
+| 项目名称 / 行业 / 状态 | `project_name`、`industry`、`status`、`monitoring_paused`、`homepage_badges[]` |
+| 品牌词标签 | `brand_word_count`、`brand_words[]` |
+| 竞品标签 | `competitor_count`、`competitors[]` |
+| 监测平台图标 | `platform_endpoints[]` |
+| 问题数 / 平台数 / 端数 | `question_count`、`platform_count`、`endpoint_count` |
+| 更新时间 | `last_updated_at` |
 
-### 3.2 创建监测项目向导
+### 4.2 搜索、状态筛选、分页、刷新
 
-当前推荐调用链：
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 搜索项目名 | `GET /projects/overview?project_name={keyword}&page=1` |
+| 状态筛选 | `GET /projects/overview?status=active|disabled|archived` |
+| 翻页 | `GET /projects/overview?page={page}&page_size={page_size}` |
+| 刷新 | 按当前筛选条件重新请求 `GET /projects/overview` |
 
-1. `GET /platforms?enabled=true` 或 `GET /platform-endpoints?enabled=true` 获取平台候选。
-2. 可选 `GET /prompt-library` 获取问题模板。
-3. `POST /projects` 创建项目基础信息。
-4. 可选 `POST /projects/{project_id}/ai/brand-words:generate`、`/ai/competitors:generate`、`/ai/questions:generate` 生成候选（不落库）。
-5. `PUT /projects/{project_id}/monitor-setup` 保存品牌词、竞品、核心词、问题和默认平台，并按需传 `activate_prompt_set=true`。
-6. 如需立即开始采集，调用 `POST /runs`。
+### 4.3 创建项目按钮
 
-需要消除的旧文档歧义：
+按钮含义：进入创建监测项目向导。
 
-- 「AI 生成品牌词/竞品/问题」不是 `prompt-library`，已通过 AI 生成辅助接口提供。✅ 已覆盖
-- 「平台端」可通过 Aidso 平台码呈现，但缺少结构化端元数据，不能从 schema 直接拿到端类型、logo、分组。
+推荐调用：
 
-建议补齐：
+1. 前端生成 `draft_key`。
+2. 可选：`POST /project-drafts` 创建空草稿。
+3. 跳转到创建向导页。
 
-- `POST /projects/{project_id}/ai/brand-words:generate` ✅ 已覆盖
-- `POST /projects/{project_id}/ai/competitors:generate` ✅ 已覆盖
-- `POST /projects/{project_id}/ai/questions:generate` ✅ 已覆盖
-- `POST /projects:setup`：把创建项目和保存配置包成事务，减少半成品项目。
-- `POST/PUT /project-drafts`：支持向导草稿恢复，属于体验增强。✅ 已覆盖（P2-2）
+如果前端不需要服务端草稿，也可以只跳转；最终保存仍走向导页调用链。
 
-### 3.3 数据大盘
+### 4.4 进入按钮
 
-当前可直接使用：
+按钮含义：进入当前项目的数据大盘。
 
-- `GET /projects/{project_id}/dashboard` 展示最新 run 的 KPI、平台表现、最近运行状态。
-- `GET /projects/{project_id}/trends?metric_code=brand_visibility` 展示目标品牌可见度趋势。
-- `GET /projects/{project_id}/trends?metric_code=brand_top1_mention_rate`、`brand_top3_mention_rate`、`citation_rate` 等展示单指标趋势。
-- `POST /runs/{run_id}/reports` 和 `GET /reports/{report_id}/download` 下载报告。
+调用顺序：
 
-当前字段映射：
+1. 记录当前 `project_id`。
+2. 跳转数据大盘。
+3. 监测详情页调用 `GET /projects/{project_id}/dashboard/overview`；需要指定运行时追加 `run_id`。
 
-| 原型字段 | 当前字段 | 状态 |
-| --- | --- | --- |
-| 提及率 | `summary.brand_mention_rate` 或 `platforms[].analysis.brand_mention_rate` | 已覆盖 |
-| Top1/首位提及率 | `summary.brand_top1_mention_rate` 或 `platforms[].analysis.brand_top1_mention_rate` | 已覆盖 |
-| Top3/首屏提及率 | `summary.brand_top3_mention_rate` 或 `platforms[].analysis.brand_top3_mention_rate` | 已覆盖 |
-| 对话次数 | `summary.valid_answer_count` | 可用，口径为有效回答数 |
-| 提及对话数 | `summary.brand_mention_count` | 可用 |
-| 平均提及排名 | `summary_json.metrics.brand_metrics[]` 中目标品牌行；overview `kpis.average_rank` | 可拼；overview 在可读取时稳定返回 |
-| SOV | `summary_json.metrics.brand_metrics[]` 中目标品牌行；overview `kpis.share_of_voice` | 可拼；overview 在可读取时稳定返回 |
-| 竞品预览 | `platforms[].analysis.top_competitors` 或 `brand_metrics[]`；overview `competitor_preview` | 可拼；overview 已覆盖 |
-| 信源预览 | `platforms[].analysis.top_sources`；overview `source_preview` | 可拼；overview 已覆盖 |
-| 最近问题 | 答案、任务、Prompt 多接口拼装；overview `recent_questions` | overview 已覆盖 |
+### 4.5 编辑配置按钮
 
-建议补齐：
+按钮含义：打开项目配置抽屉或弹窗。
 
-- `GET /projects/{project_id}/dashboard/overview?platform_codes=&start_at=&end_at=` ✅ 已覆盖
-- 在 `dashboard` 或 overview 中稳定返回 `average_mention_rank/share_of_voice/brand_mention_total_count`（overview `kpis` 在可读取时返回，否则 `null`）✅ 已覆盖（P1-1）
-- `GET /projects/{project_id}/conversation-questions/recent`：已由 overview `recent_questions` 预览替代。
+打开弹窗调用顺序：
 
-### 3.4 竞品分析
+1. `GET /projects/{project_id}/monitor-setup`
+2. `GET /platform-endpoints?enabled=true`
+3. `GET /prompt-types`
+4. 可选：`GET /prompt-library?page_size=100`
 
-当前可直接使用：
+保存按钮：
 
-- `GET /projects/{project_id}/dashboard` 获取目标品牌摘要。
-- `GET /runs/{run_id}/analysis` 或 `dashboard.platforms[].analysis.summary_json.metrics.brand_metrics[]` 获取当前 run 的品牌/竞品快照榜单。
+1. 前端将三个 Tab 的本地草稿合并为一次配置。
+2. `PUT /projects/{project_id}/monitor-setup`
+3. 保存成功后刷新：
+   - `GET /projects/overview`
+   - 如当前项目已经打开数据页，再刷新对应数据页主接口。
 
-当前限制：
+### 4.6 编辑配置：品牌与平台 Tab
 
-- `competitor-analysis.trends` 仍返回空数组；历史趋势需通过 `GET /projects/{id}/trends?metric_code=...` 结合 `brand_id` 查询 `geo_metric_snapshot`。
-- 行业平均、市场地位参照值可通过 `GET /benchmarks?industry=` 获取静态行业基准；历史最高仍由前端基于 `trends` 序列 max 计算。
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 回填品牌名、官网、品牌词、平台端 | 已由 `GET /monitor-setup` + `GET /platform-endpoints` 提供 |
+| 手动新增/删除品牌词 chip | 前端先改本地草稿；点击保存时统一 `PUT /monitor-setup` |
+| AI 生成品牌词 | `POST /projects/{project_id}/ai/brand-words:generate`，返回候选后由前端让用户勾选，再保存到 `monitor-setup` |
+| 切换平台端 | 前端先改 `selected_platform_codes` 草稿；点击保存时统一 `PUT /monitor-setup` |
+| 保存 | `PUT /projects/{project_id}/monitor-setup` |
 
-建议补齐：
+细粒度别名接口 `/brands/{brand_id}/aliases` 仍可用于高级编辑，但原型配置抽屉推荐整存 `monitor-setup`。
 
-- `GET /projects/{project_id}/competitor-analysis?platform_codes=&start_at=&end_at=&brand_scope=top5|all` ✅ 已覆盖
-- 为竞品/品牌维度新增指标快照，至少包含 `brand_id`、`mention_rate`、`mention_count`、`average_mention_rank`、`share_of_voice` ✅ 已覆盖（P1-1，`geo_metric_snapshot.brand_id` + 分析写入）
-- 如暂不改表，可先做基于多 run 现有分析 JSON 的只读聚合服务，但要明确性能和口径限制。
+### 4.7 编辑配置：竞品 Tab
 
-### 3.5 AI 对话记录
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 回填竞品和竞品词 | `GET /projects/{project_id}/monitor-setup` |
+| 手动新增/删除竞品 | 前端先改本地草稿 |
+| AI 生成竞品 | `POST /projects/{project_id}/ai/competitors:generate`，返回候选后由用户勾选 |
+| 保存 | `PUT /projects/{project_id}/monitor-setup` |
 
-当前可直接使用：
+### 4.8 编辑配置：监测问题 Tab
 
-- `GET /runs/{run_id}/answers` 获取答案分页。
-- `GET /answers/{answer_id}` 获取答案原文、引用 `citations[]`、品牌结果 `brand_results[]`。
-- `GET /prompt-sets/{prompt_set_id}/prompts` 获取问题文本和类型。
-- `GET /runs/{run_id}/query-tasks` 获取 prompt × platform 任务。
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 回填问题列表和意图分类 | `GET /projects/{project_id}/monitor-setup` + `GET /prompt-types` |
+| 从模板添加问题 | `GET /prompt-library` 获取模板，前端加入草稿 |
+| AI 重新生成问题 | `POST /projects/{project_id}/ai/questions:generate`，返回候选后加入草稿 |
+| 手动新增/编辑/删除问题 | 前端先改本地草稿 |
+| 保存并启用新问题集 | `PUT /projects/{project_id}/monitor-setup`，传 `activate_prompt_set=true` |
 
-当前限制：
+如需独立维护 Prompt 集版本，可使用 `/projects/{project_id}/prompt-sets`、`/prompt-sets/{prompt_set_id}/prompts` 和 `/prompt-sets/{prompt_set_id}/activate`；原型的一站式配置体验优先使用 `monitor-setup`。
 
-- 原型主表是“按 AI 问题聚合”，当前答案接口是单答案粒度。
-- 答案详情未直接返回 `prompt_text/prompt_type`，需要另查 Prompt。
-- `Answer` 模型保存了 `raw_response_json`，但 `AnswerDetailRead` 未暴露，因此深度思考过程和搜索关键词取不到。
-- `/runs/{run_id}/answers` 没有关键词搜索参数。
-- Excel 导出未落地。
+### 4.9 暂停 / 恢复监测按钮
 
-建议补齐：
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 暂停监测 | 卡片显示“暂停”时调用 `POST /projects/{project_id}/pause`，成功后刷新 `GET /projects/overview` |
+| 恢复监测 | 卡片显示“监测”或“恢复监测”时调用 `POST /projects/{project_id}/resume`，成功后刷新 `GET /projects/overview` |
 
-- `GET /projects/{project_id}/conversation-questions?run_id=&platform_codes=&start_at=&end_at=&keyword=&page=&page_size=` ✅ 已覆盖
-- `GET /projects/{project_id}/conversation-questions/{prompt_id}/answers?run_id=&platform_codes=` ✅ 已覆盖
-- `GET /projects/{project_id}/conversation-questions/export` ✅ 已覆盖
-- `AnswerDetailRead` 增加 `prompt_text/prompt_type`，并按脱敏策略暴露 `reasoning_text/search_keywords` 或 `raw_response_json` 的安全子集。✅ 已覆盖
+暂停只阻止新运行和调度触发，不删除历史数据。
 
-### 3.6 信源引用分析
+### 4.10 删除项目按钮
 
-当前可直接使用：
+推荐调用顺序：
 
-- `GET /runs/{run_id}/analysis` 或 `dashboard.platforms[].analysis.top_sources` 获取平台内域名级 Top Sources。
-- `GET /answers/{answer_id}` 获取单答案引用文章 `citations[]`。
-- `GET /projects/{project_id}/trends?metric_code=citation_rate` 获取引用率趋势。
+1. `GET /projects/{project_id}/delete-check`
+2. 若 `can_delete=false`，展示 `blocking_reasons`，不调用删除。
+3. 若 `can_delete=true`，用户二次确认后调用 `DELETE /projects/{project_id}`。
+4. 删除成功后刷新 `GET /projects/overview`。
 
-当前限制：
+## 5. 原型页 2：创建监测项目向导
 
-- `top_sources` 是域名级聚合，文章级 URL/title 去重需要从答案详情聚合。
-- 信源类型当前主要是 `web/official/media/social/video/ecommerce` 这 6 类映射，和原型 8 类不一致。
-- 缺少站点 × 平台端矩阵、信源类型趋势、链接数去重口径。
-- DeepSeek 或其他平台“无引用时是否计入分母”的规则没有页面级接口显式表达。
+### 5.1 推荐总流程
 
-建议补齐：
+由于原型包含中途 AI 生成按钮，而当前 AI 生成接口需要 `project_id`，推荐交互型创建流程如下：
 
-- `GET /projects/{project_id}/source-analysis?platform_codes=&start_at=&end_at=&source_type=&keyword=&metric=&page=&page_size=` ✅ 已覆盖
-- `GET /projects/{project_id}/source-analysis/type-trends`
-- `GET /projects/{project_id}/source-analysis/sites`
-- `GET /source-types` 固化分类字典和中文显示名。✅ 已覆盖
-- `GET /projects/{project_id}/source-analysis/export` ✅ 已覆盖
+1. 进入向导：
+   - `GET /platform-endpoints?enabled=true`
+   - `GET /prompt-types`
+   - `GET /prompt-library?page_size=100`
+   - 可选：`GET /project-drafts/current?draft_key={draft_key}` 恢复草稿。
+2. 第 1 步填写基础信息后点击下一步：
+   - 若还没有 `project_id`，调用 `POST /projects` 创建基础项目。
+   - 同时 `PUT /project-drafts/current` 保存草稿。
+3. 第 2 步配置品牌词、竞品、核心词、平台：
+   - AI 生成按钮调用 `/ai/brand-words:generate`、`/ai/competitors:generate`。
+   - 每次离开步骤可 `PUT /project-drafts/current`。
+4. 第 3 步配置监测问题：
+   - AI 生成问题调用 `/ai/questions:generate`。
+   - 模板问题来自 `GET /prompt-library`。
+5. 点击完成：
+   - `PUT /projects/{project_id}/monitor-setup`，传 `activate_prompt_set=true`。
+6. 如完成后立即开始监测：
+   - `POST /runs`
+   - `GET /runs/{run_id}` 轮询进度。
 
-## 4. 端到端推荐调用链
+替代流程：如果产品希望完成前完全不落库，也可以只用草稿承载向导数据，最后一次调用 `POST /projects:setup` 创建项目并保存配置。该流程不适合在完成前调用项目域 AI 生成接口，除非先创建项目。
 
-```text
-1. 创建项目（二选一）
-   POST /projects
-   或 POST /projects:setup（推荐：项目 + monitor-setup 同事务，可选 run_after_create）
+### 5.2 上一步 / 下一步按钮
 
-2. 初始化配置页
-   GET /platforms?enabled=true
-   GET /prompt-library
-   POST /projects/{id}/ai/brand-words:generate（可选）
-   POST /projects/{id}/ai/competitors:generate（可选）
-   POST /projects/{id}/ai/questions:generate（可选）
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 下一步 | 前端校验当前步骤；调用 `PUT /project-drafts/current` 保存草稿；第 1 步若需要 AI 生成能力，先 `POST /projects` 获取 `project_id` |
+| 上一步 | 前端切换步骤；可选 `PUT /project-drafts/current` 保存当前草稿 |
+| 离开后恢复 | `GET /project-drafts/current?draft_key={draft_key}` |
 
-3. 保存完整监测配置
-   PUT /projects/{project_id}/monitor-setup
-   Body: brand + competitors + core_keywords + ai_questions + selected_platform_codes + activate_prompt_set
+### 5.3 AI 生成按钮
 
-4. 启动监测
-   POST /runs
-   Body: project_id + prompt_set_id? + platform_codes? + collection_source + aidso_thinking_enabled_by_platform?
+| 原型按钮 | 接口顺序 |
+| --- | --- |
+| AI 生成品牌词 | `POST /projects/{project_id}/ai/brand-words:generate` → 用户选择候选 → 写入草稿 `brand.brand_words` |
+| AI 生成竞品 | `POST /projects/{project_id}/ai/competitors:generate` → 用户选择候选 → 写入草稿 `competitors[]` |
+| AI 生成监测问题 | `POST /projects/{project_id}/ai/questions:generate` → 用户选择候选 → 写入草稿 `ai_questions[]` |
 
-5. 轮询运行状态
-   GET /runs/{run_id}
+生成接口只返回候选，不落库。真正保存发生在 `PUT /monitor-setup` 或 `POST /projects:setup`。
 
-6. 查看分析结果
-   GET /projects/{project_id}/dashboard?run_id={run_id}
-   GET /runs/{run_id}/analysis
-   GET /projects/{project_id}/trends?metric_code=brand_visibility
+### 5.4 完成创建按钮
 
-7. 查看答案和引用
-   GET /runs/{run_id}/answers
-   GET /answers/{answer_id}
+已有 `project_id` 的推荐调用：
 
-8. 生成并下载报告
-   POST /runs/{run_id}/reports
-   GET /reports/{report_id}/download
-```
+1. `PUT /projects/{project_id}/monitor-setup`
+2. 如需启动首次运行：`POST /runs`
+3. `GET /runs/{run_id}` 轮询。
+4. 跳转数据大盘：`GET /projects/{project_id}/dashboard/overview?run_id={run_id}`
 
-## 5. 缺口优先级
+无 `project_id` 的事务式调用：
 
-### P0：补齐原型核心闭环
+1. `POST /projects:setup`
+2. 如果传 `run_after_create=true`，响应中可直接带 `run`。
+3. 跳转项目管理或数据大盘。
 
-| 缺口 | 建议接口/改造 | 影响页面 | 说明 |
-| --- | --- | --- | --- |
-| 平台端元数据 | `GET /platform-endpoints` ✅ | 全部页面 | 已提供结构化 `base_platform/endpoint_type/endpoint_label/logo_url` 分组；Aidso 端码兼容解析。 |
-| AI 生成 | `/ai/brand-words:generate`、`/ai/competitors:generate`、`/ai/questions:generate` ✅ | 创建项目、编辑配置 | MVP 确定性规则生成候选，保存仍走 monitor-setup。 |
-| 大盘页面级聚合 | `GET /projects/{id}/dashboard/overview` | 数据大盘 | 解决时间范围、平台多选、竞品预览、信源预览、最近问题的一次性聚合。 |
-| 竞品页面级聚合与品牌维度趋势 | `GET /projects/{id}/competitor-analysis` ✅（P0 榜单与 KPI；趋势 P1 补 `brand_id` 快照） | 竞品分析 | 当前只能做当前快照榜，不能做竞品趋势。 |
-| 对话记录问题聚合 | `GET /projects/{id}/conversation-questions` ✅ | AI 对话记录 | 按 prompt 聚合主表与平台端指标；P0 单 run，`reasoning_text/search_keywords` 暂返回 null/[]。 |
-| 信源页面级聚合 | `GET /projects/{id}/source-analysis` ✅ | 信源引用分析 | 已提供 KPI、类型分布、站点矩阵与 `metric` 口径切换；`article_count` 来自 `AnswerCitation.url` 去重。 |
+### 5.5 完成摘要
 
-### P1：统一指标口径与提升对接质量
+完成页数字砖优先使用保存接口的返回数据；刷新时调用：
 
-| 缺口 | 建议接口/改造 | 影响页面 |
-| --- | --- | --- |
-| 趋势指标编码别名 | `GET /trends` 支持平台级 `brand_mention_rate` → `brand_visibility` 兼容别名 ✅ | 数据大盘、竞品分析 |
-| 平均排名与 SOV 顶层化 | 在 dashboard/overview 返回稳定字段，并纳入快照 | 数据大盘、竞品分析、对话记录 |
-| 项目卡聚合 | `GET /projects/overview` ✅ | 项目管理 |
-| Prompt 类型字典 | `GET /prompt-types` ✅ | 创建项目、编辑配置 |
-| 信源类型字典 | `GET /source-types` ✅ | 信源引用分析 |
-| 回答详情扩展 | `prompt_text/prompt_type/reasoning_text/search_keywords` ✅ | AI 对话记录 |
-| Excel 导出 | `conversation-questions/export`、`source-analysis/export`（MVP CSV）✅ | AI 对话记录、信源引用分析 |
-| 暂停/恢复监测 | `POST /projects/{id}/pause/resume` ✅ | 项目管理 |
-| 删除影响检查 | `GET /projects/{id}/delete-check` ✅ | 项目管理 |
+1. `GET /projects/{project_id}/monitor-setup`
+2. `GET /projects/overview` 获取卡片聚合数。
 
-### P2：后续体验增强
+## 6. 原型页 3：数据大盘
 
-| 缺口 | 建议 | 说明 |
-| --- | --- | --- |
-| 一步创建完整项目 | `POST /projects:setup` ✅ | 创建向导事务接口：`project` + `monitor_setup` 一次提交；`run_after_create=true` 时返回新 run。 |
-| 创建向导草稿 | `POST/PUT /project-drafts` ✅ | 支持离开后恢复；`GET` + `draft_key` 查询最新草稿。 |
-| 当前项目偏好 | `GET/PUT /users/me/preferences/current-project` | 支持跨页面记忆当前项目；**延后**（尚无用户体系，P2-2 未实现）。 |
-| 行业基准 | `GET /benchmarks` ✅ | 支撑行业平均、市场地位等参照卡；当前为静态配置样本。 |
-| 高频评价标签 | `GET /projects/{id}/conversation-questions/{prompt_id}/evaluation-tags` ✅ | 规则聚类，支撑对话详情弹窗高频标签。 |
-| 调度配置页 | 复用现有 schedules 接口 | 后端已就绪，原型未覆盖。 |
+### 6.1 进入页面
 
-## 6. 不再沿用的旧表述
+调用顺序：
 
-以下说法在两份旧文档中容易造成误解，新对接中应避免直接引用：
+1. 从首页“进入”按钮携带 `project_id` 进入监测详情页。
+2. `GET /platform-endpoints?enabled=true`
+3. `GET /projects/{project_id}/dashboard/overview`
+4. 按图表需要调用趋势接口：
+   - 品牌可见度：`GET /projects/{project_id}/trends?metric_code=brand_visibility`
+   - Top1：`metric_code=brand_top1_mention_rate`
+   - Top3：`metric_code=brand_top3_mention_rate`
+   - Top10：`metric_code=brand_top10_mention_rate`
+   - 引用率：`metric_code=citation_rate`
 
-- “平台端完全无后端模型”：不准确。当前 Aidso 已用 `aidso_*_web/app` 平台码承载端信息，但缺结构化 endpoint 字段。
-- “趋势用 `metric_code=brand_mention_rate`”：平台级已兼容映射为 `brand_visibility`；品牌维度需传 `brand_id`，此时 `brand_mention_rate` 为真实品牌快照编码。
-- “竞品趋势可由 trends 获取”：需区分接口。`GET /projects/{id}/trends?metric_code=...&brand_id=...` 已可查询 `geo_metric_snapshot` 品牌维度历史序列；`GET /competitor-analysis` 的 `trends` 字段仍为 P0 空数组占位，竞品页趋势图应直接调用 `/trends` 并传入竞品 `brand_id`。
-- “平均排名、SOV 完全没有”：不准确。当前 `summary_json.metrics.brand_metrics[]` 有当前快照值，但没有稳定顶层字段和趋势快照。
-- “信源类型就是原型 8 类”：不准确。当前代码主要映射 6 类，需字典统一。
-- “对话记录主表直接用 answers 分页”：不贴合原型。`answers` 是答案粒度，原型需要问题聚合粒度。
-- “报告下载可覆盖 Excel 导出”：不准确。当前报告格式为 `md/html/pdf`，Excel 需要新增。
+`dashboard/overview` 已一次返回 KPI、平台表现、竞品预览、信源预览和最近问题预览。
 
-## 7. 一句话版本
+### 6.2 平台端筛选、时间筛选、刷新
 
-当前后端已经具备监测 MVP 的底层闭环：配置项目、启动 run、采集答案、分析平台指标、查看最新大盘和生成报告。要让 6 个原型页以稳定、低成本、口径一致的方式落地，下一步最应该补的是页面级聚合接口、结构化平台端元数据、AI 生成能力，以及竞品/信源/对话记录这三类跨维度聚合能力。
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 平台端多选 | `GET /dashboard/overview?platform_codes=...`；趋势图若展示分平台线条，按每个 `platform_code` 分别请求 `/trends` |
+| 时间范围筛选 | `GET /dashboard/overview?start_at=...&end_at=...`；趋势图也追加同一时间范围 |
+| 刷新 | 重新请求 `dashboard/overview` 和当前图表使用的 `/trends` |
+
+### 6.3 KPI 卡片
+
+KPI 直接来自 `GET /dashboard/overview` 的 `kpis`：
+
+- 品牌提及率。
+- Top1 / Top3 / Top10 提及率。
+- 有效回答数。
+- 提及对话数。
+- 平均提及排名。
+- SOV。
+- 品牌提及总次数。
+- 正/中/负情感率。
+
+无运行、无分析或无分母时，相关比率可能为 `null`，前端显示为 `--`。
+
+### 6.4 平台表现卡
+
+平台表现来自 `dashboard/overview.platforms[]`。
+
+点击平台卡后，如需要查看该平台的趋势：
+
+1. `GET /projects/{project_id}/trends?metric_code=brand_visibility&platform_code={platform_code}`
+2. 其它指标按当前图表切换替换 `metric_code`。
+
+### 6.5 竞品预览区
+
+首屏预览来自 `dashboard/overview.competitor_preview`。
+
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 点击“查看更多竞品分析” | 跳转竞品分析页，调用 `GET /projects/{project_id}/competitor-analysis` |
+| 点击某个竞品查看趋势 | 在竞品分析页使用该行 `brand_id` 调 `/trends?metric_code=brand_mention_rate&brand_id={brand_id}` |
+
+### 6.6 信源预览区
+
+首屏预览来自 `dashboard/overview.source_preview`。
+
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 点击“查看更多信源” | 跳转信源引用分析页，调用 `GET /projects/{project_id}/source-analysis` |
+| 点击站点 | 跳转信源页并用 `keyword={domain 或 source_name}` 重新查询 |
+
+### 6.7 最近问题预览
+
+首屏预览来自 `dashboard/overview.recent_questions`。
+
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 点击“查看更多对话记录” | 跳转 AI 对话记录页，调用 `GET /projects/{project_id}/conversation-questions` |
+| 点击某个问题 | 调用 `GET /projects/{project_id}/conversation-questions/{prompt_id}/answers` 打开回答详情 |
+
+### 6.8 下载报告按钮
+
+推荐调用顺序：
+
+1. 从 `dashboard/overview.run_id` 取得当前运行；如果为空，提示暂无可生成报告的数据。
+2. `POST /runs/{run_id}/reports`，推荐 body 使用 `formats=["pdf"]`。
+3. `GET /reports/{report_id}` 查询状态。
+4. `GET /reports/{report_id}/download` 下载文件。
+
+报告下载是文件流，不是统一 JSON。
+
+### 6.9 立即监测 / 重新运行按钮
+
+如果页面提供手动运行入口，调用顺序：
+
+1. `POST /runs`
+2. `GET /runs/{run_id}` 轮询采集、分析、报告阶段进度。
+3. 运行到终态后刷新 `GET /dashboard/overview?run_id={run_id}`。
+
+## 7. 原型页 4：竞品分析
+
+### 7.1 进入页面
+
+调用顺序：
+
+1. `GET /projects/{project_id}/competitor-analysis`
+2. `GET /benchmarks?industry={project.industry}`，用于行业平均和市场地位参照。
+3. 如页面展示历史趋势，使用 `competitor-analysis.boards` 中的 `brand_id` 继续调用 `/trends`。
+
+### 7.2 平台、时间、范围筛选
+
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 平台端筛选 | `GET /competitor-analysis?platform_codes=...` |
+| 时间范围筛选 | `GET /competitor-analysis?start_at=...&end_at=...` |
+| Top5 / 全部切换 | `GET /competitor-analysis?brand_scope=top5|all` |
+| 刷新 | 保留筛选条件重新请求 `competitor-analysis`；如有趋势图，也重新请求 `/trends` |
+
+### 7.3 KPI 与榜单
+
+| 原型模块 | 数据来源 |
+| --- | --- |
+| 目标品牌 KPI | `competitor-analysis.kpis` |
+| 目标品牌信息 | `competitor-analysis.target_brand` |
+| 提及率榜 | `competitor-analysis.boards.mention_rate[]` |
+| 平均排名榜 | `competitor-analysis.boards.average_rank[]` |
+| 提及次数榜 | `competitor-analysis.boards.mention_count[]` |
+| 行业平均 | `GET /benchmarks?industry={industry}` |
+
+榜单行中的 `is_target=true` 用于高亮目标品牌。
+
+### 7.4 趋势图
+
+不要使用 `competitor-analysis.trends` 作为图表数据源；该字段目前仍为占位空数组。
+
+推荐调用：
+
+| 趋势图 | 接口 |
+| --- | --- |
+| 品牌提及率趋势 | `GET /projects/{project_id}/trends?metric_code=brand_mention_rate&brand_id={brand_id}` |
+| 平均排名趋势 | `GET /projects/{project_id}/trends?metric_code=average_mention_rank&brand_id={brand_id}` |
+| 提及次数趋势 | `GET /projects/{project_id}/trends?metric_code=brand_mention_total_count&brand_id={brand_id}` |
+| SOV 趋势 | `GET /projects/{project_id}/trends?metric_code=share_of_voice&brand_id={brand_id}` |
+
+若原型展示目标品牌和多个竞品的多条折线，前端按每个品牌分别请求一次。
+
+### 7.5 点击竞品行
+
+可选交互：
+
+1. 记录选中 `brand_id`。
+2. 调用对应指标的 `/trends` 刷新右侧趋势。
+3. 如需查看该竞品出现在哪些问题中，跳转 AI 对话记录页，并用关键词搜索该品牌名：`GET /conversation-questions?keyword={brand_name}`。
+
+## 8. 原型页 5：AI 对话记录
+
+### 8.1 进入页面
+
+调用顺序：
+
+1. `GET /projects/{project_id}/conversation-questions`
+2. `GET /platform-endpoints?enabled=true`，用于表格平台列展示。
+
+主表以 AI 问题为一行，不再使用答案粒度的 `/runs/{run_id}/answers` 拼装。
+
+### 8.2 搜索、筛选、分页、导出
+
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 按问题搜索 | `GET /conversation-questions?keyword={keyword}&page=1` |
+| 平台端筛选 | `GET /conversation-questions?platform_codes=...` |
+| 时间范围筛选 | `GET /conversation-questions?start_at=...&end_at=...` |
+| 分页 | `GET /conversation-questions?page={page}&page_size={page_size}` |
+| 导出当前结果 | `GET /conversation-questions/export`，带上当前筛选条件 |
+| 刷新 | 重新请求 `GET /conversation-questions` |
+
+导出当前为 CSV，前端按钮文案建议为“导出 CSV”或“导出表格”。
+
+### 8.3 展开问题行
+
+主表 `items[].platform_metrics` 已包含该问题在各平台端的指标：
+
+- 有效回答数。
+- 可见度。
+- 提及次数。
+- 平均排名。
+- Top1 / Top3 / Top10。
+- SOV。
+- 情感率。
+
+展开行时如果只展示指标，可直接使用主表返回；如果要展示回答正文，调用详情接口。
+
+### 8.4 查看回答弹窗
+
+点击问题行或“查看回答”按钮：
+
+1. `GET /projects/{project_id}/conversation-questions/{prompt_id}/answers`
+2. 可选：`GET /projects/{project_id}/conversation-questions/{prompt_id}/evaluation-tags`
+
+回答详情接口返回同一问题下各平台回答，包含：
+
+- 回答正文。
+- 平台端编码。
+- Prompt 文本和类型。
+- 引用来源。
+- 品牌识别结果。
+- 安全提取的 `reasoning_text`。
+- 安全提取的 `search_keywords`。
+
+### 8.5 弹窗内按钮和 Tab
+
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 切换平台回答 | 优先使用已返回的 `answers.items[]`；如分页未取全，带 `page/page_size` 再请求详情接口 |
+| 查看引用来源 | 使用详情接口返回的 `citations[]` |
+| 查看提及品牌 | 使用详情接口返回的 `brand_results[]` |
+| 查看深度思考 / 搜索关键词 | 使用详情接口返回的 `reasoning_text`、`search_keywords` |
+| 查看高频评价标签 | `GET /conversation-questions/{prompt_id}/evaluation-tags` |
+| 打开引用原文 | 前端打开 `citations[].url`，后端不代理外链 |
+
+## 9. 原型页 6：信源引用分析
+
+### 9.1 进入页面
+
+调用顺序：
+
+1. `GET /source-types`
+2. `GET /platform-endpoints?enabled=true`
+3. `GET /projects/{project_id}/source-analysis`
+
+页面主接口已经返回：
+
+- KPI：引用数、站点数、文章数、引用率。
+- 信源类型分布。
+- 平台端矩阵列。
+- 站点影响力矩阵分页。
+
+### 9.2 筛选、搜索、指标切换、分页
+
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 平台端筛选 | `GET /source-analysis?platform_codes=...` |
+| 时间范围筛选 | `GET /source-analysis?start_at=...&end_at=...` |
+| 信源类型下拉 | `GET /source-analysis?source_type={source_type}` |
+| 搜索站点 | `GET /source-analysis?keyword={domain_or_name}` |
+| 链接数 / 引用率切换 | `GET /source-analysis?metric=links|rate` |
+| 矩阵分页 | `GET /source-analysis?page={page}&page_size={page_size}` |
+| 刷新 | 保留筛选条件重新请求 `GET /source-analysis` |
+
+### 9.3 类型分布图
+
+类型字典来自 `GET /source-types`；类型分布数据来自 `source-analysis.type_distribution[]`。
+
+点击某个类型切片：
+
+1. 将该类型 code 写入筛选条件。
+2. `GET /source-analysis?source_type={source_type}`。
+
+### 9.4 站点影响力矩阵
+
+矩阵数据来自 `source-analysis.sites.items[]`：
+
+- 行：站点域名和站点名称。
+- 列：平台端。
+- 单元格：`platform_values[].display_value`，随 `metric=links|rate` 切换。
+
+点击站点行可选交互：
+
+1. 用该站点作为 `keyword` 重新查询矩阵。
+2. 或跳转 AI 对话记录页，按问题/回答详情查看具体引用。
+
+### 9.5 导出按钮
+
+调用：
+
+1. `GET /projects/{project_id}/source-analysis/export`
+2. 带上当前筛选条件：`run_id`、`platform_codes`、`start_at`、`end_at`、`source_type`、`keyword`、`metric`。
+
+当前返回 CSV 文件流。
+
+### 9.6 引用率趋势
+
+如原型展示引用率趋势：
+
+1. `GET /projects/{project_id}/trends?metric_code=citation_rate`
+2. 如需分平台线条，按 `platform_code` 分别请求。
+
+## 10. 运行、采集、分析、报告闭环
+
+该流程支撑“监测中”“数据生成中”“下载报告”等状态。
+
+### 10.1 手动发起一次监测
+
+推荐调用顺序：
+
+1. `GET /projects/{project_id}/monitor-setup`
+   - 确认有目标品牌、启用问题、默认平台。
+2. `POST /runs`
+3. `GET /runs/{run_id}` 轮询进度。
+4. `GET /runs/{run_id}/query-tasks` 查看任务明细。
+5. `GET /runs/{run_id}/answers` 查看答案粒度数据。
+6. 如果运行终态后需要手工重跑分析：`POST /runs/{run_id}/analyze`。
+7. `GET /projects/{project_id}/dashboard/overview?run_id={run_id}` 刷新数据页。
+
+### 10.2 取消与重试
+
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 取消运行 | `POST /runs/{run_id}/cancel` |
+| 重试失败任务 | `POST /runs/{run_id}/retry-failed` |
+| 查看任务 | `GET /runs/{run_id}/query-tasks` 或 `GET /runs/{run_id}/tasks` |
+
+### 10.3 报告
+
+| 原型动作 | 接口顺序 |
+| --- | --- |
+| 生成报告 | `POST /runs/{run_id}/reports` |
+| 查询报告列表 | `GET /runs/{run_id}/reports` |
+| 查询报告状态 | `GET /reports/{report_id}` |
+| 下载报告 | `GET /reports/{report_id}/download` |
+| 删除报告 | `DELETE /reports/{report_id}` |
+
+## 11. 调度能力
+
+原型 6 页没有单独调度配置页，但后端已具备调度接口，可用于后续设置页。
+
+| 功能 | 接口 |
+| --- | --- |
+| 查询项目调度 | `GET /projects/{project_id}/schedules` |
+| 创建调度 | `POST /projects/{project_id}/schedules` |
+| 获取调度 | `GET /schedules/{schedule_id}` |
+| 更新调度 | `PUT /schedules/{schedule_id}` |
+| 删除调度 | `DELETE /schedules/{schedule_id}` |
+| 启用调度 | `POST /schedules/{schedule_id}/enable` |
+| 停用调度 | `POST /schedules/{schedule_id}/disable` |
+| 立即触发调度 | `POST /schedules/{schedule_id}/trigger` |
+
+## 12. 推荐前端调用原则
+
+- 页面首屏优先调用页面级聚合接口，不要用底层列表接口在前端做 N+1 聚合。
+- 配置编辑优先使用 `GET/PUT /monitor-setup` 整体回填和保存。
+- AI 生成结果只作为候选，必须经用户确认后再保存。
+- 数据页统一使用 `run_id`、`platform_codes`、`start_at`、`end_at` 作为筛选状态。
+- 趋势图统一使用 `/trends`，平台级品牌可见度使用 `brand_visibility`；传 `brand_id` 时使用品牌维度指标编码。
+- 文件下载接口不是统一 JSON；前端按 Blob / 文件流处理。
+- 比率和平均排名都是 decimal 字符串或 `null`；无分母时显示 `--`。
+
+## 13. 一句话版本
+
+这份文档现在不再是缺口清单，而是原型 6 页的接口调用手册：页面主数据走聚合接口，按钮动作走项目、配置、运行、导出和报告接口，字段契约继续查 `docs/API接口文档.md`。
