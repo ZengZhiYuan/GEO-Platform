@@ -181,8 +181,8 @@
 
 - `GET /projects/{project_id}/conversation-questions?run_id=&platform_codes=&start_at=&end_at=&keyword=&page=&page_size=` ✅ 已覆盖
 - `GET /projects/{project_id}/conversation-questions/{prompt_id}/answers?run_id=&platform_codes=` ✅ 已覆盖
-- `GET /projects/{project_id}/conversation-questions/export`
-- `AnswerDetailRead` 增加 `prompt_text/prompt_type`，并按脱敏策略暴露 `reasoning_text/search_keywords` 或 `raw_response_json` 的安全子集。
+- `GET /projects/{project_id}/conversation-questions/export` ✅ 已覆盖
+- `AnswerDetailRead` 增加 `prompt_text/prompt_type`，并按脱敏策略暴露 `reasoning_text/search_keywords` 或 `raw_response_json` 的安全子集。✅ 已覆盖
 
 ### 3.6 信源引用分析
 
@@ -205,7 +205,7 @@
 - `GET /projects/{project_id}/source-analysis/type-trends`
 - `GET /projects/{project_id}/source-analysis/sites`
 - `GET /source-types` 固化分类字典和中文显示名。✅ 已覆盖
-- `GET /projects/{project_id}/source-analysis/export`
+- `GET /projects/{project_id}/source-analysis/export` ✅ 已覆盖
 
 ## 4. 端到端推荐调用链
 
@@ -267,8 +267,8 @@
 | 项目卡聚合 | `GET /projects/overview` ✅ | 项目管理 |
 | Prompt 类型字典 | `GET /prompt-types` ✅ | 创建项目、编辑配置 |
 | 信源类型字典 | `GET /source-types` ✅ | 信源引用分析 |
-| 回答详情扩展 | `prompt_text/prompt_type/reasoning_text/search_keywords` | AI 对话记录 |
-| Excel 导出 | `conversation-questions/export`、`source-analysis/export` 或报告格式增加 `xlsx` | AI 对话记录、信源引用分析 |
+| 回答详情扩展 | `prompt_text/prompt_type/reasoning_text/search_keywords` ✅ | AI 对话记录 |
+| Excel 导出 | `conversation-questions/export`、`source-analysis/export`（MVP CSV）✅ | AI 对话记录、信源引用分析 |
 | 暂停/恢复监测 | `POST /projects/{id}/pause/resume` ✅ | 项目管理 |
 | 删除影响检查 | `GET /projects/{id}/delete-check` ✅ | 项目管理 |
 

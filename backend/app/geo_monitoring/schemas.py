@@ -761,6 +761,11 @@ class AnswerRead(BaseModel):
 
 
 class AnswerDetailRead(AnswerRead):
+    prompt_text: str
+    prompt_type: str
+    reasoning_text: str | None = None
+    search_keywords: list[str] = Field(default_factory=list)
+    raw_response_safe: dict[str, Any] | None = None
     citations: list[CitationRead] = Field(default_factory=list)
     brand_results: list[BrandResultRead] = Field(default_factory=list)
 

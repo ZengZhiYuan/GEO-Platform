@@ -336,8 +336,15 @@
 
 `AnswerDetailRead` 额外包含：
 
-- `citations[]`：引用列表（`citation_no`、`title`、`url`、`domain`、`source_type`、`quoted_text`）
-- `brand_results[]`：品牌识别（`brand_id`、`is_mentioned`、`mention_count`、`first_position`、`sentiment`、`context_json`）
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `prompt_text` | string | 关联问题文本 |
+| `prompt_type` | string | 问题类型 |
+| `reasoning_text` | string/null | 深度思考过程；从 `raw_response_json` 安全提取，无则为 `null` |
+| `search_keywords` | string[] | 搜索关键词列表；从 `raw_response_json` 安全提取，无则为 `[]` |
+| `raw_response_safe` | object/null | 白名单原始响应安全子集（仅含 `model`/`usage`/`choices.finish_reason`/`output.search_info`/Aidso 思考与搜索词等展示字段） |
+| `citations[]` | array | 引用列表（`citation_no`、`title`、`url`、`domain`、`source_type`、`quoted_text`） |
+| `brand_results[]` | array | 品牌识别（`brand_id`、`is_mentioned`、`mention_count`、`first_position`、`sentiment`、`context_json`） |
 
 ### 2.12 ScheduleOut（调度）
 
@@ -1945,7 +1952,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects/1/schedules" \
 | **请求方式** | `GET` |
 | **接口路径** | `/api/geo-monitoring/answers/{answer_id}` |
 
-**出参 `data`：** [AnswerDetailRead](#211-answerread--answerdetailread答案)（含引用与品牌识别）
+**出参 `data`：** [AnswerDetailRead](#211-answerread--answerdetailread答案)（含问题文本、思考过程、搜索关键词、引用与品牌识别）
 
 **调用示例：**
 
@@ -2262,12 +2269,36 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questi
 | `prompt_text` / `prompt_type` | 问题文本与类型 |
 | `raw_text` / `normalized_text` | 回答正文 |
 | `collected_at` | 采集时间 ISO8601 |
-| `reasoning_text` | P0 固定 `null` |
-| `search_keywords` | P0 固定 `[]` |
+| `reasoning_text` | 从 `raw_response_json` 安全提取；无则为 `null` |
+| `search_keywords` | 从 `raw_response_json` 安全提取；无则为 `[]` |
 | `citations` | 引用列表（结构同 `CitationRead`） |
 | `brand_results` | 已提及品牌结果，含 `brand_name` |
 
 **错误码：** 项目/运行/问题不存在 `40400`；项目未启用 `40001`。
+
+---
+
+### 16.3 导出 AI 对话记录主表 CSV
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 导出 AI 对话记录主表 CSV |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/conversation-questions/export` |
+
+**Query 入参：** 与 16.1 一致（`run_id`、`platform_codes`、`start_at`、`end_at`、`keyword`），不含分页。
+
+**响应：** 文件流，`Content-Type: text/csv; charset=utf-8`，UTF-8 BOM，文件名 `conversation-questions-{project_id}.csv`。
+
+**CSV 列：** 问题ID、问题文本、问题类型、运行ID、有效答案数、可见度、提及次数、平均排名、Top1率、Top3率、Top10率、SOV、正面率、中性率、负面率。
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questions/export" \
+  --data-urlencode "keyword=杭州" \
+  -o conversation-questions.csv
+```
 
 ---
 
@@ -2348,7 +2379,31 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/source-analysis" \
 
 ---
 
-### 17.2 竞品分析页面级聚合
+### 17.2 导出信源引用分析 CSV
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 导出信源引用分析 CSV |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/source-analysis/export` |
+
+**Query 入参：** 与 17.1 一致（`run_id`、`platform_codes`、`start_at`、`end_at`、`source_type`、`keyword`、`metric`），不含分页。
+
+**响应：** 文件流，`Content-Type: text/csv; charset=utf-8`，UTF-8 BOM，文件名 `source-analysis-{project_id}.csv`。
+
+**CSV 列：** 域名、站点名称、信源类型、信源类型名称、链接数、引用率、展示值，以及各平台端的链接数/引用率/展示值列。
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/source-analysis/export" \
+  --data-urlencode "source_type=official_site" \
+  -o source-analysis.csv
+```
+
+---
+
+### 17.3 竞品分析页面级聚合
 
 | 项目 | 说明 |
 | --- | --- |

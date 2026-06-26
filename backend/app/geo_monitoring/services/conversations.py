@@ -32,6 +32,7 @@ from app.geo_monitoring.models import (
     Prompt,
     QueryTask,
 )
+from app.geo_monitoring.services.answer_metadata import extract_answer_metadata
 from app.geo_monitoring.services.dashboard import _select_latest_run
 from app.geo_monitoring.services.projects import require_active_project
 from app.geo_monitoring.services.runs import get_run
@@ -547,6 +548,7 @@ def _serialize_answer_detail(
     prompt: Prompt,
     brand_names: dict[int, str],
 ) -> dict[str, Any]:
+    metadata = extract_answer_metadata(answer.raw_response_json)
     return {
         "answer_id": answer.id,
         "platform_code": answer.platform_code,
@@ -556,8 +558,8 @@ def _serialize_answer_detail(
         "raw_text": answer.raw_text,
         "normalized_text": answer.normalized_text,
         "collected_at": answer.collected_at.isoformat(),
-        "reasoning_text": None,
-        "search_keywords": [],
+        "reasoning_text": metadata.reasoning_text,
+        "search_keywords": metadata.search_keywords,
         "citations": [
             {
                 "id": citation.id,
@@ -670,3 +672,104 @@ def list_conversation_question_answers(
         "page": page,
         "page_size": page_size,
     }
+
+
+_EXPORT_BATCH_SIZE = 1000
+_CONVERSATION_EXPORT_HEADERS = [
+    "问题ID",
+    "问题文本",
+    "问题类型",
+    "运行ID",
+    "有效答案数",
+    "可见度",
+    "提及次数",
+    "平均排名",
+    "Top1率",
+    "Top3率",
+    "Top10率",
+    "SOV",
+    "正面率",
+    "中性率",
+    "负面率",
+]
+
+
+def _collect_all_conversation_question_items(
+    db: Session,
+    project_id: int,
+    *,
+    run_id: int | None = None,
+    platform_codes: list[str] | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    keyword: str | None = None,
+) -> list[dict[str, Any]]:
+    """分批拉取全部匹配问题行，避免导出静默截断。"""
+    page = 1
+    items: list[dict[str, Any]] = []
+    total: int | None = None
+    while True:
+        data = list_conversation_questions(
+            db,
+            project_id,
+            run_id=run_id,
+            platform_codes=platform_codes,
+            start_at=start_at,
+            end_at=end_at,
+            keyword=keyword,
+            page=page,
+            page_size=_EXPORT_BATCH_SIZE,
+        )
+        if total is None:
+            total = int(data.get("total") or 0)
+        batch = data.get("items") or []
+        if not batch:
+            break
+        items.extend(batch)
+        if len(items) >= total:
+            break
+        page += 1
+    return items
+
+
+def export_conversation_questions_rows(
+    db: Session,
+    project_id: int,
+    *,
+    run_id: int | None = None,
+    platform_codes: list[str] | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    keyword: str | None = None,
+) -> tuple[list[str], list[list[Any]]]:
+    """导出对话记录主表 CSV 行（Query 与列表接口一致）。"""
+    rows: list[list[Any]] = []
+    for item in _collect_all_conversation_question_items(
+        db,
+        project_id,
+        run_id=run_id,
+        platform_codes=platform_codes,
+        start_at=start_at,
+        end_at=end_at,
+        keyword=keyword,
+    ):
+        rows.append(
+            [
+                item["prompt_id"],
+                item["prompt_text"],
+                item["prompt_type"],
+                item["run_id"],
+                item["valid_answer_count"],
+                item.get("visibility_rate"),
+                item["mention_count"],
+                item.get("average_rank"),
+                item.get("top1_rate"),
+                item.get("top3_rate"),
+                item.get("top10_rate"),
+                item.get("share_of_voice"),
+                item.get("positive_rate"),
+                item.get("neutral_rate"),
+                item.get("negative_rate"),
+            ]
+        )
+    return _CONVERSATION_EXPORT_HEADERS, rows

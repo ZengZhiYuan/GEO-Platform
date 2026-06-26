@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.response import success
 from app.geo_monitoring.services import conversations as conversations_service
+from app.geo_monitoring.services.exports import csv_file_response
 
 router = APIRouter()
 
@@ -70,3 +71,32 @@ def list_conversation_question_answers(
         page_size=page_size,
     )
     return success(data)
+
+
+@router.get(
+    "/projects/{project_id}/conversation-questions/export",
+    summary="导出 AI 对话记录主表 CSV",
+)
+def export_conversation_questions(
+    project_id: int = Path(..., ge=1),
+    run_id: int | None = Query(None, ge=1),
+    platform_codes: list[str] | None = Query(None),
+    start_at: datetime | None = Query(None),
+    end_at: datetime | None = Query(None),
+    keyword: str | None = Query(None, max_length=200),
+    db: Session = Depends(get_db),
+):
+    headers, rows = conversations_service.export_conversation_questions_rows(
+        db,
+        project_id,
+        run_id=run_id,
+        platform_codes=platform_codes,
+        start_at=start_at,
+        end_at=end_at,
+        keyword=keyword,
+    )
+    return csv_file_response(
+        filename=f"conversation-questions-{project_id}.csv",
+        headers=headers,
+        rows=rows,
+    )

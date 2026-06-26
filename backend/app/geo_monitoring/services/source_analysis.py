@@ -620,3 +620,116 @@ def get_source_analysis(
             "page_size": page_size,
         },
     }
+
+
+_EXPORT_BATCH_SIZE = 1000
+
+
+def _collect_all_source_analysis_sites(
+    db: Session,
+    project_id: int,
+    *,
+    run_id: int | None = None,
+    platform_codes: list[str] | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    source_type: str | None = None,
+    keyword: str | None = None,
+    metric: str = "links",
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """分批拉取全部站点行，避免导出静默截断。"""
+    page = 1
+    sites: list[dict[str, Any]] = []
+    snapshot: dict[str, Any] | None = None
+    total: int | None = None
+    while True:
+        data = get_source_analysis(
+            db,
+            project_id,
+            run_id=run_id,
+            platform_codes=platform_codes,
+            start_at=start_at,
+            end_at=end_at,
+            source_type=source_type,
+            keyword=keyword,
+            metric=metric,
+            page=page,
+            page_size=_EXPORT_BATCH_SIZE,
+        )
+        if snapshot is None:
+            snapshot = data
+            total = int(data.get("sites", {}).get("total") or 0)
+        batch = data.get("sites", {}).get("items") or []
+        if not batch:
+            break
+        sites.extend(batch)
+        if total is not None and len(sites) >= total:
+            break
+        page += 1
+    return snapshot or {}, sites
+
+
+def export_source_analysis_rows(
+    db: Session,
+    project_id: int,
+    *,
+    run_id: int | None = None,
+    platform_codes: list[str] | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    source_type: str | None = None,
+    keyword: str | None = None,
+    metric: str = "links",
+) -> tuple[list[str], list[list[Any]]]:
+    """导出信源分析站点矩阵 CSV 行（Query 与列表接口一致）。"""
+    data, site_items = _collect_all_source_analysis_sites(
+        db,
+        project_id,
+        run_id=run_id,
+        platform_codes=platform_codes,
+        start_at=start_at,
+        end_at=end_at,
+        source_type=source_type,
+        keyword=keyword,
+        metric=metric,
+    )
+    platform_columns = [
+        item["platform_code"] for item in data.get("platform_columns", [])
+    ]
+    headers = [
+        "域名",
+        "站点名称",
+        "信源类型",
+        "信源类型名称",
+        "链接数",
+        "引用率",
+        "展示值",
+        *[f"{code}_链接数" for code in platform_columns],
+        *[f"{code}_引用率" for code in platform_columns],
+        *[f"{code}_展示值" for code in platform_columns],
+    ]
+    rows: list[list[Any]] = []
+    for site in site_items:
+        platform_map = {
+            item["platform_code"]: item for item in site.get("platform_values", [])
+        }
+        row = [
+            site.get("domain"),
+            site.get("source_name"),
+            site.get("source_type"),
+            site.get("source_type_label"),
+            site.get("link_count"),
+            site.get("citation_rate"),
+            site.get("display_value"),
+        ]
+        for code in platform_columns:
+            bucket = platform_map.get(code, {})
+            row.append(bucket.get("link_count", 0))
+        for code in platform_columns:
+            bucket = platform_map.get(code, {})
+            row.append(bucket.get("citation_rate"))
+        for code in platform_columns:
+            bucket = platform_map.get(code, {})
+            row.append(bucket.get("display_value"))
+        rows.append(row)
+    return headers, rows
