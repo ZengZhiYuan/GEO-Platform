@@ -8,8 +8,10 @@ from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.response import success
+from app.core.response import ResponseModel, success
+from app.geo_monitoring.schemas import EvaluationTagsOut
 from app.geo_monitoring.services import conversations as conversations_service
+from app.geo_monitoring.services import evaluation_tags as evaluation_tags_service
 from app.geo_monitoring.services.exports import csv_file_response
 
 router = APIRouter()
@@ -69,6 +71,34 @@ def list_conversation_question_answers(
         end_at=end_at,
         page=page,
         page_size=page_size,
+    )
+    return success(data)
+
+
+@router.get(
+    "/projects/{project_id}/conversation-questions/{prompt_id}/evaluation-tags",
+    summary="高频评价标签规则聚类",
+    response_model=ResponseModel[EvaluationTagsOut],
+)
+def list_evaluation_tags(
+    project_id: int = Path(..., ge=1),
+    prompt_id: int = Path(..., ge=1),
+    run_id: int | None = Query(None, ge=1),
+    platform_codes: list[str] | None = Query(None),
+    start_at: datetime | None = Query(None),
+    end_at: datetime | None = Query(None),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+) -> dict:
+    data = evaluation_tags_service.cluster_evaluation_tags(
+        db,
+        project_id,
+        prompt_id,
+        run_id=run_id,
+        platform_codes=platform_codes,
+        start_at=start_at,
+        end_at=end_at,
+        limit=limit,
     )
     return success(data)
 

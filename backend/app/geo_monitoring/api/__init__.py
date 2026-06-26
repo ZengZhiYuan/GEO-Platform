@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.geo_monitoring.api.ai_generation import router as ai_generation_router
+from app.geo_monitoring.api.benchmarks import router as benchmarks_router
 from app.geo_monitoring.api.analysis import router as analysis_router
 from app.geo_monitoring.api.answers import router as answers_router
 from app.geo_monitoring.api.brands import router as brands_router
@@ -34,6 +35,7 @@ _SUB_ROUTERS = (
     prompt_library_router,
     monitor_setup_router,
     metadata_router,
+    benchmarks_router,
     platforms_router,
     runs_router,
     schedules_router,

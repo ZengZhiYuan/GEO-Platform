@@ -1,7 +1,7 @@
 # AI 应用监测 API 接口文档
 
 > 文档依据当前后端源码整理（`backend/app/api/router.py`、`backend/app/main.py`、`backend/app/geo_monitoring/api/`）。  
-> 更新日期：2026-06-25  
+> 更新日期：2026-06-26
 > 在线 OpenAPI：`http://127.0.0.1:8000/docs`
 
 ---
@@ -1777,6 +1777,63 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/source-types"
 
 ---
 
+### 10.7 获取行业基准参照指标
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 获取行业基准参照指标 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/benchmarks` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `industry` | string | 否 | 行业名称；不传时返回全部行业基准列表 |
+
+**口径说明：** 当前样本来源为内置静态配置（`sample_source=static_config`），用于竞品分析参照卡的「行业平均」「市场地位」对比；后续可替换为外部基准库或平台内跨项目聚合，不影响接口契约。
+
+**出参 `data` 字段（列表模式，未传 `industry`）：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `sample_source` | string | 固定 `static_config` |
+| `industries` | array | 各行业基准 |
+
+**出参 `data` 字段（单行业模式，传 `industry`）：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `sample_source` | string | 固定 `static_config` |
+| `industry` | string | 行业名称 |
+| `metrics` | object | 参照指标 |
+| `market_position_thresholds` | array | 市场地位阈值（按 `min_mention_rate` 降序匹配） |
+
+**`metrics` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `mention_rate` | string | 行业平均提及率（decimal 字符串） |
+| `mention_count` | integer | 行业平均提及次数参照值 |
+| `average_rank` | string | 行业平均排名参照值 |
+| `top1_rate` | string | 行业平均首位率 |
+| `share_of_voice` | string | 行业平均 SOV |
+
+**错误码：** 行业不存在 `40400`。
+
+**调用示例：**
+
+```bash
+# 全部行业
+curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/benchmarks"
+
+# 指定行业
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/benchmarks" \
+  --data-urlencode "industry=文旅演艺"
+```
+
+---
+
 ## 11. 监测运行与任务
 
 ### 11.1 分页查询监测运行
@@ -2389,6 +2446,55 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questi
 | `brand_results` | 已提及品牌结果，含 `brand_name` |
 
 **错误码：** 项目/运行/问题不存在 `40400`；项目未启用 `40001`。
+
+---
+
+### 16.4 高频评价标签规则聚类
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 高频评价标签规则聚类 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/conversation-questions/{prompt_id}/evaluation-tags` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `run_id` | integer | 否 | 指定运行 ID；不传则与 16.1 一致 |
+| `platform_codes` | string[] | 否 | 平台端编码 |
+| `start_at` / `end_at` | datetime | 否 | 过滤答案采集时间 |
+| `limit` | integer | 否 | 返回标签数上限，默认 10，1–50 |
+
+**口径说明：** P2 采用规则聚类（`cluster_method=rule`），基于回答正文关键词匹配预置评价维度（如演出质量、性价比、交通便利等）；非 LLM 聚类，结果稳定、成本低。
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `run_id` | integer/null | 实际使用的运行 ID |
+| `prompt_id` | integer | 问题 ID |
+| `cluster_method` | string | 固定 `rule` |
+| `answer_count` | integer | 参与聚类的答案数 |
+| `items` | array | 高频标签列表 |
+| `total` | integer | 返回标签数 |
+
+**`items[]` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `tag` | string | 评价标签 |
+| `count` | integer | 命中答案数 |
+| `share_rate` | string/null | 占答案比例（decimal 字符串；无答案为 `null`） |
+
+**错误码：** 项目/运行/问题不存在 `40400`。
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questions/12/evaluation-tags" \
+  --data-urlencode "limit=5"
+```
 
 ---
 

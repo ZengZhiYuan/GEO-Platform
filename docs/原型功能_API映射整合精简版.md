@@ -153,7 +153,7 @@
 当前限制：
 
 - `competitor-analysis.trends` 仍返回空数组；历史趋势需通过 `GET /projects/{id}/trends?metric_code=...` 结合 `brand_id` 查询 `geo_metric_snapshot`。
-- 行业平均、市场地位、历史基准不是当前后端能力。
+- 行业平均、市场地位参照值可通过 `GET /benchmarks?industry=` 获取静态行业基准；历史最高仍由前端基于 `trends` 序列 max 计算。
 
 建议补齐：
 
@@ -281,8 +281,8 @@
 | 一步创建完整项目 | `POST /projects:setup` ✅ | 创建向导事务接口：`project` + `monitor_setup` 一次提交；`run_after_create=true` 时返回新 run。 |
 | 创建向导草稿 | `POST/PUT /project-drafts` ✅ | 支持离开后恢复；`GET` + `draft_key` 查询最新草稿。 |
 | 当前项目偏好 | `GET/PUT /users/me/preferences/current-project` | 支持跨页面记忆当前项目；**延后**（尚无用户体系，P2-2 未实现）。 |
-| 行业基准 | `GET /benchmarks` | 支撑行业平均、市场地位等参照卡。 |
-| 高频评价标签 | LLM 聚类或规则聚类接口 | 原型增强项，成本较高。 |
+| 行业基准 | `GET /benchmarks` ✅ | 支撑行业平均、市场地位等参照卡；当前为静态配置样本。 |
+| 高频评价标签 | `GET /projects/{id}/conversation-questions/{prompt_id}/evaluation-tags` ✅ | 规则聚类，支撑对话详情弹窗高频标签。 |
 | 调度配置页 | 复用现有 schedules 接口 | 后端已就绪，原型未覆盖。 |
 
 ## 6. 不再沿用的旧表述

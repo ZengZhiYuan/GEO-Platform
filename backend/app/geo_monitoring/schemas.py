@@ -500,6 +500,53 @@ class SourceTypesOut(BaseModel):
     storage_mappings: list[SourceTypeStorageMappingOut]
 
 
+class BenchmarkMetricsOut(BaseModel):
+    mention_rate: str
+    mention_count: int
+    average_rank: str
+    top1_rate: str
+    share_of_voice: str
+
+
+class MarketPositionThresholdOut(BaseModel):
+    code: str
+    label: str
+    min_mention_rate: str
+
+
+class BenchmarkIndustryOut(BaseModel):
+    industry: str
+    metrics: BenchmarkMetricsOut
+    market_position_thresholds: list[MarketPositionThresholdOut]
+
+
+class BenchmarkListOut(BaseModel):
+    sample_source: str
+    industries: list[BenchmarkIndustryOut]
+
+
+class BenchmarkDetailOut(BaseModel):
+    sample_source: str
+    industry: str
+    metrics: BenchmarkMetricsOut
+    market_position_thresholds: list[MarketPositionThresholdOut]
+
+
+class EvaluationTagItemOut(BaseModel):
+    tag: str
+    count: int
+    share_rate: str | None = None
+
+
+class EvaluationTagsOut(BaseModel):
+    run_id: int | None = None
+    prompt_id: int
+    cluster_method: str
+    answer_count: int
+    items: list[EvaluationTagItemOut] = Field(default_factory=list)
+    total: int
+
+
 class AiBrandWordsGenerateIn(BaseModel):
     brand_name: str = Field(min_length=1, max_length=255)
     category: str | None = Field(default=None, max_length=100)
