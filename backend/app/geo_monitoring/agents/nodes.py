@@ -472,12 +472,16 @@ def _deserialize_platform_metrics(payload: dict[str, Any]) -> PlatformMetricsOut
         )
 
     recommendation = payload["recommendation"]
+    empty_rate = {"numerator": 0, "denominator": 0, "rate": None}
     return PlatformMetricsOutput(
         platform_code=payload["platform_code"],
         valid_answer_count=int(payload["valid_answer_count"]),
         brand_visibility=_rate(payload["brand_visibility"]),
         brand_top1_mention_rate=_rate(payload["brand_top1_mention_rate"]),
         brand_top3_mention_rate=_rate(payload["brand_top3_mention_rate"]),
+        brand_top10_mention_rate=_rate(
+            payload.get("brand_top10_mention_rate") or empty_rate
+        ),
         citation_rate=_rate(payload["citation_rate"]),
         recommendation=RecommendationMetric(
             numerator=int(recommendation["numerator"]),
@@ -569,6 +573,16 @@ def _deserialize_platform_metrics(payload: dict[str, Any]) -> PlatformMetricsOut
             )
             for row in payload.get("brand_metrics", [])
         ),
+        average_mention_rank=Decimal(payload["average_mention_rank"])
+        if payload.get("average_mention_rank") is not None
+        else None,
+        share_of_voice=Decimal(payload["share_of_voice"])
+        if payload.get("share_of_voice") is not None
+        else None,
+        brand_mention_total_count=int(payload.get("brand_mention_total_count") or 0),
+        positive_rate=_rate(payload.get("positive_rate") or empty_rate),
+        neutral_rate=_rate(payload.get("neutral_rate") or empty_rate),
+        negative_rate=_rate(payload.get("negative_rate") or empty_rate),
     )
 
 
@@ -789,6 +803,7 @@ def _find_metric_snapshot_for_upsert(
     metric_code: str,
     platform_code: str,
     prompt_id: int | None,
+    brand_id: int | None = None,
 ) -> MetricSnapshot | None:
     conditions = [
         MetricSnapshot.project_id == project_id,
@@ -800,6 +815,10 @@ def _find_metric_snapshot_for_upsert(
         conditions.append(MetricSnapshot.prompt_id.is_(None))
     else:
         conditions.append(MetricSnapshot.prompt_id == prompt_id)
+    if brand_id is None:
+        conditions.append(MetricSnapshot.brand_id.is_(None))
+    else:
+        conditions.append(MetricSnapshot.brand_id == brand_id)
 
     active = db.execute(
         select(MetricSnapshot).where(*conditions, MetricSnapshot.is_deleted.is_(False))
@@ -822,6 +841,7 @@ def _save_metric_snapshot(
     prompt_id: int | None,
     metric_code: str,
     payload: dict[str, Any],
+    brand_id: int | None = None,
 ) -> None:
     existing = _find_metric_snapshot_for_upsert(
         db,
@@ -830,6 +850,7 @@ def _save_metric_snapshot(
         metric_code=metric_code,
         platform_code=platform_code,
         prompt_id=prompt_id,
+        brand_id=brand_id,
     )
     if existing is None:
         db.add(MetricSnapshot(**payload))
@@ -854,8 +875,17 @@ def _upsert_metric_snapshots(
         "brand_visibility": metrics.brand_visibility,
         "brand_top1_mention_rate": metrics.brand_top1_mention_rate,
         "brand_top3_mention_rate": metrics.brand_top3_mention_rate,
+        "brand_top10_mention_rate": metrics.brand_top10_mention_rate,
         "citation_rate": metrics.citation_rate,
         "source_coverage": metrics.source_coverage,
+        "positive_rate": metrics.positive_rate,
+        "neutral_rate": metrics.neutral_rate,
+        "negative_rate": metrics.negative_rate,
+    }
+    scalar_rows: dict[str, Decimal | None | int] = {
+        "average_mention_rank": metrics.average_mention_rank,
+        "share_of_voice": metrics.share_of_voice,
+        "brand_mention_total_count": metrics.brand_mention_total_count,
     }
     for metric_code, metric in metric_rows.items():
         payload = {
@@ -863,6 +893,7 @@ def _upsert_metric_snapshots(
             "run_id": run_id,
             "platform_code": metrics.platform_code,
             "prompt_id": None,
+            "brand_id": None,
             "metric_code": metric_code,
             "numerator": Decimal(metric.numerator),
             "denominator": Decimal(metric.denominator),
@@ -882,12 +913,130 @@ def _upsert_metric_snapshots(
             payload=payload,
         )
 
+    for metric_code, value in scalar_rows.items():
+        if metric_code == "brand_mention_total_count":
+            numerator = Decimal(int(value))
+            denominator = Decimal(metrics.valid_answer_count)
+            metric_value = numerator
+        else:
+            numerator = None
+            denominator = None
+            metric_value = _decimal(value) if value is not None else None
+        payload = {
+            "project_id": project_id,
+            "run_id": run_id,
+            "platform_code": metrics.platform_code,
+            "prompt_id": None,
+            "brand_id": None,
+            "metric_code": metric_code,
+            "numerator": numerator,
+            "denominator": denominator,
+            "metric_value": metric_value,
+            "metric_json": serialize_state({"metric": value})["metric"],
+            "prompt_set_version": prompt_set_version,
+            "is_comparable": True,
+            "completeness_rate": _decimal(metrics.brand_visibility.rate),
+        }
+        _save_metric_snapshot(
+            db,
+            project_id=project_id,
+            run_id=run_id,
+            platform_code=metrics.platform_code,
+            prompt_id=None,
+            metric_code=metric_code,
+            payload=payload,
+        )
+
+    for row in metrics.brand_metrics:
+        brand_metric_rows = {
+            "brand_mention_rate": row.mention_rate,
+            "average_mention_rank": row.average_mention_rank,
+            "share_of_voice": row.share_of_voice,
+            "brand_mention_total_count": row.mention_count,
+        }
+        for metric_code, metric in brand_metric_rows.items():
+            if metric_code == "brand_mention_total_count":
+                payload = {
+                    "project_id": project_id,
+                    "run_id": run_id,
+                    "platform_code": metrics.platform_code,
+                    "prompt_id": None,
+                    "brand_id": row.brand_id,
+                    "metric_code": metric_code,
+                    "numerator": Decimal(metric),
+                    "denominator": Decimal(metrics.valid_answer_count),
+                    "metric_value": Decimal(metric),
+                    "metric_json": serialize_state({"metric": metric})["metric"],
+                    "prompt_set_version": prompt_set_version,
+                    "is_comparable": True,
+                    "completeness_rate": _decimal(metrics.brand_visibility.rate),
+                }
+            elif metric_code == "average_mention_rank":
+                payload = {
+                    "project_id": project_id,
+                    "run_id": run_id,
+                    "platform_code": metrics.platform_code,
+                    "prompt_id": None,
+                    "brand_id": row.brand_id,
+                    "metric_code": metric_code,
+                    "numerator": None,
+                    "denominator": None,
+                    "metric_value": metric,
+                    "metric_json": serialize_state({"metric": metric})["metric"],
+                    "prompt_set_version": prompt_set_version,
+                    "is_comparable": True,
+                    "completeness_rate": _decimal(metrics.brand_visibility.rate),
+                }
+            elif metric_code == "share_of_voice":
+                payload = {
+                    "project_id": project_id,
+                    "run_id": run_id,
+                    "platform_code": metrics.platform_code,
+                    "prompt_id": None,
+                    "brand_id": row.brand_id,
+                    "metric_code": metric_code,
+                    "numerator": None,
+                    "denominator": None,
+                    "metric_value": metric,
+                    "metric_json": serialize_state({"metric": metric})["metric"],
+                    "prompt_set_version": prompt_set_version,
+                    "is_comparable": True,
+                    "completeness_rate": _decimal(metrics.brand_visibility.rate),
+                }
+            else:
+                payload = {
+                    "project_id": project_id,
+                    "run_id": run_id,
+                    "platform_code": metrics.platform_code,
+                    "prompt_id": None,
+                    "brand_id": row.brand_id,
+                    "metric_code": metric_code,
+                    "numerator": Decimal(metric.numerator),
+                    "denominator": Decimal(metric.denominator),
+                    "metric_value": metric.rate,
+                    "metric_json": serialize_state({"metric": metric})["metric"],
+                    "prompt_set_version": prompt_set_version,
+                    "is_comparable": True,
+                    "completeness_rate": _decimal(metrics.brand_visibility.rate),
+                }
+            _save_metric_snapshot(
+                db,
+                project_id=project_id,
+                run_id=run_id,
+                platform_code=metrics.platform_code,
+                prompt_id=None,
+                metric_code=metric_code,
+                payload=payload,
+                brand_id=row.brand_id,
+            )
+
     recommendation = metrics.recommendation
     payload = {
         "project_id": project_id,
         "run_id": run_id,
         "platform_code": metrics.platform_code,
         "prompt_id": None,
+        "brand_id": None,
         "metric_code": "recommendation_combined_rate",
         "numerator": Decimal(recommendation.combined_numerator),
         "denominator": Decimal(recommendation.denominator),

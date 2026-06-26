@@ -108,6 +108,7 @@ class PlatformMetricsOutput:
     brand_visibility: RateMetric
     brand_top1_mention_rate: RateMetric
     brand_top3_mention_rate: RateMetric
+    brand_top10_mention_rate: RateMetric
     citation_rate: RateMetric
     recommendation: RecommendationMetric
     source_coverage: RateMetric
@@ -115,4 +116,10 @@ class PlatformMetricsOutput:
     top_competitors: tuple[CompetitorRow, ...]
     source_stats: tuple[SourceStatRow, ...]
     prompt_competitiveness_rows: tuple[PromptCompetitivenessRow, ...]
+    average_mention_rank: Decimal | None
+    share_of_voice: Decimal | None
+    brand_mention_total_count: int
+    positive_rate: RateMetric
+    neutral_rate: RateMetric
+    negative_rate: RateMetric
     brand_metrics: tuple[BrandMetricsRow, ...] = ()

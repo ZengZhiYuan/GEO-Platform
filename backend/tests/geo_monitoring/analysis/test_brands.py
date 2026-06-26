@@ -11,6 +11,7 @@ from app.geo_monitoring.analysis.brands import (
     compute_brand_metrics_rows,
     compute_brand_score,
     compute_positive_neutral_sentiment,
+    compute_sentiment_rates,
     compute_share_of_voice,
 )
 from app.geo_monitoring.analysis.dto import BrandMentionInput
@@ -178,6 +179,67 @@ def test_brand_metrics_rows_limits_avg_rank_display_to_top_brands():
     assert all(row.average_mention_rank is not None for row in included)
     excluded = next(row for row in rows if row.brand_id == 23)
     assert excluded.include_in_avg_rank_display is False
+
+
+@pytest.mark.parametrize(
+    ("sentiments", "expected_positive", "expected_neutral", "expected_negative"),
+    [
+        (("positive", "neutral"), Decimal("0.5"), Decimal("0.5"), Decimal("0")),
+        (("positive", "negative"), Decimal("0.5"), Decimal("0"), Decimal("0.5")),
+        (("negative", "negative"), Decimal("0"), Decimal("0"), Decimal("1")),
+        ((), None, None, None),
+    ],
+)
+def test_sentiment_rates_aggregate_by_mentioned_conversations(
+    sentiments, expected_positive, expected_neutral, expected_negative
+):
+    answers = [
+        make_answer(
+            answer_id=index + 1,
+            brand_mentions=(_mention(TARGET_BRAND_ID, sentiment=sentiment),),
+        )
+        for index, sentiment in enumerate(sentiments)
+    ]
+
+    rates = compute_sentiment_rates(answers, TARGET_BRAND_ID)
+    assert rates["positive_rate"].rate == expected_positive
+    assert rates["neutral_rate"].rate == expected_neutral
+    assert rates["negative_rate"].rate == expected_negative
+
+
+def test_sentiment_rates_ignore_unmentioned_and_invalid_answers():
+    answers = [
+        make_answer(
+            answer_id=1,
+            brand_mentions=(_mention(TARGET_BRAND_ID, sentiment="positive"),),
+        ),
+        make_answer(
+            answer_id=2,
+            brand_mentions=(_mention(TARGET_BRAND_ID, mentioned=False),),
+        ),
+        make_answer(
+            answer_id=3,
+            task_status="failed",
+            brand_mentions=(_mention(TARGET_BRAND_ID, sentiment="negative"),),
+        ),
+    ]
+
+    rates = compute_sentiment_rates(answers, TARGET_BRAND_ID)
+    assert rates["positive_rate"].numerator == 1
+    assert rates["positive_rate"].denominator == 1
+    assert rates["positive_rate"].rate == Decimal("1")
+    assert rates["neutral_rate"].rate == Decimal("0")
+    assert rates["negative_rate"].rate == Decimal("0")
+
+
+def test_brand_mention_count_sums_mention_count_field_only():
+    answers = [
+        make_answer(
+            answer_id=1,
+            brand_mentions=(_mention(TARGET_BRAND_ID, mention_count=0),),
+        ),
+    ]
+    assert compute_brand_mention_count(answers, TARGET_BRAND_ID) == 0
 
 
 def test_brand_metrics_rows_are_idempotent():

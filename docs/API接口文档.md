@@ -1,8 +1,9 @@
 # AI 应用监测 API 接口文档
 
 > 文档依据当前后端源码整理（`backend/app/api/router.py`、`backend/app/main.py`、`backend/app/geo_monitoring/api/`）。  
-> 更新日期：2026-06-22  
+> 更新日期：2026-06-26
 > 在线 OpenAPI：`http://127.0.0.1:8000/docs`
+> 原型页面按钮与调用顺序见：`docs/原型功能_API映射整合精简版.md`
 
 ---
 
@@ -23,7 +24,10 @@
 - [13. 采集答案](#13-采集答案)
 - [14. 分析与 Agent 审计](#14-分析与-agent-审计)
 - [15. 看板与趋势](#15-看板与趋势)
-- [16. 报告](#16-报告)
+- [16. AI 对话记录](#16-ai-对话记录)
+- [17. 信源引用分析](#17-信源引用分析)
+- [18. 竞品分析](#18-竞品分析)
+- [19. 报告](#19-报告)
 - [附录 A：错误码](#附录-a错误码)
 - [附录 B：状态枚举](#附录-b状态枚举)
 
@@ -133,6 +137,7 @@
 | `report_title` | string/null | 报告标题 |
 | `report_subtitle` | string/null | 报告副标题 |
 | `default_platform_codes` | string[] | 项目默认监测平台编码列表 |
+| `monitoring_paused` | boolean | 是否暂停监测（不影响历史数据，仅阻止调度与新运行） |
 | `created_at` | string (ISO8601) | 创建时间 |
 | `updated_at` | string (ISO8601) | 更新时间 |
 
@@ -334,8 +339,15 @@
 
 `AnswerDetailRead` 额外包含：
 
-- `citations[]`：引用列表（`citation_no`、`title`、`url`、`domain`、`source_type`、`quoted_text`）
-- `brand_results[]`：品牌识别（`brand_id`、`is_mentioned`、`mention_count`、`first_position`、`sentiment`、`context_json`）
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `prompt_text` | string | 关联问题文本 |
+| `prompt_type` | string | 问题类型 |
+| `reasoning_text` | string/null | 深度思考过程；从 `raw_response_json` 安全提取，无则为 `null` |
+| `search_keywords` | string[] | 搜索关键词列表；从 `raw_response_json` 安全提取，无则为 `[]` |
+| `raw_response_safe` | object/null | 白名单原始响应安全子集（仅含 `model`/`usage`/`choices.finish_reason`/`output.search_info`/Aidso 思考与搜索词等展示字段） |
+| `citations[]` | array | 引用列表（`citation_no`、`title`、`url`、`domain`、`source_type`、`quoted_text`） |
+| `brand_results[]` | array | 品牌识别（`brand_id`、`is_mentioned`、`mention_count`、`first_position`、`sentiment`、`context_json`） |
 
 ### 2.12 ScheduleOut（调度）
 
@@ -554,6 +566,109 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects" \
 
 ---
 
+### 4.2.1 一步创建项目并保存监测设置
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 一步创建项目并保存监测设置 |
+| **请求方式** | `POST` |
+| **接口路径** | `/api/geo-monitoring/projects:setup` |
+
+将 `POST /projects` 与 `PUT /monitor-setup` 合并为单次事务：任一步骤失败时不留下半成品项目。现有分步接口保持不变。
+
+**Body 入参：**
+
+| 字段 | 类型 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `project` | object | 是 | — | 同 [4.2 创建监测项目](#42-创建监测项目) Body |
+| `monitor_setup` | object | 是 | — | 同 [监测设置保存](#107-保存监测设置) Body（`MonitorSetupSave`） |
+| `run_after_create` | boolean | 否 | `false` | 为 `true` 时在项目与配置落库成功后立即创建监测运行 |
+
+**出参 `data`：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `project` | [ProjectOut](#21-projectout项目) | 新创建的项目 |
+| `monitor_setup` | object | 同 GET monitor-setup 响应结构 |
+| `run` | [MonitorRunOut](#monitorrunout) / null | `run_after_create=true` 且激活问题集成功时返回新运行，否则为 `null` |
+
+**常见错误：** 与 monitor-setup 保存一致，如 `40028` 品牌为空、`40025` 平台不可用；上述校验失败时不会创建项目记录。`run_after_create=true` 时额外要求：`activate_prompt_set=true`（否则 `40055`）、至少一个监测问题（否则 HTTP `409`、`40901`），且默认 `collection_source=official` 下所选平台须可创建运行（如 Aidso 端码会返回 `40031`）；不满足时在提交前回滚，不留半成品项目。
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects:setup" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project": {"project_name":"杭州宋城文旅监测","industry":"文旅演艺"},
+    "monitor_setup": {
+      "brand": {"brand_name":"宋城演艺","brand_words":["宋城"]},
+      "competitors": [],
+      "core_keywords": [{"keyword":"文旅演艺"}],
+      "ai_questions": [{"core_keyword":"文旅演艺","prompt_text":"推荐国内有哪些文旅演艺项目？"}],
+      "selected_platform_codes": ["qwen"],
+      "activate_prompt_set": true
+    },
+    "run_after_create": false
+  }'
+```
+
+---
+
+### 4.2.2 创建向导草稿
+
+创建监测项目向导的草稿存储，支持用户离开页面后恢复未完成配置。草稿数据为 JSON，结构与 `projects:setup` 的 `project` + `monitor_setup` 字段对齐，允许各步骤部分填写。
+
+| 项目 | 说明 |
+| --- | --- |
+| **创建草稿** | `POST /api/geo-monitoring/project-drafts` |
+| **按 draft_key 更新或创建** | `PUT /api/geo-monitoring/project-drafts`（与 `current` 等价） |
+| **按 ID 更新** | `PUT /api/geo-monitoring/project-drafts/{draft_id}`（Query 必填 `draft_key`） |
+| **按 ID 获取** | `GET /api/geo-monitoring/project-drafts/{draft_id}`（Query 必填 `draft_key`） |
+| **按 draft_key 获取最新** | `GET /api/geo-monitoring/project-drafts/current?draft_key=...` |
+| **按 draft_key 更新或创建** | `PUT /api/geo-monitoring/project-drafts/current` |
+
+**Body 入参（创建 / current 更新）：**
+
+| 字段 | 类型 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `draft_key` | string | 否 | — | 客户端会话标识，用于跨页面恢复；`current` 接口必填 |
+| `current_step` | integer | 否 | `1` | 向导当前步骤，1–3 |
+| `project` | object | 否 | `{}` | 部分项目字段，同 `ProjectCreate` 子集 |
+| `monitor_setup` | object | 否 | `{}` | 部分监测设置，同 `MonitorSetupSave` 子集 |
+
+**按 ID 更新 Body：** 各字段可选；`project` / `monitor_setup` 与已有草稿递归深度合并（嵌套对象合并字段，列表字段整体替换）。**Query 必填 `draft_key`**，须与草稿所属会话一致，不匹配时返回 `40400`（避免跨会话枚举读取）。
+
+**出参 `data`（ProjectDraftOut）：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | integer | 草稿 ID |
+| `draft_key` | string / null | 客户端会话标识 |
+| `current_step` | integer | 当前步骤 |
+| `project` | object | 已保存的项目字段 |
+| `monitor_setup` | object | 已保存的监测设置字段 |
+| `created_at` / `updated_at` | string | ISO8601 时间 |
+
+**常见错误：** `40400` 草稿不存在或 `draft_key` 不匹配；`current` / `PUT /project-drafts` 更新时 `draft_key` 为空返回 `422`；`current_step` 越界返回 `422`
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/project-drafts" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "draft_key": "wizard-session-1",
+    "current_step": 1,
+    "project": {"project_name": "杭州宋城", "industry": "文旅演艺"},
+    "monitor_setup": {"selected_platform_codes": ["qwen"]}
+  }'
+```
+
+**当前项目偏好（延后）：** `GET/PUT /users/me/preferences/current-project` 依赖用户账号体系，当前 MVP 未实现用户认证，该接口暂不提供；跨页面项目记忆可由前端本地存储 `project_id`，待用户体系接入后再补偏好接口。
+
+---
+
 ### 4.3 获取监测项目
 
 | 项目 | 说明 |
@@ -633,6 +748,186 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/projects/1" \
 
 ```bash
 curl -X DELETE "http://127.0.0.1:8000/api/geo-monitoring/projects/1"
+```
+
+---
+
+### 4.6 项目轻量列表（兼容/可选）
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 项目轻量列表（兼容/可选） |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/options` |
+
+**出参 `data`：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `items` | array | 轻量项目列表 |
+| `items[].id` | integer | 项目 ID |
+| `items[].project_name` | string | 项目名称 |
+| `items[].status` | string | 项目状态 |
+| `items[].monitoring_paused` | boolean | 是否暂停监测 |
+
+**说明：** 返回全部未删除项目的轻量列表，无分页截断。新版首页原型已移除顶部项目切换下拉，因此首页首屏不再依赖该接口；它仅保留给兼容页面或其它轻量选择器。
+
+**调用示例：**
+
+```bash
+curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/projects/options"
+```
+
+---
+
+### 4.7 首页项目卡片批量概览
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 首页项目卡片批量概览 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/overview` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `page` | integer | 否 | `1` | 页码 |
+| `page_size` | integer | 否 | `10` | 1–100 |
+| `project_name` | string | 否 | — | 项目名称筛选 |
+| `status` | string | 否 | — | `active` / `disabled` / `archived` |
+
+**用途：** 新版首页首屏主接口。用户进入系统后直接展示所有项目列表，不再先选择单个项目。
+
+**当前已实现出参：** 分页结构，`items` 为项目卡片摘要数组，字段包括：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | integer | 项目 ID |
+| `project_name` | string | 项目名称 |
+| `industry` | string | 行业 |
+| `status` | string | 项目状态 |
+| `monitoring_paused` | boolean | 是否暂停监测 |
+| `target_brand_name` | string/null | 目标品牌名 |
+| `brand_word_count` | integer | 目标品牌启用别名数 |
+| `brand_words` | string[] | 首页“品牌词”标签，来自目标品牌启用别名，稳定顺序，最多 10 个 |
+| `competitor_count` | integer | 竞品数量 |
+| `competitors` | object[] | 首页“竞品”标签，每项含 `brand_id`、`brand_name`，最多 10 个 |
+| `question_count` | integer | 激活问题集中已启用问题数 |
+| `platform_count` | integer | 平台数（按 `base_platform` 去重） |
+| `endpoint_count` | integer | 端数（`selected_platform_codes` 长度） |
+| `selected_platform_codes` | string[] | 已选平台编码 |
+| `platform_endpoints` | object[] | 首页平台端图标列表，口径与 `GET /platform-endpoints` 一致 |
+| `homepage_badges` | object[] | 首页状态标签，如 `{ "code": "monitoring", "label": "监测中" }`、`{ "code": "paused", "label": "已暂停" }` |
+| `latest_run` | object/null | 最近一次运行摘要 |
+| `last_updated_at` | string | 首页“更新”展示时间，优先取最近 run 的 `completed_at`，否则取 `updated_at` |
+| `updated_at` | string | 项目更新时间 |
+
+`platform_endpoints[]` 每项字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `platform_code` | string | 平台编码 |
+| `platform_name` | string | 平台名称 |
+| `base_platform` | string | 基础平台编码 |
+| `endpoint_type` | string | `web` / `app` / `other` |
+| `endpoint_label` | string | 端展示文案 |
+| `logo_url` | string/null | Logo 地址 |
+| `enabled` | boolean | 是否启用 |
+
+**首页按钮调用建议：**
+
+| 按钮 | 调用顺序 |
+| --- | --- |
+| 进入 | 前端跳转监测详情页，详情页调用 `GET /projects/{project_id}/dashboard/overview` |
+| 编辑配置 | `GET /projects/{project_id}/monitor-setup` 回填；保存时 `PUT /projects/{project_id}/monitor-setup`；保存后刷新 `GET /projects/overview` |
+| 暂停 | `POST /projects/{project_id}/pause`，成功后刷新 `GET /projects/overview` |
+| 监测/恢复监测 | `POST /projects/{project_id}/resume`，成功后刷新 `GET /projects/overview` |
+| 删除 | `GET /projects/{project_id}/delete-check` → 可删除且用户确认后 `DELETE /projects/{project_id}` → 刷新 `GET /projects/overview` |
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/overview" \
+  --data-urlencode "page=1" \
+  --data-urlencode "page_size=10"
+```
+
+---
+
+### 4.8 暂停项目监测
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 暂停项目监测 |
+| **请求方式** | `POST` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/pause` |
+
+**Path 入参：** `project_id`（integer，≥ 1）
+
+**出参 `data`：** [ProjectOut](#21-projectout项目)，`monitoring_paused=true`
+
+**说明：** 暂停后调度触发与新运行创建将被拒绝，历史数据与查询接口不受影响。
+
+**常见错误：** `40400` 项目不存在
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects/1/pause"
+```
+
+---
+
+### 4.9 恢复项目监测
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 恢复项目监测 |
+| **请求方式** | `POST` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/resume` |
+
+**Path 入参：** `project_id`（integer，≥ 1）
+
+**出参 `data`：** [ProjectOut](#21-projectout项目)，`monitoring_paused=false`
+
+**常见错误：** `40400` 项目不存在
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects/1/resume"
+```
+
+---
+
+### 4.10 删除前关联检查
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 删除前关联检查 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/delete-check` |
+
+**Path 入参：** `project_id`（integer，≥ 1）
+
+**出参 `data`：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `project_id` | integer | 项目 ID |
+| `run_count` | integer | 关联监测运行数 |
+| `report_count` | integer | 关联报告数 |
+| `schedule_count` | integer | 关联调度数 |
+| `can_delete` | boolean | 是否可删除（与 DELETE 接口一致：有运行则不可删） |
+| `blocking_reasons` | string[] | 阻止删除的原因（仅在有监测运行时返回） |
+
+**常见错误：** `40400` 项目不存在
+
+**调用示例：**
+
+```bash
+curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/projects/1/delete-check"
 ```
 
 ---
@@ -982,6 +1277,148 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/projects/1/monitor-setup" 
 
 ---
 
+### 8.3 AI 生成辅助（候选，不落库）
+
+创建项目与编辑配置向导中的「AI 生成品牌词 / 竞品 / 监测问题」辅助接口。MVP 阶段使用确定性规则生成候选，**不写数据库**；用户确认后仍通过 [8.2 保存监测设置](#82-保存监测设置) 落库。
+
+### 8.3.1 AI 生成品牌词
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | AI 生成品牌词候选 |
+| **请求方式** | `POST` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/ai/brand-words:generate` |
+
+**Body 入参：**
+
+| 字段 | 类型 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `brand_name` | string | 是 | — | 品牌/产品名称 |
+| `category` | string | 否 | — | 监测品类，如 `文旅演艺` |
+| `official_domain` | string | 否 | — | 官网地址（预留，当前不影响生成） |
+| `limit` | integer | 否 | `10` | 返回候选上限，1–50 |
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `brand_words` | string[] | 去重后的品牌词候选，**必含** `brand_name` |
+
+**常见错误：** 项目不存在 `40400`；`brand_name` 为空 `422`
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects/1/ai/brand-words:generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "brand_name": "杭州宋城",
+    "category": "文旅演艺",
+    "limit": 10
+  }'
+```
+
+---
+
+### 8.3.2 AI 生成竞品
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | AI 生成竞品候选 |
+| **请求方式** | `POST` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/ai/competitors:generate` |
+
+**Body 入参：**
+
+| 字段 | 类型 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `brand_name` | string | 是 | — | 目标品牌名称（用于排除自身） |
+| `category` | string | 否 | — | 监测品类 |
+| `region` | string | 否 | — | 区域，如 `杭州` |
+| `limit` | integer | 否 | `5` | 返回竞品上限，1–20 |
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `competitors` | array | 竞品候选列表 |
+
+`competitors[]` 元素：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `brand_name` | string | 竞品品牌名 |
+| `competitor_words` | string[] | 竞品别名候选，必含 `brand_name` |
+| `official_domain` | string/null | 官网（如有） |
+
+**生成规则：** 优先匹配 `category + region` 固定规则；未命中时回退到品类通用候选。
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects/1/ai/competitors:generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "brand_name": "杭州宋城",
+    "category": "文旅演艺",
+    "region": "杭州",
+    "limit": 5
+  }'
+```
+
+---
+
+### 8.3.3 AI 生成监测问题
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | AI 生成监测问题候选 |
+| **请求方式** | `POST` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/ai/questions:generate` |
+
+**Body 入参：**
+
+| 字段 | 类型 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `brand_name` | string | 是 | — | 目标品牌 |
+| `category` | string | 否 | — | 监测品类 |
+| `region` | string | 否 | — | 区域 |
+| `core_keywords` | string[] | 否 | `[]` | 核心词/品类关键字 |
+| `competitors` | string[] | 否 | `[]` | 竞品名称，用于对比类问题 |
+| `limit` | integer | 否 | `10` | 返回问题数，1–50 |
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `questions` | array | 问题候选列表 |
+
+`questions[]` 元素：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `prompt_text` | string | 问题正文 |
+| `prompt_type` | string | 意图编码，对应 [10.5 Prompt 意图类型字典](#105-获取-prompt-意图类型字典) 五类 |
+| `core_keyword` | string/null | 关联核心词 |
+
+**生成规则：** 按五类意图模板轮询生成：`brand_sentiment`、`brand_info`、`category_sentiment`、`competitor_comparison`、`category_recommendation`；结果按 `limit` 截断。
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects/1/ai/questions:generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "brand_name": "杭州宋城",
+    "category": "文旅演艺",
+    "core_keywords": ["杭州旅游"],
+    "competitors": ["印象西湖", "只有河南·戏剧幻城"],
+    "limit": 5
+  }'
+```
+
+---
+
 ## 9. 提示词集与提示词
 
 ### 9.1 分页查询提示词集
@@ -1230,6 +1667,201 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/platforms/qwen"
 curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/platforms/qwen" \
   -H "Content-Type: application/json" \
   -d '{"enabled": true, "max_concurrency": 5}'
+```
+
+---
+
+### 10.4 获取平台端元数据分组
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 获取平台端元数据分组 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/platform-endpoints` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `enabled` | boolean | 否 | 为 `true` 时仅返回启用平台；不传返回全部 |
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `groups` | array | 按 `base_platform` 分组的平台端列表 |
+
+`groups[]` 元素：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `base_platform` | string | 基础平台编码，如 `doubao` |
+| `base_platform_label` | string | 基础平台中文名 |
+| `endpoints` | array | 该平台下的端侧列表，顺序为 `web` → `app` → `other` |
+
+`endpoints[]` 元素：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `platform_code` | string | 平台端编码 |
+| `platform_name` | string | 平台端名称 |
+| `base_platform` | string | 基础平台编码 |
+| `base_platform_label` | string | 基础平台中文名 |
+| `endpoint_type` | string | 端类型：`web` / `app` / `other` |
+| `endpoint_label` | string | 端侧展示名 |
+| `logo_url` | string/null | Logo 地址，优先读 `extra_config.logo_url` |
+| `thinking_mode` | string/null | 深度思考模式，优先读 `extra_config.thinking_mode` |
+| `enabled` | boolean | 是否启用 |
+| `adapter_type` | string | 适配器类型 |
+| `search_enabled` | boolean | 是否支持联网 |
+| `citation_supported` | boolean | 是否支持引用 |
+
+**解析规则：**
+
+1. 优先使用 `AIPlatform.extra_config` 中的 `base_platform`、`endpoint_type`、`endpoint_label`、`logo_url`、`thinking_mode`。
+2. 历史数据缺少 `extra_config` 时，从 `platform_code` 兼容解析：`aidso_*_web` 识别为网页端，`aidso_*_app` 识别为手机端；普通平台码归入 `other`。
+3. 只读聚合，不修改数据库。
+
+**调用示例：**
+
+```bash
+curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/platform-endpoints?enabled=true"
+```
+
+---
+
+### 10.5 获取 Prompt 意图类型字典
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 获取 Prompt 意图类型字典 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/prompt-types` |
+
+**入参：** 无
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `items` | array | 原型五类问题意图 |
+
+`items[]` 元素：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `code` | string | 原型意图编码 |
+| `label` | string | 中文展示名 |
+| `compatible_values` | string[] | 兼容的后端存储值与旧中文值，如 `comparison`、`竞品对比` |
+
+原型五类意图编码：
+
+| code | label |
+| --- | --- |
+| `brand_sentiment` | 品牌情绪 |
+| `brand_info` | 品牌信息 |
+| `category_sentiment` | 品类情绪 |
+| `competitor_comparison` | 竞品对比 |
+| `category_recommendation` | 品类推荐 |
+
+**调用示例：**
+
+```bash
+curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/prompt-types"
+```
+
+---
+
+### 10.6 获取信源类型展示字典
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 获取信源类型展示字典 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/source-types` |
+
+**入参：** 无
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `items` | array | 原型展示用 8 类信源字典 |
+| `storage_mappings` | array | 当前六类存储值到展示字典的映射 |
+
+`items[]` 元素：`code`（展示编码）、`label`（中文名）。
+
+`storage_mappings[]` 元素：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `storage_value` | string | 数据库存储值，如 `web`、`official` |
+| `display_code` | string | 展示字典编码 |
+| `display_label` | string | 展示中文名 |
+
+当前六类存储值：`web`、`official`、`media`、`social`、`video`、`ecommerce`。
+
+**调用示例：**
+
+```bash
+curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/source-types"
+```
+
+---
+
+### 10.7 获取行业基准参照指标
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 获取行业基准参照指标 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/benchmarks` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `industry` | string | 否 | 行业名称；不传时返回全部行业基准列表 |
+
+**口径说明：** 当前样本来源为内置静态配置（`sample_source=static_config`），用于竞品分析参照卡的「行业平均」「市场地位」对比；后续可替换为外部基准库或平台内跨项目聚合，不影响接口契约。
+
+**出参 `data` 字段（列表模式，未传 `industry`）：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `sample_source` | string | 固定 `static_config` |
+| `industries` | array | 各行业基准 |
+
+**出参 `data` 字段（单行业模式，传 `industry`）：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `sample_source` | string | 固定 `static_config` |
+| `industry` | string | 行业名称 |
+| `metrics` | object | 参照指标 |
+| `market_position_thresholds` | array | 市场地位阈值（按 `min_mention_rate` 降序匹配） |
+
+**`metrics` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `mention_rate` | string | 行业平均提及率（decimal 字符串） |
+| `mention_count` | integer | 行业平均提及次数参照值 |
+| `average_rank` | string | 行业平均排名参照值 |
+| `top1_rate` | string | 行业平均首位率 |
+| `share_of_voice` | string | 行业平均 SOV |
+
+**错误码：** 行业不存在 `40400`。
+
+**调用示例：**
+
+```bash
+# 全部行业
+curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/benchmarks"
+
+# 指定行业
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/benchmarks" \
+  --data-urlencode "industry=文旅演艺"
 ```
 
 ---
@@ -1512,7 +2144,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects/1/schedules" \
 | **请求方式** | `GET` |
 | **接口路径** | `/api/geo-monitoring/answers/{answer_id}` |
 
-**出参 `data`：** [AnswerDetailRead](#211-answerread--answerdetailread答案)（含引用与品牌识别）
+**出参 `data`：** [AnswerDetailRead](#211-answerread--answerdetailread答案)（含问题文本、思考过程、搜索关键词、引用与品牌识别）
 
 **调用示例：**
 
@@ -1647,7 +2279,64 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/dashboard" \
 
 ---
 
-### 15.2 按指标查询趋势
+### 15.2 数据大盘页面级总览
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 数据大盘页面级总览 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/dashboard/overview` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `run_id` | integer | 否 | 指定运行 ID；不传则取最近已分析或已终态 run |
+| `platform_codes` | string[] | 否 | 平台端编码，可重复 query；仅过滤展示与指标分母 |
+| `start_at` / `end_at` | datetime | 否 | 过滤答案采集时间（ISO8601），传递给预览子聚合 |
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `project_id` | integer | 项目 ID |
+| `run_id` | integer/null | 当前聚合 run；无运行时为 `null` |
+| `kpis` | object | 大盘 KPI |
+| `platforms` | array | 分平台分析表现（`analysis` 未完成时为 `null`） |
+| `competitor_preview` | object | 竞品榜单预览（复用竞品分析服务，各榜最多 5 条） |
+| `source_preview` | object | 信源站点预览（复用信源分析服务，默认前 5 条） |
+| `recent_questions` | object | 最近问题预览（复用对话记录聚合，默认前 5 条） |
+
+**`kpis` 字段：**
+
+| 字段 | 说明 |
+| --- | --- |
+| `brand_mention_rate` | 目标品牌提及率 |
+| `brand_top1_mention_rate` | Top1 提及率 |
+| `brand_top3_mention_rate` | Top3 提及率 |
+| `brand_top10_mention_rate` | Top10 提及率（目标品牌相对排名 ≤10 的有效回答占比） |
+| `valid_answer_count` | 有效回答数 |
+| `brand_mention_count` | 提及对话数 |
+| `average_rank` | 平均提及排名；优先从竞品分析聚合，时间筛选时按答案重算 |
+| `share_of_voice` | SOV；优先从竞品分析聚合，时间筛选时按答案重算 |
+| `brand_mention_total_count` | 品牌提及次数汇总（`mention_count` 求和） |
+| `positive_rate` / `neutral_rate` / `negative_rate` | 目标品牌提及对话的情感率；无对应情感对话时为 `null` |
+
+无运行、或仅有采集未分析 run 时，KPI 字段为 `null`（`brand_mention_count` 等计数型在无分析时亦为 `null`），接口仍返回 `code=0`。
+
+**时间筛选口径：** 传入 `start_at`/`end_at` 时，`kpis` 与扩展 KPI（`average_rank`/`share_of_voice`/`brand_mention_total_count`/情感率/Top10）按该 run 内答案采集时间重算，与竞品/信源/问题预览一致；`platforms[].analysis` 仍为 run 级 `PlatformAnalysis` 快照，不受时间筛选影响。
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/dashboard/overview" \
+  --data-urlencode "platform_codes=qwen" \
+  --data-urlencode "platform_codes=deepseek"
+```
+
+---
+
+### 15.3 按指标查询趋势
 
 | 项目 | 说明 |
 | --- | --- |
@@ -1659,8 +2348,9 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/dashboard" \
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `metric_code` | string | **是** | 指标编码 |
+| `metric_code` | string | **是** | 指标编码。平台级目标品牌可见度**推荐**使用 `brand_visibility`（分析写入的 canonical 编码）。**兼容别名：** 未传 `brand_id` 时，`brand_mention_rate` 自动映射为 `brand_visibility` 查询平台级快照；传 `brand_id` 时 `brand_mention_rate` 表示品牌维度提及率，不做别名转换。其它平台级编码含 `brand_top1_mention_rate`、`brand_top3_mention_rate`、`brand_top10_mention_rate`、`average_mention_rank`、`share_of_voice`、`brand_mention_total_count`、`positive_rate`、`neutral_rate`、`negative_rate` 等 |
 | `platform_code` | string | 否 | 平台编码 |
+| `brand_id` | integer | 否 | 品牌 ID；不传则仅返回平台级快照（`brand_id=null`）；传入则查询该品牌的品牌维度快照 |
 | `start_at` | datetime | 否 | 起始时间 |
 | `end_at` | datetime | 否 | 结束时间 |
 | `page` | integer | 否 | 默认 1 |
@@ -1672,7 +2362,8 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/dashboard" \
 | --- | --- |
 | `run_id` | 运行 ID |
 | `platform_code` | 平台编码 |
-| `metric_code` | 指标编码 |
+| `brand_id` | 品牌 ID；平台级指标为 `null`，品牌维度快照为具体品牌 |
+| `metric_code` | 指标编码（**始终返回快照中实际写入的 canonical 编码**，如平台级可见度为 `brand_visibility`；即使用兼容别名 `brand_mention_rate` 查询，响应仍为 `brand_visibility`） |
 | `numerator` / `denominator` | 分子/分母 |
 | `metric_value` | 指标值 |
 | `prompt_set_version` | 提示词集版本 |
@@ -1682,15 +2373,353 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/dashboard" \
 **调用示例：**
 
 ```bash
+# 推荐：平台级目标品牌可见度趋势
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/trends" \
+  --data-urlencode "metric_code=brand_visibility"
+
+# 兼容：旧前端/文档使用 brand_mention_rate 查询平台级可见度（映射为 brand_visibility）
 curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/trends" \
   --data-urlencode "metric_code=brand_mention_rate"
+
+# 品牌维度提及率趋势（需 brand_id）
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/trends" \
+  --data-urlencode "metric_code=brand_mention_rate" \
+  --data-urlencode "brand_id=2"
 ```
 
 ---
 
-## 16. 报告
+## 16. AI 对话记录
 
-### 16.1 创建并生成监测报告
+当前按单次运行（`run_id` 指定或默认取最近已分析/终态 run）聚合，**不做跨 run 时间范围汇总**；`start_at`/`end_at` 仅过滤该 run 内答案的 `collected_at`。
+
+### 16.1 按 AI 问题聚合对话记录主表
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 按 AI 问题聚合对话记录主表 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/conversation-questions` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `run_id` | integer | 否 | 指定运行 ID；不传则与 dashboard 一致取最近已分析或终态 run |
+| `platform_codes` | string[] | 否 | 平台端编码，可重复 query；仅过滤展示与指标分母 |
+| `start_at` / `end_at` | datetime | 否 | 过滤答案采集时间（ISO8601） |
+| `keyword` | string | 否 | 问题文本关键词（子串匹配，忽略大小写） |
+| `page` | integer | 否 | 默认 1 |
+| `page_size` | integer | 否 | 默认 10，1–100 |
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `run_id` | integer/null | 实际使用的运行 ID |
+| `items` | array | 按 `prompt_id` 聚合的问题行 |
+| `total` | integer | 问题总数 |
+| `page` / `page_size` | integer | 分页 |
+
+**`items[]` 字段：**
+
+| 字段 | 说明 |
+| --- | --- |
+| `prompt_id` / `prompt_text` / `prompt_type` | 问题标识与文本 |
+| `run_id` | 运行 ID |
+| `valid_answer_count` | 有效答案数（任务成功且文本非空） |
+| `visibility_rate` | 目标品牌可见度（decimal 字符串；无分母为 `null`） |
+| `mention_count` | 目标品牌提及次数合计 |
+| `average_rank` | 目标品牌 `first_position` 平均值（decimal 字符串；未提及为 `null`） |
+| `top1_rate` / `top3_rate` | 单答案 `first_position <= 1/3` 的占比 |
+| `sentiment` | `{ positive, neutral, negative }` 计数 |
+| `platform_metrics` | 分平台同上指标 |
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questions" \
+  --data-urlencode "keyword=杭州" \
+  --data-urlencode "platform_codes=qwen"
+```
+
+---
+
+### 16.2 获取指定问题下各平台回答详情
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 获取指定问题下各平台回答详情 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/conversation-questions/{prompt_id}/answers` |
+
+**Query 入参：** 同 16.1 的 `run_id`、`platform_codes`、`start_at`、`end_at`，以及 `page`（默认 1）、`page_size`（默认 50，1–200）。
+
+**出参 `data` 字段：**
+
+| 字段 | 说明 |
+| --- | --- |
+| `run_id` | 运行 ID |
+| `prompt_id` | 问题 ID |
+| `items` | 各平台答案详情 |
+| `total` / `page` / `page_size` | 分页 |
+
+**`items[]` 字段：**
+
+| 字段 | 说明 |
+| --- | --- |
+| `answer_id` / `platform_code` | 答案与平台 |
+| `prompt_text` / `prompt_type` | 问题文本与类型 |
+| `raw_text` / `normalized_text` | 回答正文 |
+| `collected_at` | 采集时间 ISO8601 |
+| `reasoning_text` | 从 `raw_response_json` 安全提取；无则为 `null` |
+| `search_keywords` | 从 `raw_response_json` 安全提取；无则为 `[]` |
+| `citations` | 引用列表（结构同 `CitationRead`） |
+| `brand_results` | 已提及品牌结果，含 `brand_name` |
+
+**错误码：** 项目/运行/问题不存在 `40400`；项目未启用 `40001`。
+
+---
+
+### 16.3 高频评价标签规则聚类
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 高频评价标签规则聚类 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/conversation-questions/{prompt_id}/evaluation-tags` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `run_id` | integer | 否 | 指定运行 ID；不传则与 16.1 一致 |
+| `platform_codes` | string[] | 否 | 平台端编码 |
+| `start_at` / `end_at` | datetime | 否 | 过滤答案采集时间 |
+| `limit` | integer | 否 | 返回标签数上限，默认 10，1–50 |
+
+**口径说明：** 当前采用规则聚类（`cluster_method=rule`），基于回答正文关键词匹配预置评价维度（如演出质量、性价比、交通便利等）；非 LLM 聚类，结果稳定、成本低。
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `run_id` | integer/null | 实际使用的运行 ID |
+| `prompt_id` | integer | 问题 ID |
+| `cluster_method` | string | 固定 `rule` |
+| `answer_count` | integer | 参与聚类的答案数 |
+| `items` | array | 高频标签列表 |
+| `total` | integer | 返回标签数 |
+
+**`items[]` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `tag` | string | 评价标签 |
+| `count` | integer | 命中答案数 |
+| `share_rate` | string/null | 占答案比例（decimal 字符串；无答案为 `null`） |
+
+**错误码：** 项目/运行/问题不存在 `40400`。
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questions/12/evaluation-tags" \
+  --data-urlencode "limit=5"
+```
+
+---
+
+### 16.4 导出 AI 对话记录主表 CSV
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 导出 AI 对话记录主表 CSV |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/conversation-questions/export` |
+
+**Query 入参：** 与 16.1 一致（`run_id`、`platform_codes`、`start_at`、`end_at`、`keyword`），不含分页。
+
+**响应：** 文件流，`Content-Type: text/csv; charset=utf-8`，UTF-8 BOM，文件名 `conversation-questions-{project_id}.csv`。
+
+**CSV 列：** 问题ID、问题文本、问题类型、运行ID、有效答案数、可见度、提及次数、平均排名、Top1率、Top3率、Top10率、SOV、正面率、中性率、负面率。
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questions/export" \
+  --data-urlencode "keyword=杭州" \
+  -o conversation-questions.csv
+```
+
+---
+
+## 17. 信源引用分析
+
+### 17.1 信源引用分析页面级聚合
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 信源引用分析页面级聚合 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/source-analysis` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `run_id` | integer | 否 | 指定运行 ID；不传则与 dashboard 一致取最近已分析或终态 run |
+| `platform_codes` | string[] | 否 | 平台端编码，可重复 query；仅聚合选中平台列并更新 KPI |
+| `start_at` / `end_at` | datetime | 否 | 过滤答案采集时间（ISO8601）；传入后 KPI/类型分布/矩阵改按 `AnswerCitation` 重聚合，不再使用 `SourceStat` |
+| `source_type` | string | 否 | 信源展示类型 code，见 `GET /source-types` |
+| `keyword` | string | 否 | 域名或站点名子串匹配（忽略大小写） |
+| `metric` | string | 否 | `links`（默认）或 `rate`；控制矩阵 `display_value` 口径 |
+| `page` | integer | 否 | 站点矩阵分页，默认 1 |
+| `page_size` | integer | 否 | 默认 10，1–100 |
+
+**口径说明：**
+
+- 域名级链接数优先聚合 `geo_source_stat`（`SourceStat`）。
+- `kpi.citation_count` 为所选平台 `SourceStat.citation_count` 求和。
+- `kpi.site_count` 为所选平台 distinct `domain`。
+- `kpi.article_count` 为当前 run 内 `AnswerCitation.url` 去重计数（推荐口径）。
+- `kpi.citation_rate` 为有效回答中含有效引用的占比（与趋势 `citation_rate` 一致）。
+- 类型分布将六类存储值映射为 `GET /source-types` 展示字典后聚合。
+- 平台端矩阵按 `domain`/`source_name` 聚合；某平台无信源数据时 `platform_columns[].has_citation_data=false`。
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `run_id` | integer/null | 实际使用的运行 ID |
+| `metric` | string | `links` 或 `rate` |
+| `has_citation_data` | boolean | 是否存在可展示的信源聚合数据 |
+| `kpi` | object | `citation_count`、`site_count`、`article_count`、`citation_rate` |
+| `type_distribution` | array | 信源类型分布 |
+| `platform_columns` | array | 矩阵平台列及 `has_citation_data` |
+| `sites` | object | 站点矩阵分页 `{ items, total, page, page_size }` |
+
+**`type_distribution[]` / `sites.items[]` 公共字段：**
+
+| 字段 | 说明 |
+| --- | --- |
+| `source_type` / `source_type_label` | 展示字典 code 与中文名 |
+| `link_count` | 链接数（`SourceStat.citation_count` 聚合） |
+| `citation_rate` | 占当前筛选总链接数的比率（decimal 字符串；无分母为 `null`） |
+| `display_value` | `metric=links` 时为 `link_count` 字符串；`metric=rate` 时为 `citation_rate` |
+
+**`sites.items[].platform_values[]`：**
+
+| 字段 | 说明 |
+| --- | --- |
+| `platform_code` | 平台端编码 |
+| `link_count` | 该平台下该站点链接数 |
+| `citation_rate` | 占该平台总链接数的比率 |
+| `has_citation_data` | 该平台是否存在信源数据 |
+| `display_value` | 随 `metric` 切换 |
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/source-analysis" \
+  --data-urlencode "platform_codes=qwen" \
+  --data-urlencode "source_type=official_site" \
+  --data-urlencode "metric=rate"
+```
+
+**错误码：** 项目/运行不存在 `40400`；项目未启用 `40001`。
+
+---
+
+### 17.2 导出信源引用分析 CSV
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 导出信源引用分析 CSV |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/source-analysis/export` |
+
+**Query 入参：** 与 17.1 一致（`run_id`、`platform_codes`、`start_at`、`end_at`、`source_type`、`keyword`、`metric`），不含分页。
+
+**响应：** 文件流，`Content-Type: text/csv; charset=utf-8`，UTF-8 BOM，文件名 `source-analysis-{project_id}.csv`。
+
+**CSV 列：** 域名、站点名称、信源类型、信源类型名称、链接数、引用率、展示值，以及各平台端的链接数/引用率/展示值列。
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/source-analysis/export" \
+  --data-urlencode "source_type=official_site" \
+  -o source-analysis.csv
+```
+
+---
+
+## 18. 竞品分析
+
+### 18.1 竞品分析页面级聚合
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 竞品分析页面级聚合 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/projects/{project_id}/competitor-analysis` |
+
+**Query 入参：**
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `run_id` | integer | 否 | 指定运行 ID；不传则与 dashboard 一致取最近已分析或终态 run |
+| `platform_codes` | string[] | 否 | 平台端编码，可重复 query；仅聚合选中平台分析快照 |
+| `start_at` / `end_at` | datetime | 否 | 过滤答案采集时间（ISO8601）；传入后改按 `Answer`/`BrandResult` 重算榜单 |
+| `brand_scope` | string | 否 | `top5`（默认）或 `all`；控制榜单品牌范围；本接口趋势序列当前为空数组 |
+
+**口径说明：**
+
+- 目标品牌来自项目 `brand_type=target`；竞品来自 `brand_type=competitor`；榜单仅保留上述品牌，`candidate` 等不会出现在 `boards`。
+- 榜单优先聚合 `PlatformAnalysis.summary_json.metrics.brand_metrics[]`；单行缺失时对该平台退化使用 `top_competitors` 与目标品牌平台指标（按平台逐行处理，避免混合快照漏算）。
+- 传入 `start_at`/`end_at` 时仅在已存在 `PlatformAnalysis` 的前提下按答案重算；未分析 run 即使带时间过滤也返回空榜；`top1_rate` 与其它 KPI 同步按过滤后答案计算，且 Top1 口径与 `compute_brand_rank_rate(max_rank=1)` 一致（按品牌出现位置排序后的相对排名，而非字符 `first_position <= 1`）。
+- `mention_count` 来自 `BrandResult.mention_count` 或分析快照；`average_rank`/`share_of_voice` 无可靠值时返回 `null`。
+- `geo_metric_snapshot` 已支持可选 `brand_id` 维度；分析完成后写入平台级与品牌级快照。`GET /trends` 可按 `metric_code` + `brand_id` 查询品牌历史序列；平台级未传 `brand_id` 时 `brand_mention_rate` 作为 `brand_visibility` 的兼容别名。`competitor-analysis.trends` 当前为空数组占位，竞品历史趋势请直接调用 `GET /trends` 并传入 `brand_id`。
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `run_id` | integer/null | 实际使用的运行 ID |
+| `brand_scope` | string | `top5` 或 `all` |
+| `target_brand` | object | `{ brand_id, brand_name }` |
+| `has_analysis_data` | boolean | 是否存在可展示的分析聚合 |
+| `kpis` | object | 目标品牌 KPI：`mention_rate`、`mention_count`、`average_rank`、`top1_rate`、`share_of_voice` |
+| `boards` | object | 三个榜单：`mention_rate`、`average_rank`、`mention_count` |
+| `trends` | object | `{ days, mention_rate, average_rank, mention_count }`；当前均为空数组，竞品历史趋势请用 `GET /trends?metric_code=...&brand_id=...` |
+
+**`boards.*[]` 字段：**
+
+| 字段 | 说明 |
+| --- | --- |
+| `brand_id` / `brand_name` | 品牌标识 |
+| `mention_rate` | 提及率（decimal 字符串，0–1；无分母为 `null`） |
+| `mention_count` | 提及次数 |
+| `average_rank` | 平均提及排名（decimal 字符串；未提及时 `null`） |
+| `share_of_voice` | 声量份额（decimal 字符串；无分母为 `null`） |
+| `is_target` | 是否目标品牌 |
+
+**调用示例：**
+
+```bash
+curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/competitor-analysis" \
+  --data-urlencode "platform_codes=qwen" \
+  --data-urlencode "brand_scope=top5"
+```
+
+**错误码：** 项目/运行/目标品牌不存在 `40400`；`brand_scope` 非法或 `start_at > end_at` 为 `422`；项目未启用 `40001`。
+
+---
+
+## 19. 报告
+
+### 19.1 创建并生成监测报告
 
 | 项目 | 说明 |
 | --- | --- |
@@ -1723,7 +2752,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 
 ---
 
-### 16.2 分页查询运行报告
+### 19.2 分页查询运行报告
 
 | 项目 | 说明 |
 | --- | --- |
@@ -1737,7 +2766,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 
 ---
 
-### 16.3 获取报告状态与元数据
+### 19.3 获取报告状态与元数据
 
 | 项目 | 说明 |
 | --- | --- |
@@ -1751,7 +2780,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 
 ---
 
-### 16.4 下载报告文件
+### 19.4 下载报告文件
 
 | 项目 | 说明 |
 | --- | --- |
@@ -1778,7 +2807,7 @@ curl -O -J "http://127.0.0.1:8000/api/geo-monitoring/reports/1/download"
 
 ---
 
-### 16.5 删除报告
+### 19.5 删除报告
 
 | 项目 | 说明 |
 | --- | --- |

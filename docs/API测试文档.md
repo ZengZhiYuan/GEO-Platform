@@ -2,6 +2,9 @@
 
 本文档根据当前后端代码整理，覆盖 `backend/app/api/router.py`、`backend/app/main.py` 与 `backend/app/geo_monitoring/api/` 下已实现接口。
 
+> 更新日期：2026-06-26
+> 原型页面按钮与调用顺序见 `docs/原型功能_API映射整合精简版.md`；接口字段契约见 `docs/API接口文档.md`。
+
 ## 1. 通用约定
 
 ### 1.1 服务地址与前缀
@@ -252,9 +255,33 @@ X-Request-ID: 可选，自定义请求 ID
 | --- | --- | --- | --- | --- | --- | --- |
 | 分页查询项目 | `GET` | `/api/geo-monitoring/projects` | Query：`page` 默认 1，`page_size` 默认 10 且 1-100，`project_name`，`status` | 分页 `ProjectOut[]` | `code=0`，`data.items` 为数组，分页字段正确 | `status` 非枚举值返回 `422` |
 | 创建项目 | `POST` | `/api/geo-monitoring/projects` | Body：`ProjectCreate` | `ProjectOut` | 返回新 `id`，字段与请求一致，默认 `status=active` | 必填字段为空或超长返回 `422` |
+| 一步创建项目并保存监测设置 | `POST` | `/api/geo-monitoring/projects:setup` | Body：`project`（ProjectCreate）、`monitor_setup`（MonitorSetupSave）、`run_after_create` 默认 false | `{ project, monitor_setup, run? }` | 项目与监测配置同事务落库；`run_after_create=true` 且已激活问题集时返回 `run` | 监测设置校验失败（如 `40025`）时项目不会创建；`run_after_create=true` 需 `activate_prompt_set=true` 且有问题，且平台须兼容默认 official 采集源（`40055`/`40901`/`40031`），否则同事务回滚 |
+| 创建向导草稿 | `POST` | `/api/geo-monitoring/project-drafts` | Body：`draft_key?`、`current_step`（1–3）、`project`、`monitor_setup` | `ProjectDraftOut` | 保存未完成向导数据 | `draft_key` 供客户端恢复 |
+| 按 key 更新或创建草稿 | `PUT` | `/api/geo-monitoring/project-drafts` | Body 同创建；`draft_key` 必填 | `ProjectDraftOut` | upsert（与 `current` 等价） | `draft_key` 为空 `422` |
+| 更新向导草稿 | `PUT` | `/api/geo-monitoring/project-drafts/{draft_id}` | Query：`draft_key` 必填；Body 可选字段 | `ProjectDraftOut` | 与已有草稿递归深度合并 | `40400` 不存在或 key 不匹配 |
+| 获取向导草稿 | `GET` | `/api/geo-monitoring/project-drafts/{draft_id}` | Query：`draft_key` 必填 | `ProjectDraftOut` | 按 ID + key 恢复 | `40400` |
+| 获取最新向导草稿 | `GET` | `/api/geo-monitoring/project-drafts/current` | Query：`draft_key` | `ProjectDraftOut` | 按会话 key 取最新一条 | `40400` |
+| 按 key 更新或创建草稿 | `PUT` | `/api/geo-monitoring/project-drafts/current` | Body 同创建；`draft_key` 必填 | `ProjectDraftOut` | upsert | `draft_key` 为空 `422` |
 | 获取项目 | `GET` | `/api/geo-monitoring/projects/{project_id}` | Path：`project_id >= 1` | `ProjectOut` | `data.id = project_id` | 不存在返回 `code=40400`、`message=监测项目不存在` |
 | 更新项目 | `PUT` | `/api/geo-monitoring/projects/{project_id}` | Path：`project_id >= 1`；Body：`ProjectUpdate` | `ProjectOut` | 返回字段已更新，`updated_at` 变化 | 不存在返回 `40400`；状态非法返回 `422` |
 | 删除项目 | `DELETE` | `/api/geo-monitoring/projects/{project_id}` | Path：`project_id >= 1` | `{ "id": project_id }` | 返回删除 ID，后续获取返回不存在 | 项目已有监测运行引用时 HTTP `409`、`code=40903` |
+| 项目轻量列表（兼容/可选） | `GET` | `/api/geo-monitoring/projects/options` | — | `{ "items": ProjectOption[] }` | `code=0`；每项含 `id/project_name/status/monitoring_paused`；新版首页首屏不依赖该接口 | — |
+| 首页项目卡片概览 | `GET` | `/api/geo-monitoring/projects/overview` | Query：`page`、`page_size`、`project_name`、`status` | 分页项目卡片摘要 | 返回所有项目卡片；含 `brand_words/competitors/platform_endpoints/homepage_badges/last_updated_at`；`platform_endpoints` 与 `GET /platform-endpoints` 口径一致；`platform_count` 按 `base_platform` 去重 | — |
+| 暂停监测 | `POST` | `/api/geo-monitoring/projects/{project_id}/pause` | Path：`project_id` | `ProjectOut` | `monitoring_paused=true` | 不存在 `40400` |
+| 恢复监测 | `POST` | `/api/geo-monitoring/projects/{project_id}/resume` | Path：`project_id` | `ProjectOut` | `monitoring_paused=false` | 不存在 `40400` |
+| 删除前检查 | `GET` | `/api/geo-monitoring/projects/{project_id}/delete-check` | Path：`project_id` | `run_count/report_count/schedule_count/can_delete/blocking_reasons` | 有运行则 `can_delete=false`；`blocking_reasons` 仅含运行阻塞 | 不存在 `40400` |
+| 暂停后调度触发 | `POST` | `/api/geo-monitoring/schedules/{schedule_id}/trigger` | Path：`schedule_id`（项目已暂停） | — | — | `code=40054`，消息含「暂停」 |
+| 暂停后创建运行 | `POST` | `/api/geo-monitoring/runs` | Body：`project_id`（已暂停项目） | — | — | `code=40054`，消息含「暂停」 |
+
+**新版首页项目卡片增强验收（Task P1-5 已实现）：**
+
+- `GET /projects/overview` 首屏返回分页项目列表，不要求先调用 `/projects/options`。
+- `items[]` 含 `brand_words[]`，可直接渲染“品牌词”标签。
+- `items[]` 含 `competitors[]`（`brand_id`、`brand_name`），可直接渲染“竞品”标签。
+- `items[]` 含 `platform_endpoints[]`，与 `GET /platform-endpoints` 解析口径一致。
+- `items[]` 含 `homepage_badges[]`，输出 `监测中` / `已暂停`；`当前` 标签由前端本地状态处理，不验后端。
+- `last_updated_at` 优先取最近 run 的 `completed_at`，否则回退 `updated_at`。
+- 首页按钮动作按“进入 / 编辑配置 / 暂停或监测 / 删除”四条调用链分别验证。
 
 创建示例：
 
@@ -262,6 +289,14 @@ X-Request-ID: 可选，自定义请求 ID
 curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects" \
   -H "Content-Type: application/json" \
   -d '{"project_name":"杭州宋城文旅监测","industry":"文旅演艺","timezone":"Asia/Shanghai"}'
+```
+
+专项 pytest：
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_project_setup_api.py --basetemp .pytest-tmp
+backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_project_drafts_api.py
+backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_project_overview_api.py
 ```
 
 ## 5. 品牌与别名模块
@@ -391,7 +426,40 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects" \
 | --- | --- | --- | --- | --- | --- | --- |
 | 分页查询 Prompt 词库 | `GET` | `/api/geo-monitoring/prompt-library` | Query：`page`、`page_size` 默认 100 且 1-500，`industry` | 分页 `PromptLibraryOut[]` | `code=0`，至少返回种子模板 | `page_size` 超限 `422` |
 
-#### 5.4.6 监测设置接口
+#### 5.4.6 平台端元数据与基础字典接口
+
+| 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 获取平台端元数据分组 | `GET` | `/api/geo-monitoring/platform-endpoints` | Query：`enabled` 可选 | `groups[]`，含 `base_platform`、`endpoints[]` | `code=0`；Aidso 端码解析为 `web`/`app`；同组内 `web` 排在 `app` 前 | 无 |
+| 获取 Prompt 意图类型字典 | `GET` | `/api/geo-monitoring/prompt-types` | 无 | `items[]` 共 5 项，含 `compatible_values` | `code=0`；含 `comparison`、`recommendation` 等兼容值 | 无 |
+| 获取信源类型展示字典 | `GET` | `/api/geo-monitoring/source-types` | 无 | `items[]` 与 `storage_mappings[]` | `code=0`；六类存储值均可映射到展示字典 | 无 |
+| 获取行业基准参照 | `GET` | `/api/geo-monitoring/benchmarks` | Query：可选 `industry` | 列表或单行业 `metrics` + `market_position_thresholds` | `code=0`；含「文旅演艺」；`sample_source=static_config` | 未知行业 `40400` |
+
+自动化测试文件：`backend/tests/geo_monitoring/test_metadata_api.py`、`backend/tests/geo_monitoring/test_benchmarks_api.py`
+
+覆盖场景：Aidso 端码分组、`extra_config` 覆盖、`enabled` 过滤、平台数超过 500 不截断、v1 兼容前缀可访问、行业基准列表与单行业查询。
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_metadata_api.py backend/tests/geo_monitoring/test_benchmarks_api.py
+```
+
+#### 5.4.7 AI 生成辅助接口
+
+| 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
+| --- | --- | --- | --- | --- | --- | --- |
+| AI 生成品牌词 | `POST` | `/api/geo-monitoring/projects/{project_id}/ai/brand-words:generate` | Body：`brand_name`（必填）、`category`、`official_domain`、`limit` 默认 10 | `{ "brand_words": string[] }` | `code=0`；必含 `brand_name`；去重 | 项目不存在 `40400`；品牌名为空 `422` |
+| AI 生成竞品 | `POST` | `/api/geo-monitoring/projects/{project_id}/ai/competitors:generate` | Body：`brand_name`（必填）、`category`、`region`、`limit` 默认 5 | `{ "competitors": [{ brand_name, competitor_words[], official_domain? }] }` | `code=0`；排除目标品牌自身 | 项目不存在 `40400` |
+| AI 生成监测问题 | `POST` | `/api/geo-monitoring/projects/{project_id}/ai/questions:generate` | Body：`brand_name`（必填）、`category`、`region`、`core_keywords[]`、`competitors[]`、`limit` 默认 10 | `{ "questions": [{ prompt_text, prompt_type, core_keyword? }] }` | 五类意图模板；按 `limit` 截断 | 项目不存在 `40400` |
+
+自动化测试文件：`backend/tests/geo_monitoring/test_ai_generation_api.py`
+
+覆盖场景：宋城/杭州旅游示例、空品牌名校验、生成不落库、项目不存在。
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_ai_generation_api.py
+```
+
+#### 5.4.8 监测设置接口
 
 | 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -614,6 +682,11 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
+| `prompt_text` | string | 关联问题文本 |
+| `prompt_type` | string | 问题类型 |
+| `reasoning_text` | string/null | 从 `raw_response_json` 提取的思考过程 |
+| `search_keywords` | string[] | 从 `raw_response_json` 提取的搜索关键词 |
+| `raw_response_safe` | object/null | 白名单原始响应安全子集（不含 cookie/token/正文等敏感字段） |
 | `citations` | array | 引用来源，字段包括 `citation_no`、`title`、`url`、`domain`、`source_type`、`quoted_text` |
 | `brand_results` | array | 品牌识别结果，字段包括 `brand_id`、`is_mentioned`、`mention_count`、`first_position`、`sentiment`、`context_json` |
 
@@ -622,7 +695,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
 | 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 分页查询运行答案 | `GET` | `/api/geo-monitoring/runs/{run_id}/answers` | Path：`run_id`；Query：`page`、`page_size` | 分页 `AnswerRead[]` | `code=0`，答案均来自该运行 | 运行不存在 `40400` |
-| 获取答案详情 | `GET` | `/api/geo-monitoring/answers/{answer_id}` | Path：`answer_id` | `AnswerDetailRead` | `data.id = answer_id`，包含 `citations` 与 `brand_results` 数组 | 答案不存在 `40400` |
+| 获取答案详情 | `GET` | `/api/geo-monitoring/answers/{answer_id}` | Path：`answer_id` | `AnswerDetailRead` | 含 `prompt_text`、`reasoning_text`、`search_keywords`、`citations`、`brand_results` | 答案不存在 `40400` |
 
 ## 11. 分析与 Agent 审计模块
 
@@ -649,7 +722,8 @@ Agent 审计字段包括：
 | 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 获取项目最新分析汇总 | `GET` | `/api/geo-monitoring/projects/{project_id}/dashboard` | Path：`project_id` | `project_id`、`latest_run`、`platforms[]` | `code=0`；有运行时 `latest_run` 非空，无运行时为 `null` | 项目不存在 `40400`；项目未启用 `40001` |
-| 按指标、平台和时间范围查询趋势 | `GET` | `/api/geo-monitoring/projects/{project_id}/trends` | Path：`project_id`；Query：必填 `metric_code`，可选 `platform_code`、`start_at`、`end_at`、`page`、`page_size` 默认 50 且 1-200 | 分页趋势点 | `code=0`，趋势点符合筛选条件 | 缺少 `metric_code` 返回 `422`；项目不存在 `40400` |
+| 数据大盘页面级总览 | `GET` | `/api/geo-monitoring/projects/{project_id}/dashboard/overview` | Path：`project_id`；Query：可选 `run_id`、`platform_codes[]`、`start_at`、`end_at` | `run_id`、`kpis`、`platforms[]`、`competitor_preview`、`source_preview`、`recent_questions` | 无运行 `run_id=null`、数组为空；有分析数据时 KPI 与平台表现非空；`platform_codes` 过滤平台与预览；未分析 run 不报错 | 项目不存在 `40400` |
+| 按指标、平台和时间范围查询趋势 | `GET` | `/api/geo-monitoring/projects/{project_id}/trends` | Path：`project_id`；Query：必填 `metric_code`，可选 `brand_id`、`platform_code`、`start_at`、`end_at`、`page`、`page_size` 默认 50 且 1-200 | 分页趋势点 | `code=0`，趋势点符合筛选条件；平台级 `brand_mention_rate` 与 `brand_visibility` 返回相同数据，响应 `metric_code` 为 `brand_visibility`；带 `brand_id` 时 `brand_mention_rate` 查询品牌维度快照 | 缺少 `metric_code` 返回 `422`；项目不存在 `40400` |
 
 `latest_run` 字段：
 
@@ -657,7 +731,21 @@ Agent 审计字段包括：
 
 `summary` 字段（分析完成后跨平台汇总，`scope=all`）：
 
-`valid_answer_count`、`brand_mention_count`、`brand_mention_rate`、`brand_first_count`、`brand_first_rate`、`data_completeness_rate`、`metrics[]`（按分子/分母加权汇总，非简单平均）。
+`valid_answer_count`、`brand_mention_count`、`brand_mention_rate`、`brand_first_count`、`brand_first_rate`、`brand_top10_mention_count`、`brand_top10_mention_rate`、`brand_mention_total_count`、`positive_rate`、`neutral_rate`、`negative_rate`、`data_completeness_rate`、`metrics[]`（按分子/分母加权汇总，非简单平均；`metrics[]` 不含 `brand_id` 维度快照）。
+
+**趋势指标编码兼容验收：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_dashboard_api.py::test_project_trends_brand_mention_rate_alias_maps_to_brand_visibility backend\tests\geo_monitoring\test_dashboard_api.py::test_project_trends_brand_mention_rate_with_brand_id_queries_brand_snapshots --basetemp .pytest-tmp
+```
+
+**指标快照验收：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\analysis\test_metrics.py backend\tests\geo_monitoring\analysis\test_brands.py backend\tests\geo_monitoring\test_dashboard_api.py::test_analyze_persists_extended_metric_snapshots --basetemp .pytest-tmp
+```
+
+分析完成后应能在 `geo_metric_snapshot` 查到平台级 `average_mention_rank`、`share_of_voice`、`brand_top10_mention_rate`、`brand_mention_total_count`、`positive_rate`/`neutral_rate`/`negative_rate`，以及带 `brand_id` 的品牌维度快照。
 
 `platforms[]` 字段（分 AI 平台明细）：
 
@@ -665,13 +753,87 @@ Agent 审计字段包括：
 
 可选 Query：`run_id` — 指定某次运行；不传则优先取最近已分析运行，否则取最近采集终态运行。
 
+**overview 自动化测试：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_dashboard_api.py
+```
+
+`overview` 关键字段：`kpis`（含 `average_rank`/`share_of_voice`/`brand_mention_total_count`，与竞品分析目标品牌 KPI 一致；无分析时为 `null`）、`competitor_preview.boards`、`source_preview.items`、`recent_questions.items`。`start_at`/`end_at` 会重算 `kpis` 与预览；`platforms[].analysis` 仍为 run 快照。
+
 趋势点字段：
 
 `run_id`、`platform_code`、`metric_code`、`numerator`、`denominator`、`metric_value`、`prompt_set_version`、`snapshot_at`、`completeness_rate`。
 
-## 13. 报告模块
+## 13. 页面级聚合、导出与竞品分析模块
 
-### 13.1 报告字段
+以下接口支撑原型的数据大盘预览、AI 对话记录、信源引用分析和竞品分析页面。当前页面级聚合默认按单次 run 聚合；`start_at`/`end_at` 过滤该 run 内答案采集时间。
+
+### 13.1 对话记录接口
+
+| 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 按 AI 问题聚合主表 | `GET` | `/api/geo-monitoring/projects/{project_id}/conversation-questions` | Path：`project_id`；Query：可选 `run_id`、`platform_codes[]`、`start_at`、`end_at`、`keyword`、`page`、`page_size` | `run_id`、`items[]`、分页 | 同 prompt 多平台答案聚合成一行；`keyword` 过滤问题文本；`platform_codes` 过滤平台指标 | 项目不存在 `40400`；无目标品牌 `40400` |
+| 指定问题下各平台回答详情 | `GET` | `/api/geo-monitoring/projects/{project_id}/conversation-questions/{prompt_id}/answers` | Path：`project_id`、`prompt_id`；Query：同主表 | `run_id`、`prompt_id`、`items[]`、分页 | 含 `citations`、`brand_results[].brand_name`；无引用/品牌时为空数组；`reasoning_text`/`search_keywords` 从 `raw_response_json` 提取 | 问题不存在 `40400` |
+| 导出对话记录主表 CSV | `GET` | `/api/geo-monitoring/projects/{project_id}/conversation-questions/export` | Query 同主表（无分页） | CSV 文件流 | `Content-Type: text/csv; charset=utf-8`；UTF-8 BOM；列与主表指标一致 | 项目不存在 `40400` |
+| 高频评价标签规则聚类 | `GET` | `/api/geo-monitoring/projects/{project_id}/conversation-questions/{prompt_id}/evaluation-tags` | Path：`project_id`、`prompt_id`；Query：可选 `run_id`、`platform_codes[]`、`start_at`、`end_at`、`limit` | `cluster_method`、`answer_count`、`items[]` | `cluster_method=rule`；按命中次数降序；`share_rate` 为 decimal 字符串 | 问题不存在 `40400` |
+
+**自动化测试：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_conversations_api.py backend/tests/geo_monitoring/test_answer_export_api.py backend/tests/geo_monitoring/test_answer_metadata.py backend/tests/geo_monitoring/test_evaluation_tags_api.py
+```
+
+主表 `items[]` 关键字段：`prompt_id`、`prompt_text`、`valid_answer_count`、`visibility_rate`、`mention_count`、`average_rank`、`top1_rate`、`top3_rate`、`sentiment`、`platform_metrics[]`。
+
+详情 `items[]` 关键字段：`answer_id`、`platform_code`、`raw_text`、`citations[]`、`brand_results[]`、`reasoning_text`、`search_keywords`。
+
+### 13.2 信源引用分析接口
+
+| 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 信源引用分析页面级聚合 | `GET` | `/api/geo-monitoring/projects/{project_id}/source-analysis` | Path：`project_id`；Query：可选 `run_id`、`platform_codes[]`、`start_at`、`end_at`、`source_type`、`keyword`、`metric`、`page`、`page_size` | `run_id`、`kpi`、`type_distribution`、`platform_columns`、`sites` | 无信源时 KPI 为 0、列表为空；多平台返回矩阵列；`source_type`/`keyword`/`metric`/`platform_codes` 过滤有效 | 项目不存在 `40400` |
+| 导出信源引用分析 CSV | `GET` | `/api/geo-monitoring/projects/{project_id}/source-analysis/export` | Query 同聚合接口（无分页） | CSV 文件流 | `Content-Type: text/csv; charset=utf-8`；UTF-8 BOM；含站点矩阵列 | 项目不存在 `40400` |
+
+**自动化测试：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_source_analysis_api.py backend\tests\geo_monitoring\test_answer_export_api.py
+```
+
+关键字段：
+
+- `kpi`：`citation_count`、`site_count`、`article_count`（`AnswerCitation.url` 去重）、`citation_rate`
+- `type_distribution[]`：`source_type`、`link_count`、`citation_rate`、`display_value`
+- `sites.items[]`：`domain`、`source_name`、`link_count`、`platform_values[]`（含 `has_citation_data`）
+- `metric=links` 时 `display_value` 为链接数；`metric=rate` 时为 `citation_rate`
+- 传入 `start_at`/`end_at` 后 KPI/矩阵改按 `AnswerCitation` 重聚合；矩阵按 `(domain, source_name)` 分行
+
+补充回归用例：`start_at` 排除全部答案、同域名不同 `source_name`、`run_id` 跨项目、`page/page_size` 分页。
+
+### 13.3 竞品分析接口
+
+| 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 竞品分析页面级聚合 | `GET` | `/api/geo-monitoring/projects/{project_id}/competitor-analysis` | Path：`project_id`；Query：可选 `run_id`、`platform_codes[]`、`start_at`、`end_at`、`brand_scope` | `run_id`、`target_brand`、`kpis`、`boards`、`trends` | 无分析时榜单为空不报错；有分析时目标品牌 `is_target=true`；`trends` 为空数组；未分析 run 带时间过滤仍为空榜；不含 candidate 品牌 | 项目/运行/目标品牌不存在 `40400`；`brand_scope` 非法或 `start_at > end_at` 为 `422` |
+
+**自动化测试：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_competitor_analysis_api.py
+```
+
+关键字段：
+
+- `kpis`：`mention_rate`、`mention_count`、`average_rank`、`top1_rate`、`share_of_voice`
+- `boards.mention_rate[]` / `boards.average_rank[]` / `boards.mention_count[]`：含 `is_target`
+- `trends`：本接口固定 `{ days: [], mention_rate: [], average_rank: [], mention_count: [] }`；竞品历史趋势需另测 `GET /projects/{project_id}/trends?metric_code=...&brand_id=...`
+
+补充回归用例：未分析 run + `start_at/end_at` 仍为空榜；`summary_json` 含 candidate 品牌时不入榜；多平台混合 `brand_metrics`/`top_competitors` 快照均参与聚合；`start_at > end_at` 返回 `422`；时间过滤后 `top1_rate` 与过滤答案口径一致，且目标品牌 `first_position=10`、竞品 `first_position=30` 时仍计为 Top1。
+
+## 14. 报告模块
+
+### 14.1 报告字段
 
 创建报告请求体：
 
@@ -683,7 +845,7 @@ Agent 审计字段包括：
 
 `id`、`project_id`、`run_id`、`status`、`format`、`file_name`、`relative_storage_path`、`file_size`、`checksum`、`error_message`、`completed_at`、`created_at`、`updated_at`。
 
-### 13.2 报告接口
+### 14.2 报告接口
 
 | 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -701,37 +863,50 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
   -d '{"formats":["md","html","pdf"]}'
 ```
 
-## 14. 推荐测试流程
+## 15. 推荐测试流程
 
-### 14.1 基础连通性
+### 15.1 基础连通性
 
 1. 调用 `/api/health`，确认应用可响应。
 2. 调用 `/api/ready`，确认数据库和 Redis 可用。
 3. 调用 `/api/geo-monitoring/health` 与 `/api/geo-monitoring/ready`，确认监测模块可用。
 
-### 14.2 主业务正向流程
+### 15.2 主业务正向流程
 
-1. 创建项目：`POST /projects`。
-2. **（推荐）保存监测设置**：`PUT /projects/{project_id}/monitor-setup`（品牌、竞品、核心词、AI 问题、平台一次配置）。
-3. 或分步配置：
-   - 创建目标品牌和竞品品牌：`POST /projects/{project_id}/brands`。
-   - 给品牌创建别名：`POST /brands/{brand_id}/aliases`。
-   - 创建核心词：`POST /projects/{project_id}/core-keywords`（可选，也可在 monitor-setup 中一并创建）。
-   - 从词库选题：`GET /prompt-library`。
-   - 创建提示词集：`POST /projects/{project_id}/prompt-sets`。
-   - 创建至少一个启用提示词：`POST /prompt-sets/{prompt_set_id}/prompts`。
-   - 激活提示词集：`POST /prompt-sets/{prompt_set_id}/activate`。
-4. 查询或更新 AI 平台，保证至少一个平台 `enabled=true`。
-5. 创建监测运行：`POST /runs`（可不传 `platform_codes`，使用项目默认平台）。
-6. 查询运行任务：`GET /runs/{run_id}/query-tasks`。
-7. 采集完成后查询答案：`GET /runs/{run_id}/answers`。
-8. 运行终态后触发分析：`POST /runs/{run_id}/analyze`。
-9. 查询分析结果：`GET /runs/{run_id}/analysis`。
-10. 查询看板：`GET /projects/{project_id}/dashboard`。
-11. 分析完成后生成报告：`POST /runs/{run_id}/reports`。
-12. 下载报告：`GET /reports/{report_id}/download`。
+1. 查询新版首页项目列表：`GET /projects/overview`。`GET /projects/options` 仅作为兼容轻量列表单独验证，不作为首页首屏依赖。
+2. 创建项目：
+   - 交互式向导：`POST /projects` → `PUT /project-drafts/current` 保存草稿 → `PUT /projects/{project_id}/monitor-setup`。
+   - 事务式提交：`POST /projects:setup`。
+3. 初始化配置候选：`GET /platform-endpoints?enabled=true`、`GET /prompt-types`、`GET /prompt-library`。
+4. 验证 AI 生成候选不落库：`POST /projects/{project_id}/ai/brand-words:generate`、`/ai/competitors:generate`、`/ai/questions:generate`。
+5. 保存完整监测设置：`PUT /projects/{project_id}/monitor-setup`，建议传 `activate_prompt_set=true`。
+6. 查询或更新 AI 平台，保证至少一个平台 `enabled=true`。
+7. 创建监测运行：`POST /runs`（可不传 `platform_codes`，使用项目默认平台）。
+8. 查询运行详情和任务：`GET /runs/{run_id}`、`GET /runs/{run_id}/query-tasks`。
+9. 采集完成后查询答案：`GET /runs/{run_id}/answers`、`GET /answers/{answer_id}`。
+10. 运行终态后触发或重跑分析：`POST /runs/{run_id}/analyze`。
+11. 查询分析和基础看板：`GET /runs/{run_id}/analysis`、`GET /projects/{project_id}/dashboard`。
+12. 验证首页卡片动作：
+    - 进入：使用卡片 `project_id` 跳转后调用 `GET /projects/{project_id}/dashboard/overview`。
+    - 编辑配置：`GET /projects/{project_id}/monitor-setup` → `PUT /projects/{project_id}/monitor-setup` → 刷新 `GET /projects/overview`。
+    - 暂停/监测：`POST /projects/{project_id}/pause` 或 `POST /projects/{project_id}/resume` → 刷新 `GET /projects/overview`。
+    - 删除：`GET /projects/{project_id}/delete-check` → 可删除时 `DELETE /projects/{project_id}`。
+13. 验证原型页面级聚合：
+    - 数据大盘：`GET /projects/{project_id}/dashboard/overview`。
+    - 竞品分析：`GET /projects/{project_id}/competitor-analysis`、`GET /benchmarks?industry={industry}`。
+    - AI 对话记录：`GET /projects/{project_id}/conversation-questions`、`GET /projects/{project_id}/conversation-questions/{prompt_id}/answers`。
+    - 高频评价标签：`GET /projects/{project_id}/conversation-questions/{prompt_id}/evaluation-tags`。
+    - 信源引用分析：`GET /projects/{project_id}/source-analysis`。
+14. 验证趋势接口：
+    - 平台级品牌可见度：`GET /projects/{project_id}/trends?metric_code=brand_visibility`。
+    - 品牌维度竞品趋势：`GET /projects/{project_id}/trends?metric_code=brand_mention_rate&brand_id={brand_id}`。
+15. 验证导出：
+    - `GET /projects/{project_id}/conversation-questions/export`。
+    - `GET /projects/{project_id}/source-analysis/export`。
+16. 分析完成后生成报告：`POST /runs/{run_id}/reports`。
+17. 下载报告：`GET /reports/{report_id}/download`。
 
-### 14.3 重点反向测试
+### 15.3 重点反向测试
 
 | 场景 | 操作 | 预期 |
 | --- | --- | --- |
@@ -752,7 +927,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 | 分析未完成生成报告 | `analysis_status` 不是 `completed` 或 `partial_success` | HTTP `409`，`code=40920` |
 | 下载未完成报告 | 报告 `status` 不是 `completed` | HTTP `409`，`code=40921` |
 
-## 15. 测试结果记录建议
+## 16. 测试结果记录建议
 
 每个接口建议记录：
 
@@ -767,7 +942,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 | 成功判定 | 是否满足本文档“验证成功”标准 |
 | 失败原因 | 若失败，记录 `code`、`message`、异常日志或依赖状态 |
 
-## 16. 自动化全量测试
+## 17. 自动化全量测试
 
 仓库提供脚本 [`backend/scripts/run_api_full_test.py`](../backend/scripts/run_api_full_test.py)，按本文档模块顺序调用已实现接口并生成报告 [`docs/API全量接口测试报告.md`](./API全量接口测试报告.md)。
 

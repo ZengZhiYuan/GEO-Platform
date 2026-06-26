@@ -11,7 +11,11 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.response import paginate, success
 from app.geo_monitoring.services.analysis import MetricSnapshot
-from app.geo_monitoring.services.dashboard import build_project_dashboard
+from app.geo_monitoring.services.dashboard import (
+    build_dashboard_overview,
+    build_project_dashboard,
+    resolve_trend_metric_code,
+)
 from app.geo_monitoring.services.projects import require_active_project
 
 router = APIRouter()
@@ -27,11 +31,35 @@ def get_project_dashboard(
     return success(payload)
 
 
+@router.get(
+    "/projects/{project_id}/dashboard/overview",
+    summary="数据大盘页面级总览",
+)
+def get_project_dashboard_overview(
+    project_id: int = Path(..., ge=1),
+    run_id: int | None = Query(None, ge=1, description="指定运行 ID，默认取最近已分析或已终态 run"),
+    platform_codes: list[str] | None = Query(None),
+    start_at: datetime | None = Query(None),
+    end_at: datetime | None = Query(None),
+    db: Session = Depends(get_db),
+) -> dict:
+    payload = build_dashboard_overview(
+        db,
+        project_id,
+        run_id=run_id,
+        platform_codes=platform_codes,
+        start_at=start_at,
+        end_at=end_at,
+    )
+    return success(payload)
+
+
 @router.get("/projects/{project_id}/trends", summary="按指标、平台和时间范围查询趋势")
 def list_project_trends(
     project_id: int = Path(..., ge=1),
     metric_code: str = Query(..., min_length=1, max_length=100),
     platform_code: str | None = Query(None, max_length=32),
+    brand_id: int | None = Query(None, ge=1, description="品牌 ID；不传则仅返回平台级快照"),
     start_at: datetime | None = Query(None),
     end_at: datetime | None = Query(None),
     page: int = Query(1, ge=1),
@@ -39,11 +67,16 @@ def list_project_trends(
     db: Session = Depends(get_db),
 ) -> dict:
     require_active_project(db, project_id)
+    resolved_metric_code = resolve_trend_metric_code(metric_code, brand_id=brand_id)
     conditions = [
         MetricSnapshot.project_id == project_id,
-        MetricSnapshot.metric_code == metric_code,
+        MetricSnapshot.metric_code == resolved_metric_code,
         MetricSnapshot.is_deleted.is_(False),
     ]
+    if brand_id is not None:
+        conditions.append(MetricSnapshot.brand_id == brand_id)
+    else:
+        conditions.append(MetricSnapshot.brand_id.is_(None))
     if platform_code:
         conditions.append(MetricSnapshot.platform_code == platform_code)
     if start_at is not None:
@@ -67,6 +100,7 @@ def list_project_trends(
         {
             "run_id": row.run_id,
             "platform_code": row.platform_code,
+            "brand_id": row.brand_id,
             "metric_code": row.metric_code,
             "numerator": str(row.numerator) if row.numerator is not None else None,
             "denominator": str(row.denominator) if row.denominator is not None else None,

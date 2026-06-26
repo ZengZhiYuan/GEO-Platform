@@ -15,7 +15,10 @@ from app.core.exceptions import BusinessException
 from app.geo_monitoring.models import MonitorRun, MonitorSchedule
 from app.geo_monitoring.repositories import runs as run_repo
 from app.geo_monitoring.schemas import ScheduleCreate, ScheduleUpdate
-from app.geo_monitoring.services.projects import require_active_project
+from app.geo_monitoring.services.projects import (
+    require_active_project,
+    require_monitoring_not_paused,
+)
 
 
 # 解析时区名称，无效则抛业务异常
@@ -386,7 +389,8 @@ def fire_schedule(
     schedule = get_schedule(db, schedule_id)
     if not schedule.enabled:
         raise BusinessException(message="监测调度未启用", code=40053)
-    require_active_project(db, schedule.project_id)
+    project = require_active_project(db, schedule.project_id)
+    require_monitoring_not_paused(project)
     normalized = align_planned_fire_time(schedule, planned_fire_time)
     idempotency_key = build_idempotency_key(schedule.id, normalized)
     # 已存在同幂等键运行则直接返回
@@ -412,7 +416,8 @@ def fire_schedule(
 # 立即手动触发一次调度运行（独立幂等键）
 def trigger_schedule_now(db: Session, schedule_id: int) -> MonitorRun:
     schedule = get_schedule(db, schedule_id)
-    require_active_project(db, schedule.project_id)
+    project = require_active_project(db, schedule.project_id)
+    require_monitoring_not_paused(project)
     now = datetime.now(timezone.utc)
     manual_key = f"schedule:{schedule.id}:manual:{now.isoformat()}"
     return _create_scheduled_run(

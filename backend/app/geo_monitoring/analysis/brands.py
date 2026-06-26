@@ -14,6 +14,7 @@ _DEFAULT_RANK_SCALE = 20
 
 _POSITIVE_SENTIMENTS = frozenset({"positive", "pos", "正面"})
 _NEUTRAL_SENTIMENTS = frozenset({"neutral", "中性", "normal"})
+_NEGATIVE_SENTIMENTS = frozenset({"negative", "neg", "负面"})
 
 
 @dataclass(frozen=True)
@@ -66,7 +67,7 @@ def compute_brand_mention_count(
         mention = _mention_for_brand(answer, brand_id)
         if mention is None or not mention.is_mentioned:
             continue
-        total += max(mention.mention_count, 1)
+        total += mention.mention_count
     return total
 
 
@@ -124,10 +125,47 @@ def compute_share_of_voice(
 
 # 判断情感标签是否为正面或中性
 def _is_positive_or_neutral(sentiment: str | None) -> bool:
+    bucket = _sentiment_bucket(sentiment)
+    return bucket in {"positive", "neutral"}
+
+
+# 将情感标签归一化为 positive / neutral / negative
+def _sentiment_bucket(sentiment: str | None) -> str | None:
     if sentiment is None:
-        return False
+        return None
     normalized = sentiment.strip().lower()
-    return normalized in _POSITIVE_SENTIMENTS or normalized in _NEUTRAL_SENTIMENTS
+    if normalized in _POSITIVE_SENTIMENTS:
+        return "positive"
+    if normalized in _NEUTRAL_SENTIMENTS:
+        return "neutral"
+    if normalized in _NEGATIVE_SENTIMENTS:
+        return "negative"
+    return "neutral"
+
+
+# 计算指定品牌提及对话的正/中/负情感率
+def compute_sentiment_rates(
+    answers: list[AnswerInput],
+    brand_id: int,
+) -> dict[str, RateMetric]:
+    valid_answers = filter_valid_answers(answers)
+    mention_conversations = 0
+    counts = {"positive": 0, "neutral": 0, "negative": 0}
+    for answer in valid_answers:
+        mention = _mention_for_brand(answer, brand_id)
+        if mention is None or not mention.is_mentioned:
+            continue
+        mention_conversations += 1
+        bucket = _sentiment_bucket(mention.sentiment) or "neutral"
+        counts[bucket] += 1
+    return {
+        f"{bucket}_rate": RateMetric(
+            numerator=counts[bucket],
+            denominator=mention_conversations,
+            rate=compute_rate(counts[bucket], mention_conversations),
+        )
+        for bucket in ("positive", "neutral", "negative")
+    }
 
 
 # 计算指定品牌提及对话中正面/中性情感占比

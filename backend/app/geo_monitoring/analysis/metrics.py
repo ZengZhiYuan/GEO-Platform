@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Any
 
 from app.geo_monitoring.analysis.dto import (
     AnswerInput,
@@ -215,6 +216,52 @@ def compute_recommendation_rate(
 
 
 # 汇总单平台全部确定性指标为 PlatformMetricsOutput
+def compute_target_extended_metrics(
+    answers: list[AnswerInput],
+    *,
+    target_brand_id: int,
+    brand_ids: tuple[int, ...],
+) -> dict[str, Any]:
+    from app.geo_monitoring.analysis.brands import (
+        compute_average_mention_rank,
+        compute_brand_mention_count,
+        compute_sentiment_rates,
+        compute_share_of_voice,
+    )
+
+    sentiment_rates = compute_sentiment_rates(answers, target_brand_id)
+    sov_by_brand = compute_share_of_voice(answers, brand_ids=brand_ids)
+    return {
+        "average_mention_rank": compute_average_mention_rank(answers, target_brand_id),
+        "share_of_voice": sov_by_brand.get(target_brand_id),
+        "brand_mention_total_count": compute_brand_mention_count(
+            answers,
+            target_brand_id,
+        ),
+        "brand_top10_mention_rate": compute_brand_rank_rate(
+            answers,
+            target_brand_id=target_brand_id,
+            max_rank=10,
+        ),
+        "positive_rate": sentiment_rates["positive_rate"],
+        "neutral_rate": sentiment_rates["neutral_rate"],
+        "negative_rate": sentiment_rates["negative_rate"],
+    }
+
+
+def _collect_brand_ids(
+    answers: list[AnswerInput],
+    *,
+    seed_ids: tuple[int, ...],
+) -> tuple[int, ...]:
+    seen = set(seed_ids)
+    for answer in filter_valid_answers(answers):
+        for mention in answer.brand_mentions:
+            if mention.is_mentioned:
+                seen.add(mention.brand_id)
+    return tuple(sorted(seen))
+
+
 def compute_platform_metrics(
     answers: list[AnswerInput],
     *,
@@ -256,6 +303,11 @@ def compute_platform_metrics(
         target_brand_id=target_brand_id,
         max_rank=3,
     )
+    brand_top10_mention_rate = compute_brand_rank_rate(
+        scoped,
+        target_brand_id=target_brand_id,
+        max_rank=10,
+    )
     citation_rate = compute_citation_rate(scoped)
     recommendation = compute_recommendation_rate(
         scoped,
@@ -295,12 +347,22 @@ def compute_platform_metrics(
     brand_metrics: tuple = ()
     if brands:
         brand_metrics = tuple(compute_brand_metrics_rows(scoped, brands=brands))
+    brand_ids = _collect_brand_ids(
+        scoped,
+        seed_ids=(target_brand_id, *competitor_brand_ids),
+    )
+    extended = compute_target_extended_metrics(
+        scoped,
+        target_brand_id=target_brand_id,
+        brand_ids=brand_ids,
+    )
     return PlatformMetricsOutput(
         platform_code=platform_code,
         valid_answer_count=len(valid_answers),
         brand_visibility=brand_visibility,
         brand_top1_mention_rate=brand_top1_mention_rate,
         brand_top3_mention_rate=brand_top3_mention_rate,
+        brand_top10_mention_rate=brand_top10_mention_rate,
         citation_rate=citation_rate,
         recommendation=recommendation,
         source_coverage=source_coverage,
@@ -308,5 +370,11 @@ def compute_platform_metrics(
         top_competitors=top_competitors,
         source_stats=source_stats,
         prompt_competitiveness_rows=prompt_rows,
+        average_mention_rank=extended["average_mention_rank"],
+        share_of_voice=extended["share_of_voice"],
+        brand_mention_total_count=extended["brand_mention_total_count"],
+        positive_rate=extended["positive_rate"],
+        neutral_rate=extended["neutral_rate"],
+        negative_rate=extended["negative_rate"],
         brand_metrics=brand_metrics,
     )

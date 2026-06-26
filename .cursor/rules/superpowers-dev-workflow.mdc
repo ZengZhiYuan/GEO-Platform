@@ -7,7 +7,7 @@ alwaysApply: true
 
 凡涉及**代码开发**（新功能、行为变更、重构、修 bug、补测试、迁移），Agent **必须**按 Superpowers 插件 skills 执行；不得跳过 skill 直接即兴编码。
 
-**优先级：** 用户当次指令 > `AGENTS.md` / `CLAUDE.md` / V2 任务书 > Superpowers skills > 默认系统行为。
+**优先级：** 用户当次指令 > `AGENTS.md` / `.cursor/rules/*` / `CLAUDE.md` > 接口缺口任务书 > Superpowers skills > 默认系统行为。MVP V2 任务书已完成归档，仅作历史参考。
 
 ## 必用入口
 
@@ -33,18 +33,21 @@ alwaysApply: true
 
 Skill 文件位于 Cursor 用户 skills 目录（如 `~/.cursor/skills/` 及 Superpowers 插件缓存）；用 **`Read` 工具**读取完整 `SKILL.md` 后再执行，不要凭记忆省略步骤。
 
-## 与本仓库 MVP V2 Task 的结合
+## 与本仓库开发 Task 的结合
 
-执行 `V2 Task N` 或等效开发指令时，在 `.cursor/rules/mvp-v2-backend-tasks.mdc` 流程中插入：
+**默认（接口缺口 Task P0/P1/P2）：** 在 `.cursor/rules/cursor-api-gap-tasks.mdc` 流程中插入：
 
-1. `using-superpowers` → 定位 Task 章节（索引 + 局部 Read）
+1. `using-superpowers` → 定位 Task 章节（索引 + 局部 Read + 原型文档章节）
 2. 有行为变更 → `test-driven-development`（任务书「测试先行」）
-3. 实现与验收 → Task 书验证命令 + `verification-before-completion`
-4. 改动了 `backend/` 源码 → `codegraph sync`（见 `AGENTS.md`）
-5. Task 收尾 → 可选 `requesting-code-review` / `finishing-a-development-branch`
+3. 实现与验收 → Task 验收命令 + `verification-before-completion`
+4. 同步 `docs/API接口文档.md`、`docs/API测试文档.md` 等（任务书 §8）
+5. 改动了 `backend/` 源码 → `codegraph sync`（见 `AGENTS.md`）
+6. Task 收尾 → 可选 `requesting-code-review` / `finishing-a-development-branch`
+
+**MVP V2 Task：** `docs/AI应用监测_MVP_Cursor实施任务V2.md` 已完成归档，不再作为新开发任务入口；用户要求追溯历史时，只按 `.cursor/rules/mvp-v2-backend-tasks.mdc` 局部查阅背景。
 
 ## 豁免（可不加载 skill）
 
 - 纯问答、文档阅读、代码解释（无文件改动）
-- Task 0 等明确「无代码改动」的确认类任务
+- 明确「无代码改动」的确认类任务
 - 用户明确声明「不要走 TDD / 不要 brainstorm」时，以用户指令为准

@@ -148,8 +148,78 @@ class ProjectOut(BaseModel):
     report_title: str | None
     report_subtitle: str | None
     default_platform_codes: list[str] = Field(default_factory=list)
+    monitoring_paused: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+class ProjectOptionRead(BaseModel):
+    id: int
+    project_name: str
+    status: str
+    monitoring_paused: bool = False
+
+
+class ProjectOverviewLatestRunRead(BaseModel):
+    run_id: int
+    run_no: str
+    status: str
+    collection_status: str
+    analysis_status: str
+    completed_at: datetime | None = None
+
+
+class ProjectOverviewCompetitorRead(BaseModel):
+    brand_id: int
+    brand_name: str
+
+
+class ProjectOverviewPlatformEndpointRead(BaseModel):
+    platform_code: str
+    platform_name: str
+    base_platform: str
+    endpoint_type: str
+    endpoint_label: str
+    logo_url: str | None = None
+    enabled: bool
+
+
+class ProjectOverviewBadgeRead(BaseModel):
+    code: str
+    label: str
+
+
+class ProjectOverviewItemRead(BaseModel):
+    id: int
+    project_name: str
+    industry: str
+    status: str
+    monitoring_paused: bool = False
+    target_brand_name: str | None = None
+    brand_word_count: int = 0
+    brand_words: list[str] = Field(default_factory=list)
+    competitor_count: int = 0
+    competitors: list[ProjectOverviewCompetitorRead] = Field(default_factory=list)
+    question_count: int = 0
+    platform_count: int = 0
+    endpoint_count: int = 0
+    selected_platform_codes: list[str] = Field(default_factory=list)
+    platform_endpoints: list[ProjectOverviewPlatformEndpointRead] = Field(
+        default_factory=list
+    )
+    homepage_badges: list[ProjectOverviewBadgeRead] = Field(default_factory=list)
+    latest_run: ProjectOverviewLatestRunRead | None = None
+    last_updated_at: datetime
+    updated_at: datetime
+
+
+class ProjectDeleteCheckRead(BaseModel):
+    project_id: int
+    run_count: int = 0
+    report_count: int = 0
+    schedule_count: int = 0
+    can_delete: bool = True
+    blocking_reasons: list[str] = Field(default_factory=list)
 
 
 class BrandCreate(BaseModel):
@@ -406,6 +476,200 @@ class AIPlatformOut(BaseModel):
     updated_at: datetime
 
 
+class PlatformEndpointOut(BaseModel):
+    platform_code: str
+    platform_name: str
+    base_platform: str
+    base_platform_label: str
+    endpoint_type: str
+    endpoint_label: str
+    logo_url: str | None = None
+    thinking_mode: str | None = None
+    enabled: bool
+    adapter_type: str
+    search_enabled: bool
+    citation_supported: bool
+
+
+class PlatformEndpointGroupOut(BaseModel):
+    base_platform: str
+    base_platform_label: str
+    endpoints: list[PlatformEndpointOut]
+
+
+class PlatformEndpointsOut(BaseModel):
+    groups: list[PlatformEndpointGroupOut]
+
+
+class PromptTypeOut(BaseModel):
+    code: str
+    label: str
+    compatible_values: list[str]
+
+
+class PromptTypesOut(BaseModel):
+    items: list[PromptTypeOut]
+
+
+class SourceTypeOut(BaseModel):
+    code: str
+    label: str
+
+
+class SourceTypeStorageMappingOut(BaseModel):
+    storage_value: str
+    display_code: str
+    display_label: str
+
+
+class SourceTypesOut(BaseModel):
+    items: list[SourceTypeOut]
+    storage_mappings: list[SourceTypeStorageMappingOut]
+
+
+class BenchmarkMetricsOut(BaseModel):
+    mention_rate: str
+    mention_count: int
+    average_rank: str
+    top1_rate: str
+    share_of_voice: str
+
+
+class MarketPositionThresholdOut(BaseModel):
+    code: str
+    label: str
+    min_mention_rate: str
+
+
+class BenchmarkIndustryOut(BaseModel):
+    industry: str
+    metrics: BenchmarkMetricsOut
+    market_position_thresholds: list[MarketPositionThresholdOut]
+
+
+class BenchmarkListOut(BaseModel):
+    sample_source: str
+    industries: list[BenchmarkIndustryOut]
+
+
+class BenchmarkDetailOut(BaseModel):
+    sample_source: str
+    industry: str
+    metrics: BenchmarkMetricsOut
+    market_position_thresholds: list[MarketPositionThresholdOut]
+
+
+class EvaluationTagItemOut(BaseModel):
+    tag: str
+    count: int
+    share_rate: str | None = None
+
+
+class EvaluationTagsOut(BaseModel):
+    run_id: int | None = None
+    prompt_id: int
+    cluster_method: str
+    answer_count: int
+    items: list[EvaluationTagItemOut] = Field(default_factory=list)
+    total: int
+
+
+class AiBrandWordsGenerateIn(BaseModel):
+    brand_name: str = Field(min_length=1, max_length=255)
+    category: str | None = Field(default=None, max_length=100)
+    official_domain: str | None = Field(default=None, max_length=255)
+    limit: int = Field(default=10, ge=1, le=50)
+
+    @field_validator("brand_name", mode="before")
+    @classmethod
+    def strip_brand_name(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("category", "official_domain")
+    @classmethod
+    def strip_optional_fields(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class AiBrandWordsGenerateOut(BaseModel):
+    brand_words: list[str]
+
+
+class AiCompetitorsGenerateIn(BaseModel):
+    brand_name: str = Field(min_length=1, max_length=255)
+    category: str | None = Field(default=None, max_length=100)
+    region: str | None = Field(default=None, max_length=100)
+    limit: int = Field(default=5, ge=1, le=20)
+
+    @field_validator("brand_name", mode="before")
+    @classmethod
+    def strip_brand_name(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("category", "region")
+    @classmethod
+    def strip_optional_fields(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class AiCompetitorCandidateOut(BaseModel):
+    brand_name: str
+    competitor_words: list[str]
+    official_domain: str | None = None
+
+
+class AiCompetitorsGenerateOut(BaseModel):
+    competitors: list[AiCompetitorCandidateOut]
+
+
+class AiQuestionsGenerateIn(BaseModel):
+    brand_name: str = Field(min_length=1, max_length=255)
+    category: str | None = Field(default=None, max_length=100)
+    region: str | None = Field(default=None, max_length=100)
+    core_keywords: list[str] = Field(default_factory=list, max_length=20)
+    competitors: list[str] = Field(default_factory=list, max_length=20)
+    limit: int = Field(default=10, ge=1, le=50)
+
+    @field_validator("brand_name", mode="before")
+    @classmethod
+    def strip_brand_name(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("category", "region")
+    @classmethod
+    def strip_optional_fields(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+    @field_validator("core_keywords", "competitors")
+    @classmethod
+    def normalize_keyword_lists(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            cleaned = item.strip()
+            if not cleaned:
+                continue
+            if len(cleaned) > 100:
+                raise ValueError("单项长度不能超过 100")
+            normalized.append(cleaned)
+        return list(dict.fromkeys(normalized))
+
+
+class AiGeneratedQuestionOut(BaseModel):
+    prompt_text: str
+    prompt_type: str
+    core_keyword: str | None = None
+
+
+class AiQuestionsGenerateOut(BaseModel):
+    questions: list[AiGeneratedQuestionOut]
+
+
 class RunCreate(BaseModel):
     project_id: int = Field(ge=1)
     prompt_set_id: int | None = Field(default=None, ge=1)
@@ -571,6 +835,11 @@ class AnswerRead(BaseModel):
 
 
 class AnswerDetailRead(AnswerRead):
+    prompt_text: str
+    prompt_type: str
+    reasoning_text: str | None = None
+    search_keywords: list[str] = Field(default_factory=list)
+    raw_response_safe: dict[str, Any] | None = None
     citations: list[CitationRead] = Field(default_factory=list)
     brand_results: list[BrandResultRead] = Field(default_factory=list)
 
@@ -787,3 +1056,258 @@ class MonitorSetupSave(BaseModel):
     @classmethod
     def normalize_platform_codes(cls, value: list[str]) -> list[str]:
         return list(dict.fromkeys(code.strip() for code in value if code.strip()))
+
+
+class ProjectSetupCreate(BaseModel):
+    project: ProjectCreate
+    monitor_setup: MonitorSetupSave
+    run_after_create: bool = False
+
+
+class ProjectSetupOut(BaseModel):
+    project: ProjectOut
+    monitor_setup: dict[str, Any]
+    run: MonitorRunOut | None = None
+
+
+class ConversationSentimentSummary(BaseModel):
+    positive: int = 0
+    neutral: int = 0
+    negative: int = 0
+
+
+class ConversationPlatformMetricsRead(BaseModel):
+    platform_code: str
+    valid_answer_count: int
+    visibility_rate: str | None = None
+    mention_count: int
+    brand_mention_total_count: int | None = None
+    average_rank: str | None = None
+    top1_rate: str | None = None
+    top3_rate: str | None = None
+    top10_rate: str | None = None
+    share_of_voice: str | None = None
+    positive_rate: str | None = None
+    neutral_rate: str | None = None
+    negative_rate: str | None = None
+    sentiment: ConversationSentimentSummary
+
+
+class ConversationQuestionRead(BaseModel):
+    prompt_id: int
+    prompt_text: str
+    prompt_type: str
+    run_id: int
+    valid_answer_count: int
+    visibility_rate: str | None = None
+    mention_count: int
+    brand_mention_total_count: int | None = None
+    average_rank: str | None = None
+    top1_rate: str | None = None
+    top3_rate: str | None = None
+    top10_rate: str | None = None
+    share_of_voice: str | None = None
+    positive_rate: str | None = None
+    neutral_rate: str | None = None
+    negative_rate: str | None = None
+    sentiment: ConversationSentimentSummary
+    platform_metrics: list[ConversationPlatformMetricsRead] = Field(default_factory=list)
+
+
+class ConversationAnswerBrandResultRead(BaseModel):
+    brand_id: int
+    brand_name: str
+    is_mentioned: bool
+    mention_count: int
+    first_position: int | None = None
+    sentiment: str | None = None
+
+
+class ConversationAnswerRead(BaseModel):
+    answer_id: int
+    platform_code: str
+    prompt_id: int
+    prompt_text: str
+    prompt_type: str
+    raw_text: str
+    normalized_text: str | None = None
+    collected_at: datetime
+    reasoning_text: str | None = None
+    search_keywords: list[str] = Field(default_factory=list)
+    citations: list[CitationRead] = Field(default_factory=list)
+    brand_results: list[ConversationAnswerBrandResultRead] = Field(default_factory=list)
+
+
+class SourceAnalysisKpiRead(BaseModel):
+    citation_count: int
+    site_count: int
+    article_count: int
+    citation_rate: str | None = None
+
+
+class SourceAnalysisTypeDistributionRead(BaseModel):
+    source_type: str
+    source_type_label: str
+    link_count: int
+    citation_rate: str | None = None
+    display_value: str
+
+
+class SourceAnalysisPlatformColumnRead(BaseModel):
+    platform_code: str
+    has_citation_data: bool
+
+
+class SourceAnalysisPlatformValueRead(BaseModel):
+    platform_code: str
+    link_count: int
+    citation_rate: str | None = None
+    has_citation_data: bool
+    display_value: str
+
+
+class SourceAnalysisSiteRead(BaseModel):
+    domain: str
+    source_name: str | None = None
+    source_type: str
+    source_type_label: str
+    link_count: int
+    citation_rate: str | None = None
+    display_value: str
+    platform_values: list[SourceAnalysisPlatformValueRead] = Field(default_factory=list)
+
+
+class SourceAnalysisOut(BaseModel):
+    run_id: int | None = None
+    metric: str
+    has_citation_data: bool
+    kpi: SourceAnalysisKpiRead
+    type_distribution: list[SourceAnalysisTypeDistributionRead] = Field(default_factory=list)
+    platform_columns: list[SourceAnalysisPlatformColumnRead] = Field(default_factory=list)
+    sites: PaginatedResponse[SourceAnalysisSiteRead]
+
+
+class CompetitorAnalysisTargetBrandRead(BaseModel):
+    brand_id: int
+    brand_name: str
+
+
+class CompetitorAnalysisKpiRead(BaseModel):
+    mention_rate: str | None = None
+    mention_count: int
+    average_rank: str | None = None
+    top1_rate: str | None = None
+    share_of_voice: str | None = None
+
+
+class CompetitorAnalysisBoardRowRead(BaseModel):
+    brand_id: int
+    brand_name: str
+    mention_rate: str | None = None
+    mention_count: int
+    average_rank: str | None = None
+    share_of_voice: str | None = None
+    is_target: bool
+
+
+class CompetitorAnalysisBoardsRead(BaseModel):
+    mention_rate: list[CompetitorAnalysisBoardRowRead] = Field(default_factory=list)
+    average_rank: list[CompetitorAnalysisBoardRowRead] = Field(default_factory=list)
+    mention_count: list[CompetitorAnalysisBoardRowRead] = Field(default_factory=list)
+
+
+class CompetitorAnalysisTrendsRead(BaseModel):
+    days: list[str] = Field(default_factory=list)
+    mention_rate: list[Any] = Field(default_factory=list)
+    average_rank: list[Any] = Field(default_factory=list)
+    mention_count: list[Any] = Field(default_factory=list)
+
+
+class CompetitorAnalysisOut(BaseModel):
+    run_id: int | None = None
+    brand_scope: str
+    target_brand: CompetitorAnalysisTargetBrandRead
+    has_analysis_data: bool
+    kpis: CompetitorAnalysisKpiRead
+    boards: CompetitorAnalysisBoardsRead
+    trends: CompetitorAnalysisTrendsRead
+
+
+class DashboardOverviewKpiRead(BaseModel):
+    brand_mention_rate: str | None = None
+    brand_top1_mention_rate: str | None = None
+    brand_top3_mention_rate: str | None = None
+    brand_top10_mention_rate: str | None = None
+    valid_answer_count: int | None = None
+    brand_mention_count: int | None = None
+    average_rank: str | None = None
+    share_of_voice: str | None = None
+    brand_mention_total_count: int | None = None
+    positive_rate: str | None = None
+    neutral_rate: str | None = None
+    negative_rate: str | None = None
+
+
+class DashboardOverviewPlatformRead(BaseModel):
+    platform_code: str
+    platform_name: str
+    analysis: dict[str, Any] | None = None
+
+
+class DashboardOverviewCompetitorPreviewRead(BaseModel):
+    boards: CompetitorAnalysisBoardsRead
+
+
+class DashboardOverviewSourcePreviewRead(BaseModel):
+    items: list[SourceAnalysisSiteRead] = Field(default_factory=list)
+    total: int = 0
+
+
+class DashboardOverviewRecentQuestionsRead(BaseModel):
+    items: list[ConversationQuestionRead] = Field(default_factory=list)
+    total: int = 0
+
+
+class DashboardOverviewOut(BaseModel):
+    project_id: int
+    run_id: int | None = None
+    kpis: DashboardOverviewKpiRead
+    platforms: list[DashboardOverviewPlatformRead] = Field(default_factory=list)
+    competitor_preview: DashboardOverviewCompetitorPreviewRead
+    source_preview: DashboardOverviewSourcePreviewRead
+    recent_questions: DashboardOverviewRecentQuestionsRead
+
+
+class ProjectDraftCreate(BaseModel):
+    draft_key: str | None = Field(default=None, max_length=128)
+    current_step: int = Field(default=1, ge=1, le=3)
+    project: dict[str, Any] = Field(default_factory=dict)
+    monitor_setup: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("draft_key")
+    @classmethod
+    def strip_draft_key(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class ProjectDraftUpdate(BaseModel):
+    draft_key: str | None = Field(default=None, max_length=128)
+    current_step: int | None = Field(default=None, ge=1, le=3)
+    project: dict[str, Any] | None = None
+    monitor_setup: dict[str, Any] | None = None
+
+    @field_validator("draft_key")
+    @classmethod
+    def strip_draft_key(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
+
+
+class ProjectDraftOut(BaseModel):
+    id: int
+    draft_key: str | None
+    current_step: int
+    project: dict[str, Any] = Field(default_factory=dict)
+    monitor_setup: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+

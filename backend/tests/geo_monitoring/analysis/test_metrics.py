@@ -10,6 +10,7 @@ from app.geo_monitoring.analysis.metrics import (
     compute_citation_rate,
     compute_platform_metrics,
     compute_recommendation_rate,
+    compute_target_extended_metrics,
     filter_valid_answers,
     is_valid_answer,
     normalize_metric_text,
@@ -259,6 +260,94 @@ def test_filter_valid_answers_is_stable():
     assert [item.answer_id for item in filter_valid_answers(answers)] == [1]
 
 
+def test_compute_brand_rank_rate_top10_uses_relative_rank():
+    answers = [
+        make_answer(
+            answer_id=1,
+            brand_mentions=(
+                mention(COMPETITOR_A_ID, first_position=0),
+                mention(TARGET_BRAND_ID, first_position=15),
+            ),
+        ),
+        make_answer(
+            answer_id=2,
+            brand_mentions=(mention(TARGET_BRAND_ID, first_position=0),),
+        ),
+        make_answer(
+            answer_id=3,
+            brand_mentions=(
+                mention(COMPETITOR_A_ID, first_position=0),
+                mention(3, first_position=1),
+                mention(4, first_position=2),
+                mention(5, first_position=3),
+                mention(6, first_position=4),
+                mention(7, first_position=5),
+                mention(8, first_position=6),
+                mention(9, first_position=7),
+                mention(10, first_position=8),
+                mention(11, first_position=9),
+                mention(TARGET_BRAND_ID, first_position=10),
+            ),
+        ),
+    ]
+
+    top10 = compute_brand_rank_rate(
+        answers,
+        target_brand_id=TARGET_BRAND_ID,
+        max_rank=10,
+    )
+    assert top10.numerator == 2
+    assert top10.denominator == 3
+    assert top10.rate == Decimal("0.666667")
+
+
+def test_compute_target_extended_metrics_covers_empty_multi_brand_and_mentions():
+    empty = compute_target_extended_metrics(
+        [],
+        target_brand_id=TARGET_BRAND_ID,
+        brand_ids=(TARGET_BRAND_ID, COMPETITOR_A_ID),
+    )
+    assert empty["average_mention_rank"] is None
+    assert empty["share_of_voice"] is None
+    assert empty["brand_mention_total_count"] == 0
+    assert empty["brand_top10_mention_rate"].rate is None
+    assert empty["positive_rate"].rate is None
+
+    answers = [
+        make_answer(
+            answer_id=1,
+            brand_mentions=(
+                mention(TARGET_BRAND_ID, mention_count=3, first_position=2, sentiment="positive"),
+                mention(COMPETITOR_A_ID, first_position=0),
+            ),
+        ),
+        make_answer(
+            answer_id=2,
+            brand_mentions=(
+                mention(TARGET_BRAND_ID, mention_count=2, first_position=1, sentiment="neutral"),
+                mention(COMPETITOR_A_ID, first_position=5),
+            ),
+        ),
+        make_answer(
+            answer_id=3,
+            brand_mentions=(mention(COMPETITOR_A_ID, first_position=0),),
+        ),
+    ]
+    extended = compute_target_extended_metrics(
+        answers,
+        target_brand_id=TARGET_BRAND_ID,
+        brand_ids=(TARGET_BRAND_ID, COMPETITOR_A_ID),
+    )
+    assert extended["average_mention_rank"] == Decimal("1.5")
+    assert extended["share_of_voice"] == Decimal("0.400000")
+    assert extended["brand_mention_total_count"] == 5
+    assert extended["brand_top10_mention_rate"].numerator == 2
+    assert extended["brand_top10_mention_rate"].denominator == 3
+    assert extended["positive_rate"].rate == Decimal("0.5")
+    assert extended["neutral_rate"].rate == Decimal("0.5")
+    assert extended["negative_rate"].rate == Decimal("0")
+
+
 def test_compute_platform_metrics_is_idempotent():
     answers = [
         make_answer(
@@ -298,3 +387,8 @@ def test_compute_platform_metrics_is_idempotent():
     assert first.brand_top3_mention_rate.numerator == 1
     assert first.citation_rate.numerator == 1
     assert first.competitor_advantage_gap == Decimal("-0.5")
+    assert first.average_mention_rank == Decimal("1")
+    assert first.share_of_voice == Decimal("0.333333")
+    assert first.brand_mention_total_count == 1
+    assert first.brand_top10_mention_rate.numerator == 1
+    assert first.positive_rate.denominator == 1
