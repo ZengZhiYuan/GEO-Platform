@@ -104,6 +104,7 @@ def setup_project(db: Session, payload: ProjectSetupCreate) -> ProjectSetupOut:
             payload.monitor_setup.activate_prompt_set
             and prompt_set.prompt_count > 0
         ):
+            db.flush()
             activate_prompt_set(db, prompt_set.id, commit=False)
         if payload.run_after_create:
             db.flush()
