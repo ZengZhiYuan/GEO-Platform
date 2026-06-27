@@ -20,7 +20,7 @@
 - 对话记录和信源导出当前是 CSV 文件流，不是原型文案里的 Excel。
 - `/projects/{project_id}/competitor-analysis` 的 `trends` 字段仍是空数组占位；竞品趋势图应直接调用 `/projects/{project_id}/trends`，并传 `brand_id`。
 - `GET /projects/{project_id}/trends` 只支持单个 `platform_code`；多平台趋势图需要前端按平台分别请求，或不传平台取平台级汇总快照。
-- AI 生成接口是项目域接口，路径含 `project_id`。若创建向导要在完成前使用 AI 生成按钮，推荐先在第 1 步创建基础项目，后续步骤再调用生成接口。
+- AI 生成提供无 `project_id` 的全局路径 `/ai/*:generate`，**创建向导中途 AI 生成应优先使用该路径**，无需先 `POST /projects`；项目域路径 `/projects/{project_id}/ai/*:generate` 保留供已创建项目的编辑配置场景。
 
 ## 2. 全局页面初始化
 
@@ -199,35 +199,34 @@
 
 ### 5.1 推荐总流程
 
-由于原型包含中途 AI 生成按钮，而当前 AI 生成接口需要 `project_id`，推荐交互型创建流程如下：
+创建向导推荐**全程不落库**，直到用户点击完成：
 
 1. 进入向导：
    - `GET /platform-endpoints?enabled=true`
    - `GET /prompt-types`
    - `GET /prompt-library?page_size=100`
    - 可选：`GET /project-drafts/current?draft_key={draft_key}` 恢复草稿。
-2. 第 1 步填写基础信息后点击下一步：
-   - 若还没有 `project_id`，调用 `POST /projects` 创建基础项目。
-   - 同时 `PUT /project-drafts/current` 保存草稿。
-3. 第 2 步配置品牌词、竞品、核心词、平台：
-   - AI 生成按钮调用 `/ai/brand-words:generate`、`/ai/competitors:generate`。
-   - 每次离开步骤可 `PUT /project-drafts/current`。
-4. 第 3 步配置监测问题：
+2. 各步骤填写与 AI 生成：
+   - 中途 AI 生成按钮调用全局路径 `/ai/brand-words:generate`、`/ai/competitors:generate`、`/ai/questions:generate`（**无需 project_id**）。
+   - 用户确认的候选写入草稿：`PUT /project-drafts/current`。
+3. 第 3 步配置监测问题：
    - AI 生成问题调用 `/ai/questions:generate`。
    - 模板问题来自 `GET /prompt-library`。
-5. 点击完成：
-   - `PUT /projects/{project_id}/monitor-setup`，传 `activate_prompt_set=true`。
-6. 如完成后立即开始监测：
+4. 点击完成（推荐一步创建）：
+   - `POST /projects:setup`，一次性创建项目并保存完整监测配置。
+5. 如完成后立即开始监测：
    - `POST /runs`
    - `GET /runs/{run_id}` 轮询进度。
 
-替代流程：如果产品希望完成前完全不落库，也可以只用草稿承载向导数据，最后一次调用 `POST /projects:setup` 创建项目并保存配置。该流程不适合在完成前调用项目域 AI 生成接口，除非先创建项目。
+**取消向导**：仅丢弃草稿，不会产生正式项目脏数据。
+
+兼容流程（已创建项目的分步保存）：若向导第 1 步已调用 `POST /projects` 获取 `project_id`，后续 AI 生成可继续使用项目域路径 `/projects/{project_id}/ai/*:generate`；完成时调用 `PUT /projects/{project_id}/monitor-setup`。该流程在用户取消时可能留下未配置完的空项目，**不推荐用于新建向导**。
 
 ### 5.2 上一步 / 下一步按钮
 
 | 原型动作 | 接口顺序 |
 | --- | --- |
-| 下一步 | 前端校验当前步骤；调用 `PUT /project-drafts/current` 保存草稿；第 1 步若需要 AI 生成能力，先 `POST /projects` 获取 `project_id` |
+| 下一步 | 前端校验当前步骤；调用 `PUT /project-drafts/current` 保存草稿；**无需**为 AI 生成提前 `POST /projects` |
 | 上一步 | 前端切换步骤；可选 `PUT /project-drafts/current` 保存当前草稿 |
 | 离开后恢复 | `GET /project-drafts/current?draft_key={draft_key}` |
 
@@ -235,26 +234,26 @@
 
 | 原型按钮 | 接口顺序 |
 | --- | --- |
-| AI 生成品牌词 | `POST /projects/{project_id}/ai/brand-words:generate` → 用户选择候选 → 写入草稿 `brand.brand_words` |
-| AI 生成竞品 | `POST /projects/{project_id}/ai/competitors:generate` → 用户选择候选 → 写入草稿 `competitors[]` |
-| AI 生成监测问题 | `POST /projects/{project_id}/ai/questions:generate` → 用户选择候选 → 写入草稿 `ai_questions[]` |
+| AI 生成品牌词 | `POST /ai/brand-words:generate`（推荐）或 `POST /projects/{project_id}/ai/brand-words:generate`（已创建项目） → 用户选择候选 → 写入草稿 `brand.brand_words` |
+| AI 生成竞品 | `POST /ai/competitors:generate`（推荐）或 `POST /projects/{project_id}/ai/competitors:generate` → 用户选择候选 → 写入草稿 `competitors[]` |
+| AI 生成监测问题 | `POST /ai/questions:generate`（推荐）或 `POST /projects/{project_id}/ai/questions:generate` → 用户选择候选 → 写入草稿 `ai_questions[]` |
 
 生成接口只返回候选，不落库。真正保存发生在 `PUT /monitor-setup` 或 `POST /projects:setup`。
 
 ### 5.4 完成创建按钮
 
-已有 `project_id` 的推荐调用：
+**推荐（无 project_id，事务式一步创建）：**
+
+1. `POST /projects:setup`
+2. 如果传 `run_after_create=true`，响应中可直接带 `run`。
+3. 跳转项目管理或数据大盘。
+
+兼容（已有 `project_id` 的分步保存）：
 
 1. `PUT /projects/{project_id}/monitor-setup`
 2. 如需启动首次运行：`POST /runs`
 3. `GET /runs/{run_id}` 轮询。
 4. 跳转数据大盘：`GET /projects/{project_id}/dashboard/overview?run_id={run_id}`
-
-无 `project_id` 的事务式调用：
-
-1. `POST /projects:setup`
-2. 如果传 `run_after_create=true`，响应中可直接带 `run`。
-3. 跳转项目管理或数据大盘。
 
 ### 5.5 完成摘要
 
