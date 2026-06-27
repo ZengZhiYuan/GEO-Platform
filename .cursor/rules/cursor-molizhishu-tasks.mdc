@@ -1,0 +1,81 @@
+---
+description: Cursor 模力指数 API 替换 Aidso 开发任务执行流程（第三方采集接口替换主任务书）
+alwaysApply: true
+---
+
+# Cursor 模力指数 API 替换 Aidso 开发任务执行
+
+第三方采集接口替换开发以 **`docs/Cursor模力指数API替换Aidso开发任务书.md`** 为**主任务书**，以 **`docs/Cursor模力指数API替换Aidso开发任务书_Task索引.md`** 为定位入口。用户下达 M 系列 Task 开发任务时，默认已授权按任务书执行，无需重复声明“先读任务文档”。
+
+## 默认入口与优先级
+
+1. 只要用户提出 Aidso 替换、模力指数 API、molizhishu、第三方采集接口、provider task/subTask、callback、轮询兜底、regionCode、screenshot、ProviderBatch、第三方平台映射等后端开发需求，默认进入本规则。
+2. 用户只写 `执行 Task M5`、`执行 M7`、`执行 Task M10：Callback 接口与幂等处理` 等简短 prompt 时，自动按 `docs/Cursor模力指数API替换Aidso开发任务书.md` 定位任务。
+3. M 系列任务优先级高于接口缺口 P0/P1/P2 任务；若同一请求同时涉及原型接口缺口和模力指数替换，以用户当次指令为准，并说明采用哪个任务书为主。
+4. 发生口径冲突时，按以下顺序处理：用户当次指令 > `AGENTS.md` / `.cursor/rules/*` > `docs/Cursor模力指数API替换Aidso开发任务书.md` > `docs/API接口文档.md` / 当前代码实现 > `docs/Cursor接口缺口开发任务书.md` > 历史 MVP V2 任务书。
+
+## 读取策略（节约 token）
+
+1. **禁止**一次性读取或加载模力指数任务书全文。
+2. **先读** `docs/Cursor模力指数API替换Aidso开发任务书_Task索引.md`，定位 Task 行号、必读章节和相关文档。
+3. **再读**任务书局部片段：
+   - 首次执行 M 系列任务或涉及架构口径时读 §1–§4。
+   - 每次执行时读当前 Task 章节。
+   - 涉及状态、错误、验收时按索引读取 §7–§12 对应片段。
+4. **新增或改造 API 前** 局部读取 `docs/API接口文档.md` 相关章节；**写测试前** 局部读取 `docs/API测试文档.md`。
+5. 涉及采集生命周期、worker、pending 轮询、callback 或 report 时，按需读取 `docs/采集任务生命周期说明.md` 和相关 service/test 文件。
+6. 不要读取或依赖 MVP V2 任务书作为当前开发依据；除非用户明确要求追溯历史背景。
+
+## 执行顺序
+
+1. 从用户消息识别 M 系列 Task 编号和标题。
+2. 读取本索引，确认任务范围、优先级、必读章节和验收命令。
+3. **Superpowers：** 读取 `using-superpowers`；代码任务读取 `test-driven-development`；收尾前读取 `verification-before-completion`。多步骤或跨文件任务按 `.cursor/rules/superpowers-dev-workflow.mdc` 选择 `writing-plans` / `systematic-debugging` 等技能。
+4. 检查当前工作树，保护用户或其他 Agent 的未提交改动。
+5. 测试先行：先新增或修改能失败的测试，并确认失败原因对应本 Task。
+6. 最小实现：严格围绕当前 M Task，不做无关重构，不提前实现后续 Task。
+7. 运行当前 Task 指定测试与必要回归；涉及迁移时运行 Alembic 检查。
+8. 同步相关文档：API 文档、测试文档、采集生命周期、`.env.example`、README、原型映射等按 Task 要求更新。
+9. 改动了 `backend/` 源码且验收通过后执行 CodeGraph 更新。
+10. 汇报改动、验证命令、结果、未覆盖风险和下一步建议。
+
+## 统一开发约束
+
+- 默认只改 `backend` 与 `docs`；不改 `frontend/`，除非用户明确要求。
+- 后端命令必须使用 `backend/.venv`，不要使用系统 Python。
+- 测试不得访问真实模力指数接口；真实联调只能通过手动 smoke 脚本，并需明确费用风险。
+- 真实 token 只能来自 `.env`、Nacos 或密钥管理系统，不能写入仓库、日志、测试 fixture 或文档示例。
+- 外部 API 调用不得运行在数据库长事务内。
+- 本地确定性指标不得由 LLM 或模力指数 provider 品牌字段直接覆盖。
+- 默认保留历史 Aidso 迁移和历史数据兼容；新建第三方任务使用 `collection_source=molizhishu`。
+- P0 先跑通单 QueryTask 轮询闭环；不要在 M1–M8 中提前重写为 ProviderBatch，除非当前 Task 明确要求。
+
+## 任务完成后：文档与 CodeGraph
+
+按任务影响更新：
+
+| 影响范围 | 应更新文档 |
+| --- | --- |
+| Run 创建、callback、region、平台 API | `docs/API接口文档.md` |
+| 测试用例、mock 策略、smoke 脚本 | `docs/API测试文档.md` |
+| 采集、pending、callback、worker 生命周期 | `docs/采集任务生命周期说明.md` |
+| 配置、部署、环境变量 | `.env.example`、README、部署说明 |
+| 平台端、信源、页面口径 | `docs/原型功能_API映射整合精简版.md` |
+
+CodeGraph（改动 `backend/` 源码且验收通过后）：
+
+```powershell
+codegraph status
+codegraph sync
+codegraph status
+```
+
+文档-only 任务无需 pytest，也无需 CodeGraph；但必须做文件存在、标题结构、无占位词和 git 状态自检。
+
+## 用户下任务时的推荐格式
+
+```text
+执行 Task M5：Molizhishu Client / Adapter
+```
+
+Agent 应自动完成索引定位、局部读取、测试先行、实现、验收、文档同步和汇报，无需用户重复粘贴任务书内容。

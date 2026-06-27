@@ -4,13 +4,15 @@
 
 GEO-Platform 是后端优先的 AI 应用监测平台：配置监测项目、品牌、Prompt 和 AI 平台后，系统按 `Prompt × Platform` 发起采集，沉淀回答、引用源、品牌识别、指标快照和 Agent 洞察，并导出 Markdown / HTML / PDF 诊断报告。
 
-当前阶段后端开发以接口缺口任务书为准，补齐原型六页所需的页面级聚合、字典、AI 生成、导出和指标口径等接口。
+当前阶段后端开发有两条主线：接口缺口补齐，以及本分支重点进行的第三方采集接口替换。涉及原型页面聚合、字典、AI 生成、导出和指标口径时，以接口缺口任务书为准；涉及 Aidso 替换、模力指数 API、第三方采集链路、provider task/subTask、callback、轮询兜底、regionCode、screenshot 或 ProviderBatch 时，以模力指数替换任务书为准。
 
 - **主任务书：** `docs/Cursor接口缺口开发任务书.md`
+- **第三方接口替换主任务书：** `docs/Cursor模力指数API替换Aidso开发任务书.md`
 - **事实来源：** `docs/原型功能_API映射整合精简版.md`
-- **默认入口：** 凡涉及当前后端开发、原型页面对接、接口缺口、页面级聚合、字典、AI 生成、导出、指标口径等需求，默认以 `docs/Cursor接口缺口开发任务书.md` 为准；不要切回 MVP V2 任务书作为开发依据。
+- **接口缺口默认入口：** 凡涉及原型页面对接、接口缺口、页面级聚合、字典、AI 生成、导出、指标口径等需求，默认以 `docs/Cursor接口缺口开发任务书.md` 为准；不要切回 MVP V2 任务书作为开发依据。
+- **模力指数默认入口：** 凡涉及第三方采集接口替换、Aidso 下线、模力指数 API 接入、`collection_source=molizhishu`、`molizhishu_*` 平台、provider 状态/错误/回调/轮询/拆批等需求，默认以 `docs/Cursor模力指数API替换Aidso开发任务书.md` 为准；用户输入 `执行 Task M5：Molizhishu Client / Adapter` 这类简短 prompt 时，自动按该任务书定位执行。
 - **默认授权：** 用户下达 Task 开发指令时，默认授权按任务书执行，无需每次重复「先读任务文档」。
-- **冲突处理：** 用户当次指令 > 本文件 / `.cursor/rules/*` / `CLAUDE.md` > `docs/Cursor接口缺口开发任务书.md` > `docs/原型功能_API映射整合精简版.md` > Superpowers skills。
+- **冲突处理：** 用户当次指令 > 本文件 / `.cursor/rules/*` / `CLAUDE.md` > 当前命中的主任务书（模力指数替换任务书或接口缺口任务书） > `docs/原型功能_API映射整合精简版.md` / 现有 API 文档与代码实现 > Superpowers skills。
 - **历史归档：** `docs/AI应用监测_MVP_Cursor实施任务V2.md` 中的任务已完成。当前开发任务中忽略该任务书，不再按 `V2 Task N` 开展新开发；仅当用户明确要求追溯历史实现、核对旧任务背景或审计已完成工作时，才局部查阅历史资料。
 
 ## 技术栈
@@ -47,13 +49,13 @@ GEO-Platform 是后端优先的 AI 应用监测平台：配置监测项目、品
 
 ### 任务读取
 
-1. 先读 `docs/Cursor接口缺口开发任务书_Task索引.md`（执行规则摘要 + Task 行号目录 + 原型文档章节映射）。
-2. 再按索引行号局部读取任务书对应 Task 章节；禁止通读全文。
-3. 按 Task 局部读取 `docs/原型功能_API映射整合精简版.md` 对应章节。
+1. 接口缺口 P 系列任务：先读 `docs/Cursor接口缺口开发任务书_Task索引.md`（执行规则摘要 + Task 行号目录 + 原型文档章节映射），再按索引行号局部读取任务书对应 Task 章节；禁止通读全文。
+2. 模力指数 M 系列任务：先读 `docs/Cursor模力指数API替换Aidso开发任务书_Task索引.md`（执行规则摘要 + Task 行号目录 + 必读章节映射），再按索引行号局部读取 `docs/Cursor模力指数API替换Aidso开发任务书.md` 对应 Task；禁止通读全文。
+3. 按 Task 局部读取相关事实文档：接口缺口任务读 `docs/原型功能_API映射整合精简版.md` 对应章节；模力指数任务按索引读取 API 文档、测试文档、采集生命周期说明、平台端/信源相关原型章节。
 4. 新增/改造接口前读 `docs/API接口文档.md`；写测试前读 `docs/API测试文档.md`。
-5. 细则见 `.cursor/rules/cursor-api-gap-tasks.mdc`。
+5. 细则见 `.cursor/rules/cursor-api-gap-tasks.mdc` 与 `.cursor/rules/cursor-molizhishu-tasks.mdc`。
 
-用户推荐指令格式：`执行 Task P0-1：<简述>`（或 `执行 Task P1-2：…` 等）。
+用户推荐指令格式：`执行 Task P0-1：<简述>`（接口缺口）或 `执行 Task M5：Molizhishu Client / Adapter`（模力指数替换）。
 
 ### Superpowers 开发技能
 
@@ -82,6 +84,8 @@ GEO-Platform 是后端优先的 AI 应用监测平台：配置监测项目、品
 - 外部 API 和 LLM 调用不得运行在数据库长事务内。
 - 数值指标必须由 SQL/Python 确定性计算；LLM 不得生成或修改确定性统计指标。
 - 平台失败相互隔离，运行可进入 `partial_success`。
+- 第三方采集替换默认新建 `collection_source=molizhishu`，历史 Aidso 数据与迁移只读兼容；新任务不得继续引导使用 Aidso。
+- 模力指数测试默认使用 mock，不访问真实接口；真实 token 不得写入仓库、日志、测试 fixture 或文档示例。
 - 趋势比较必须限定同一 Prompt 集版本。
 - 聚合接口避免 N+1；优先复用现有表与分析 JSON，不优先新增大表。
 - 真实账号、密码、API Key 只写入 `.env`、Nacos 或服务器密钥管理系统，不写入仓库。
@@ -142,6 +146,7 @@ $env:PYTHONUTF8 = "1"
 - 接口入参/出参以 Pydantic schema 表达，错误响应和错误码同步写入 API 文档。
 - 新增或改造接口前局部读取 `docs/API接口文档.md` 相关章节；写测试前读取 `docs/API测试文档.md` 约定。
 - 每个接口缺口 Task 完成后，必须更新 `docs/API接口文档.md`、`docs/API测试文档.md`，并在 `docs/原型功能_API映射整合精简版.md` 标注已覆盖缺口。
+- 每个模力指数 M 系列 Task 完成后，按影响范围同步 `docs/API接口文档.md`、`docs/API测试文档.md`、`docs/采集任务生命周期说明.md`、`.env.example`、README 或 `docs/原型功能_API映射整合精简版.md`。
 
 ## 数据库规范
 
@@ -224,12 +229,13 @@ backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring --bas
 
 ## 禁止事项
 
-- 禁止把 MVP V2 任务书作为当前接口缺口开发依据；旧版原型映射文档与 MVP V2 任务书仅作历史参考。
+- 禁止把 MVP V2 任务书作为当前接口缺口或模力指数替换开发依据；旧版原型映射文档与 MVP V2 任务书仅作历史参考。
 - 禁止一次性通读大型任务书；必须按索引和行号局部读取。
 - 禁止使用未指定编码的 `type`、`cat`、`Get-Content` 读取中文文档或日志。
 - 禁止将乱码文本写回仓库。
 - 禁止使用系统 Python、其他项目虚拟环境或 Conda 环境执行后端命令。
 - 禁止在仓库、日志、普通数据库配置字段中保存明文平台密钥、数据库密码、API token。
+- 禁止自动测试访问真实模力指数接口；真实联调必须走手动 smoke 脚本并明确费用风险。
 - 禁止恢复已移除的内容生产业务域。
 - 禁止在数据库事务中调用外部 AI 平台或 LLM。
 - 禁止让 LLM 生成或修改确定性统计指标。
@@ -241,7 +247,7 @@ backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring --bas
 
 每个开发 Task 完成前必须满足：
 
-1. 已按任务索引局部读取当前 Task、对应原型章节、API 文档和测试文档。
+1. 已按任务索引局部读取当前 Task、对应事实章节、API 文档和测试文档。
 2. 代码任务已按 Superpowers 工作流执行：`using-superpowers`、`test-driven-development`、`verification-before-completion`。
 3. 已先写失败测试，并确认失败原因对应本次需求；纯文档任务可跳过。
 4. 实现范围与任务书一致，不引入无关重构或额外行为。
