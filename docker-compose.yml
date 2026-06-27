@@ -22,6 +22,15 @@ x-backend-common: &backend-common
     - reports_data:/app/backend/data/reports
   restart: unless-stopped
 
+x-backend-build: &backend-build
+  context: .
+  dockerfile: Dockerfile
+  args:
+    APT_MIRROR: "${APT_MIRROR:-https://mirrors.aliyun.com/debian}"
+    APT_SECURITY_MIRROR: "${APT_SECURITY_MIRROR:-https://mirrors.aliyun.com/debian-security}"
+    PIP_INDEX_URL: "${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple}"
+    PIP_TRUSTED_HOST: "${PIP_TRUSTED_HOST:-mirrors.aliyun.com}"
+
 x-release-commands:
   migrate: docker compose run --rm api python -m alembic -c backend/alembic.ini upgrade head
   smoke: health, ready, create test project, mock run, report download
@@ -30,9 +39,7 @@ services:
   api:
     <<: *backend-common
     image: geo-platform-backend:${APP_IMAGE_TAG:-local}
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: *backend-build
     command: >
       uvicorn app.main:app --host 0.0.0.0 --port 8000
     ports:
@@ -51,9 +58,7 @@ services:
   worker:
     <<: *backend-common
     image: geo-platform-backend:${APP_IMAGE_TAG:-local}
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: *backend-build
     command: >
       dramatiq app.worker.actors.collection app.worker.actors.analysis app.worker.actors.report
       -Q collection -Q analysis -Q report
@@ -63,9 +68,7 @@ services:
   scheduler:
     <<: *backend-common
     image: geo-platform-backend:${APP_IMAGE_TAG:-local}
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: *backend-build
     environment:
       - APP_ENV=${APP_ENV:-prod}
       - APP_DEBUG=${APP_DEBUG:-false}

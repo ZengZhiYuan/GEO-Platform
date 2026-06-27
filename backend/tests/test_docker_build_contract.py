@@ -29,3 +29,15 @@ def test_dockerignore_keeps_build_context_small():
     assert "backend/.venv" in dockerignore
     assert "frontend/node_modules" in dockerignore
     assert "data/" in dockerignore
+
+
+def test_compose_overrides_build_mirrors_with_aliyun_defaults():
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+
+    assert 'APT_MIRROR: "${APT_MIRROR:-https://mirrors.aliyun.com/debian}"' in compose
+    assert (
+        'APT_SECURITY_MIRROR: '
+        '"${APT_SECURITY_MIRROR:-https://mirrors.aliyun.com/debian-security}"'
+    ) in compose
+    assert 'PIP_INDEX_URL: "${PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple}"' in compose
+    assert 'PIP_TRUSTED_HOST: "${PIP_TRUSTED_HOST:-mirrors.aliyun.com}"' in compose
