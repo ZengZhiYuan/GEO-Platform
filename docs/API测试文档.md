@@ -447,16 +447,21 @@ backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_
 
 | 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
 | --- | --- | --- | --- | --- | --- | --- |
-| AI 生成品牌词 | `POST` | `/api/geo-monitoring/projects/{project_id}/ai/brand-words:generate` | Body：`brand_name`（必填）、`category`、`official_domain`、`limit` 默认 10 | `{ "brand_words": string[] }` | `code=0`；必含 `brand_name`；去重 | 项目不存在 `40400`；品牌名为空 `422` |
-| AI 生成竞品 | `POST` | `/api/geo-monitoring/projects/{project_id}/ai/competitors:generate` | Body：`brand_name`（必填）、`category`、`region`、`limit` 默认 5 | `{ "competitors": [{ brand_name, competitor_words[], official_domain? }] }` | `code=0`；排除目标品牌自身 | 项目不存在 `40400` |
-| AI 生成监测问题 | `POST` | `/api/geo-monitoring/projects/{project_id}/ai/questions:generate` | Body：`brand_name`（必填）、`category`、`region`、`core_keywords[]`、`competitors[]`、`limit` 默认 10 | `{ "questions": [{ prompt_text, prompt_type, core_keyword? }] }` | 五类意图模板；按 `limit` 截断 | 项目不存在 `40400` |
+| AI 生成品牌词（创建向导推荐） | `POST` | `/api/geo-monitoring/ai/brand-words:generate` | Body：`brand_name`（必填）、`category`、`official_domain`、`limit` 默认 10 | `{ "brand_words": string[] }` | `code=0`；必含 `brand_name`；去重；**不落库** | 品牌名为空 `422` |
+| AI 生成竞品（创建向导推荐） | `POST` | `/api/geo-monitoring/ai/competitors:generate` | Body：`brand_name`（必填）、`category`、`region`、`limit` 默认 5 | `{ "competitors": [{ brand_name, competitor_words[], official_domain? }] }` | `code=0`；排除目标品牌自身；**不落库** | 品牌名为空 `422` |
+| AI 生成监测问题（创建向导推荐） | `POST` | `/api/geo-monitoring/ai/questions:generate` | Body：`brand_name`（必填）、`category`、`region`、`core_keywords[]`、`competitors[]`、`limit` 默认 10 | `{ "questions": [{ prompt_text, prompt_type, core_keyword? }] }` | 五类意图模板；按 `limit` 截断；**不落库** | 品牌名为空 `422` |
+| AI 生成品牌词（项目域兼容） | `POST` | `/api/geo-monitoring/projects/{project_id}/ai/brand-words:generate` | 同上 | 同上 | `code=0` | 项目不存在 `40400`；品牌名为空 `422` |
+| AI 生成竞品（项目域兼容） | `POST` | `/api/geo-monitoring/projects/{project_id}/ai/competitors:generate` | 同上 | 同上 | `code=0` | 项目不存在 `40400` |
+| AI 生成监测问题（项目域兼容） | `POST` | `/api/geo-monitoring/projects/{project_id}/ai/questions:generate` | 同上 | 同上 | 五类意图模板；按 `limit` 截断 | 项目不存在 `40400` |
+
+v1 兼容：上述路径均可替换前缀为 `/api/v1/geo-monitoring/...`。
 
 自动化测试文件：`backend/tests/geo_monitoring/test_ai_generation_api.py`
 
-覆盖场景：宋城/杭州旅游示例、空品牌名校验、生成不落库、项目不存在。
+覆盖场景：宋城/杭州旅游示例、空品牌名校验、**无 project_id 全局路径**、v1 全局路径、全局生成不创建项目、项目域生成不落库、项目不存在 `40400`。
 
 ```powershell
-backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_ai_generation_api.py
+backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_ai_generation_api.py backend/tests/geo_monitoring/test_project_setup_api.py backend/tests/geo_monitoring/test_project_drafts_api.py
 ```
 
 #### 5.4.8 监测设置接口
@@ -878,7 +883,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
    - 交互式向导：`POST /projects` → `PUT /project-drafts/current` 保存草稿 → `PUT /projects/{project_id}/monitor-setup`。
    - 事务式提交：`POST /projects:setup`。
 3. 初始化配置候选：`GET /platform-endpoints?enabled=true`、`GET /prompt-types`、`GET /prompt-library`。
-4. 验证 AI 生成候选不落库：`POST /projects/{project_id}/ai/brand-words:generate`、`/ai/competitors:generate`、`/ai/questions:generate`。
+4. 验证 AI 生成候选不落库：创建向导使用 `POST /ai/brand-words:generate`、`/ai/competitors:generate`、`/ai/questions:generate`（全局路径，调用前后 `GET /projects` 的 `total` 不变）；已创建项目场景仍可用项目域路径。
 5. 保存完整监测设置：`PUT /projects/{project_id}/monitor-setup`，建议传 `activate_prompt_set=true`。
 6. 查询或更新 AI 平台，保证至少一个平台 `enabled=true`。
 7. 创建监测运行：`POST /runs`（可不传 `platform_codes`，使用项目默认平台）。

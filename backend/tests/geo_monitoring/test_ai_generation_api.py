@@ -161,3 +161,79 @@ def test_ai_generation_routes_available_on_v1_prefix(client, project_id, path):
     response = client.post(path.format(project_id=project_id), json=body).json()
     assert response["code"] == 0
     assert response["data"]
+
+
+_GLOBAL_AI_PATHS = (
+    "/api/geo-monitoring/ai/brand-words:generate",
+    "/api/geo-monitoring/ai/competitors:generate",
+    "/api/geo-monitoring/ai/questions:generate",
+)
+
+_GLOBAL_AI_V1_PATHS = (
+    "/api/v1/geo-monitoring/ai/brand-words:generate",
+    "/api/v1/geo-monitoring/ai/competitors:generate",
+    "/api/v1/geo-monitoring/ai/questions:generate",
+)
+
+_GLOBAL_AI_BODY = {
+    "brand_name": "杭州宋城",
+    "category": "文旅演艺",
+    "region": "杭州",
+    "core_keywords": ["杭州旅游"],
+    "competitors": ["印象西湖", "只有河南·戏剧幻城"],
+    "limit": 5,
+}
+
+
+def test_global_brand_words_generate_without_project_id(client):
+    response = client.post(
+        "/api/geo-monitoring/ai/brand-words:generate",
+        json={**_SONGCHENG_BASE, "limit": 10},
+    ).json()
+    assert response["code"] == 0
+    words = response["data"]["brand_words"]
+    assert words[0] == "杭州宋城"
+    assert "宋城千古情" in words
+
+
+def test_global_competitors_generate_without_project_id(client):
+    response = client.post(
+        "/api/geo-monitoring/ai/competitors:generate",
+        json={**_SONGCHENG_BASE, "limit": 5},
+    ).json()
+    assert response["code"] == 0
+    names = {item["brand_name"] for item in response["data"]["competitors"]}
+    assert "印象西湖" in names
+    assert "杭州宋城" not in names
+
+
+def test_global_questions_generate_without_project_id(client):
+    response = client.post(
+        "/api/geo-monitoring/ai/questions:generate",
+        json={
+            **_SONGCHENG_BASE,
+            "core_keywords": ["杭州旅游"],
+            "competitors": ["印象西湖", "只有河南·戏剧幻城"],
+            "limit": 5,
+        },
+    ).json()
+    assert response["code"] == 0
+    assert len(response["data"]["questions"]) == 5
+
+
+@pytest.mark.parametrize("path", _GLOBAL_AI_V1_PATHS)
+def test_global_ai_generation_routes_available_on_v1_prefix(client, path):
+    response = client.post(path, json=_GLOBAL_AI_BODY).json()
+    assert response["code"] == 0
+    assert response["data"]
+
+
+def test_global_ai_generation_does_not_create_or_modify_projects(client):
+    before_total = client.get("/api/geo-monitoring/projects").json()["data"]["total"]
+
+    for path in _GLOBAL_AI_PATHS:
+        response = client.post(path, json=_GLOBAL_AI_BODY).json()
+        assert response["code"] == 0
+
+    after_total = client.get("/api/geo-monitoring/projects").json()["data"]["total"]
+    assert after_total == before_total
