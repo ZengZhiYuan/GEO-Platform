@@ -1,39 +1,113 @@
-# AI 应用监测平台
+# GEO-Platform
 
-GEO-Platform 是一个后端优先的 AI 应用监测系统：配置项目、品牌、Prompt 和 AI 平台后，系统按 `Prompt × Platform` 发起采集，沉淀回答、引用源、品牌识别、指标快照和 Agent 洞察，最后导出 Markdown / HTML / PDF 诊断报告。
+GEO-Platform 是一个后端优先的 AI 应用监测平台。系统围绕监测项目、品牌、竞品、Prompt 集和 AI 平台配置工作，按 `Prompt x Platform` 发起采集，沉淀 AI 回答、引用源、品牌识别、指标快照、Agent 洞察，并输出 Markdown / HTML / PDF 诊断报告。
 
-当前后端 Alembic head：`geo_monitoring_0007`。
+当前仓库处于“接口缺口补齐”阶段，开发重心在 `backend/`。`frontend/` 保留 React + Vite + Ant Design 管理端壳层，除非明确要求，一般不作为当前后端接口任务的改动范围。
 
-## 现在能做什么
+- 当前业务 API 前缀：`/api/geo-monitoring`
+- 兼容业务 API 前缀：`/api/v1/geo-monitoring`
+- 当前 Alembic head：`geo_monitoring_0010`
+- 默认配置文件：仓库根目录 `.env`
+- 报告默认目录：本地 `./data/reports`，容器内 `/app/backend/data/reports`
 
-- 管理监测项目、目标品牌、竞品、品牌别名、核心词和 Prompt 集版本。
-- 配置并调用豆包、通义千问、腾讯元宝、DeepSeek、Kimi 等官方平台 Adapter。
-- 可在创建运行时选择 `collection_source=aidso`，通过 Aidso 采集 AI Web/App 端真实回答结果，并按平台端侧单独控制深度思考。
-- 创建监测运行，自动扇出查询任务，由 Dramatiq Worker 异步采集。
-- 汇总品牌提及率、首位率、Prompt 竞争力、引用来源、平台表现等指标。
-- 采集完成后触发 LangGraph Agent 生成语义诊断和优化建议。
-- 支持 APScheduler 定时运行。
-- 支持通过接口生成并下载 `md`、`html`、`pdf` 三种报告。
+## 当前能力
 
-接口统一前缀：`/api/geo-monitoring`。兼容保留：`/api/v1/geo-monitoring`。
+- 项目管理：项目列表、项目卡片概览、项目切换器、一步创建项目、创建向导草稿、暂停/恢复监测、删除前关联检查。
+- 监测配置：目标品牌、竞品、品牌别名、核心词、Prompt 词库、Prompt 集版本、监测设置、平台端元数据与展示字典。
+- AI 生成辅助：按项目生成品牌词候选、竞品候选、监测问题候选；候选结果不自动落库。
+- 平台采集：支持豆包、通义千问、腾讯元宝、DeepSeek、Kimi 官方 Adapter，也支持 `collection_source=aidso` 的 Aidso 第三方采集源。
+- 异步运行：创建监测运行后生成 QueryTask，由 Dramatiq worker 消费 `collection`、`analysis`、`report` 队列。
+- 分析指标：品牌可见度、提及率、首位率、平均排名、平台表现、Prompt 竞争力、引用来源、竞品表现、趋势快照等确定性指标。
+- Agent 洞察：采集/分析完成后可通过 LangGraph + OpenAI-compatible LLM 生成诊断和建议，并保留 Agent 执行审计。
+- 页面级聚合：数据大盘、AI 对话记录、竞品分析、信源引用分析等原型页面所需聚合接口。
+- 导出与报告：AI 对话记录 CSV、信源引用分析 CSV，以及 Markdown / HTML / PDF 监测报告生成、下载和删除。
+- 定时任务：APScheduler 独立进程轮询启用的 cron 计划并触发监测运行。
 
-## 架构要点
+## 技术栈
 
-| 模块 | 技术/作用 |
+| 层次 | 当前实现 |
 | --- | --- |
-| API | FastAPI + SQLAlchemy，提供监测配置、运行、指标、报告接口 |
-| 数据库 | PostgreSQL，保存业务数据、运行结果和 Alembic 版本 |
-| 队列 | Redis + Dramatiq，消费 `collection`、`analysis`、`report` 队列 |
-| 调度 | APScheduler 独立进程，扫描 cron 计划并创建运行 |
-| Agent | LangGraph + OpenAI-compatible LLM，生成诊断和建议 |
-| 报告 | Jinja2 / Markdown / ReportLab，输出 Markdown、HTML、PDF |
-| 配置 | 根目录 `.env` 为本地默认配置；可选接入 Nacos |
+| API | FastAPI、Pydantic、统一响应封装、统一异常处理、健康/就绪探针 |
+| 数据访问 | SQLAlchemy 2.0、Alembic、PostgreSQL；pytest 默认使用 SQLite |
+| 异步任务 | Redis + Dramatiq；测试中使用 stub broker |
+| 调度 | APScheduler 独立进程 |
+| 采集 | httpx、tenacity、平台 Adapter、API key 池 |
+| Agent | LangGraph、OpenAI SDK、DashScope 可选传输 |
+| 报告 | Jinja2、Markdown、ReportLab、文件存储 |
+| 配置 | pydantic-settings、`.env`、可选 Nacos |
+| 前端壳层 | React 18、TypeScript、Vite、Ant Design、React Router、Axios |
 
-`frontend` 目录目前只保留已有管理端壳层，MVP V2 的开发、测试和验收重点在 `backend`。
+## 目录结构
 
-## 本地开发启动
+```text
+.
+├── backend/
+│   ├── app/
+│   │   ├── main.py                       # FastAPI 应用入口
+│   │   ├── api/router.py                 # 全局 API router 与探针
+│   │   ├── core/                         # 配置、数据库、响应、异常、日志、ready 检查
+│   │   ├── models/                       # ORM 通用基类
+│   │   ├── geo_monitoring/               # AI 应用监测业务域
+│   │   │   ├── api/                      # 业务接口路由
+│   │   │   ├── services/                 # 业务编排与事务边界
+│   │   │   ├── repositories/             # 查询与持久化封装
+│   │   │   ├── analysis/                 # 指标、品牌、竞品、信源分析
+│   │   │   ├── adapters/                 # AI 平台与 Aidso 采集适配器
+│   │   │   ├── agents/                   # LangGraph Agent 分析链路
+│   │   │   ├── reports/                  # 报告渲染、PDF、文件存储
+│   │   │   ├── templates/report/         # md/html 报告模板
+│   │   │   ├── models.py                 # 监测域 ORM 模型
+│   │   │   └── schemas.py                # Pydantic 入参与出参
+│   │   ├── worker/actors/                # Dramatiq collection/analysis/report actor
+│   │   └── scheduler/                    # APScheduler 入口与任务同步
+│   ├── alembic/                          # 数据库迁移
+│   ├── scripts/                          # API 联调、E2E、平台 smoke 脚本
+│   └── tests/                            # 后端测试
+├── frontend/                             # 管理端壳层
+├── docs/                                 # API 文档、测试文档、任务书、原型映射、部署资料
+├── scripts/                              # 初始化和迁移辅助脚本
+├── Dockerfile                            # 后端运行镜像
+├── docker-compose.yml                    # API / worker / scheduler 编排
+└── .env.example                          # 本地配置模板
+```
 
-前提：PostgreSQL、Redis、Nacos 已在服务器或可访问环境中部署。本项目默认不要求本地 Docker 启动这些中间件。
+## 主要接口模块
+
+所有业务接口都挂在 `/api/geo-monitoring` 下，并同步保留 `/api/v1/geo-monitoring` 兼容前缀。
+
+| 模块 | 代表接口 |
+| --- | --- |
+| 探针 | `GET /api/health`、`GET /api/ready`、`GET /api/geo-monitoring/health`、`GET /api/geo-monitoring/ready` |
+| 项目 | `GET/POST /projects`、`POST /projects:setup`、`GET /projects/overview`、`POST /projects/{id}/pause`、`POST /projects/{id}/resume` |
+| 创建向导草稿 | `POST /project-drafts`、`PUT /project-drafts/current`、`GET /project-drafts/current` |
+| 品牌与核心词 | `/projects/{project_id}/brands`、`/brands/{brand_id}/aliases`、`/projects/{project_id}/core-keywords` |
+| Prompt | `/prompt-library`、`/projects/{project_id}/prompt-sets`、`/prompt-sets/{id}/prompts`、`/prompt-sets/{id}/activate` |
+| 平台与字典 | `/platforms`、`/platform-endpoints`、`/prompt-types`、`/source-types`、`/benchmarks` |
+| AI 生成 | `/projects/{project_id}/ai/brand-words:generate`、`/competitors:generate`、`/questions:generate` |
+| 运行与任务 | `/runs`、`/runs/{run_id}`、`/runs/{run_id}/cancel`、`/runs/{run_id}/retry-failed`、`/runs/{run_id}/query-tasks` |
+| 分析与看板 | `/runs/{run_id}/analyze`、`/runs/{run_id}/analysis`、`/projects/{project_id}/dashboard`、`/projects/{project_id}/dashboard/overview`、`/projects/{project_id}/trends` |
+| 页面级聚合 | `/projects/{project_id}/conversation-questions`、`/competitor-analysis`、`/source-analysis` |
+| 导出 | `/conversation-questions/export`、`/source-analysis/export` |
+| 调度 | `/projects/{project_id}/schedules`、`/schedules/{id}/enable`、`/disable`、`/trigger` |
+| 报告 | `POST /runs/{run_id}/reports`、`GET /reports/{report_id}/download`、`DELETE /reports/{report_id}` |
+
+接口返回统一使用：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {}
+}
+```
+
+分页接口的 `data` 包含 `items`、`total`、`page`、`page_size`。比率与平均排名等 decimal 字段按字符串返回；无分母时返回 `null`。
+
+## 本地开发
+
+### 1. 准备环境
+
+后端指定使用 `backend/.venv`。Windows / PowerShell 下建议所有后端命令都显式使用该解释器。
 
 ```powershell
 # 仓库根目录
@@ -46,14 +120,18 @@ Copy-Item .env.example .env
 编辑 `.env`，至少确认：
 
 ```env
-DATABASE_URL=postgresql+psycopg2://<user>:<password>@<pgsql-host>:5432/<database>
-REDIS_URL=redis://:<password>@<redis-host>:6379/0
+APP_ENV=dev
+APP_DEBUG=false
+DATABASE_URL=postgresql+psycopg2://<user>:<password>@<server-host>:5432/geo_platform
+REDIS_URL=redis://:<password>@<server-host>:6379/0
 DRAMATIQ_BROKER=redis
 NACOS_ENABLED=false
 REPORT_STORAGE_DIR=./data/reports
 ```
 
-执行数据库迁移：
+本地开发默认连接外部 PostgreSQL / Redis / Nacos，不要求在 compose 中启动这些中间件。
+
+### 2. 执行迁移
 
 ```powershell
 cd backend
@@ -61,14 +139,38 @@ cd backend
 .\.venv\Scripts\alembic.exe -c alembic.ini upgrade head
 ```
 
-启动 API：
+当前迁移链：
+
+```text
+geo_monitoring_0001
+  -> geo_monitoring_0002
+  -> geo_monitoring_0003
+  -> geo_monitoring_0004
+  -> geo_monitoring_0005
+  -> geo_monitoring_0006
+  -> geo_monitoring_0007
+  -> geo_monitoring_0008
+  -> geo_monitoring_0009
+  -> geo_monitoring_0010
+```
+
+空库可以通过 Alembic 初始化到最新版本。`docs/geo-platform_schema.sql` 仅用于空库人工建表参考，已有数据的库不要重复执行全量建表 SQL。
+
+### 3. 启动 API
 
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-另开终端启动 Worker：
+访问：
+
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- OpenAPI: `http://127.0.0.1:8000/openapi.json`
+- 监测健康检查：`http://127.0.0.1:8000/api/geo-monitoring/health`
+- 监测就绪检查：`http://127.0.0.1:8000/api/geo-monitoring/ready`
+
+### 4. 启动 worker
 
 ```powershell
 cd backend
@@ -76,21 +178,37 @@ cd backend
   -Q collection -Q analysis -Q report --processes 2 --threads 1
 ```
 
-需要定时任务时再启动 Scheduler：
+worker 消费三类队列：
+
+- `collection`：执行单条 QueryTask 采集，可按平台失败隔离和重试。
+- `analysis`：生成确定性指标快照和 Agent 洞察。
+- `report`：生成报告文件。
+
+### 5. 启动 scheduler
+
+调度进程要求 `.env` 中 `SCHEDULER_ENABLED=true`。
 
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m app.scheduler.main
 ```
 
-快速检查：
+scheduler 会按 `SCHEDULER_POLL_SECONDS` 周期同步数据库中启用的 cron 调度，并触发监测运行。
 
-```powershell
-curl http://127.0.0.1:8000/api/geo-monitoring/health
-curl http://127.0.0.1:8000/api/geo-monitoring/ready
+## 采集运行示例
+
+创建普通运行：
+
+```http
+POST /api/geo-monitoring/runs
+Content-Type: application/json
+
+{
+  "project_id": 1
+}
 ```
 
-创建 Aidso 数据源运行示例：
+指定 Aidso 数据源运行：
 
 ```http
 POST /api/geo-monitoring/runs
@@ -99,17 +217,24 @@ Content-Type: application/json
 {
   "project_id": 1,
   "collection_source": "aidso",
+  "platform_codes": ["aidso_doubao_web", "aidso_doubao_app"],
   "aidso_thinking_enabled_by_platform": {
     "aidso_doubao_web": false,
     "aidso_doubao_app": true
-  },
-  "platform_codes": ["aidso_doubao_web", "aidso_doubao_app"]
+  }
 }
 ```
 
-## PDF 报告导出
+取消运行、重试失败任务：
 
-生成报告：
+```http
+POST /api/geo-monitoring/runs/{run_id}/cancel
+POST /api/geo-monitoring/runs/{run_id}/retry-failed
+```
+
+## 报告生成与下载
+
+生成单一格式：
 
 ```http
 POST /api/geo-monitoring/runs/{run_id}/reports
@@ -120,7 +245,7 @@ Content-Type: application/json
 }
 ```
 
-也可以一次生成多种格式：
+一次生成多种格式：
 
 ```json
 {
@@ -134,104 +259,98 @@ Content-Type: application/json
 GET /api/geo-monitoring/reports/{report_id}/download
 ```
 
-PDF 下载响应的 `Content-Type` 为 `application/pdf`。报告文件写入 `REPORT_STORAGE_DIR`，Docker 部署时写入持久卷 `geo_platform_reports_data`。
-
+`pdf` 响应类型为 `application/pdf`，`md` 和 `html` 使用 UTF-8 文本响应。报告文件写入 `REPORT_STORAGE_DIR`；容器部署时写入持久卷 `geo_platform_reports_data`。
 
 ## Docker Compose 部署
 
-`docker-compose.yml` 只编排 API、Worker、Scheduler，不启动 PostgreSQL、Redis、Nacos。三者连接信息从根目录 `.env` 读取。
+`docker-compose.yml` 只编排后端 API、Dramatiq worker 和 APScheduler scheduler，不启动 PostgreSQL、Redis、Nacos。三者连接信息从根目录 `.env` 读取。
 
-### 后端部署、发布与回滚
-
-发布前先备份数据库和报告目录，确认 `.env` 中 PostgreSQL、Redis、Nacos、平台 Key 和 Agent LLM Key 都指向目标环境。
-
-先判断本次 `git pull` 拉到了什么：
-
-| 变更类型 | 需要做什么 |
-| --- | --- |
-| 只改 README / docs / 注释 | 不需要重启服务；`git pull` 后即可 |
-| 改了后端 Python 代码、模板、依赖或 Dockerfile | 需要 `docker compose build`，并重新创建 API、Worker、Scheduler |
-| 新增/修改 Alembic migration | 需要执行 `alembic upgrade head` |
-| 只改 `.env` 平台 Key 或开关 | 通常重启受影响服务；平台采集配置优先重启 `worker`，API 配置变更重启 `api` |
-
-无需 `docker compose down`，不要删除 volume，也不要重启 PostgreSQL / Redis / Nacos。
+发布顺序建议固定为：构建镜像，暂停后台任务，执行迁移，启动 worker / scheduler，最后启动或切换 API。
 
 ```bash
-# 1. 进入服务器项目目录，拉取最新代码
 cd /opt/geo-platform
 git pull origin main
 
-# 2. 校验 compose 与 .env
 docker compose config --quiet
-
-# 3. 构建新镜像。后端代码、requirements.txt、Dockerfile 任一变化都要执行
 docker compose build
 
-# 4. 暂停后台任务，避免迁移期间旧 worker 继续消费任务
 docker compose stop worker scheduler
-
-# 5. 执行数据库迁移。若没有新 migration，此命令会显示 already up to date
 docker compose run --rm api python -m alembic -c backend/alembic.ini upgrade head
 
-# 6. 先启动后台，再启动/切换 API
 docker compose up -d worker scheduler
 docker compose up -d api
-
-# 7. 查看状态
 docker compose ps
 ```
 
-发布顺序固定为：先构建镜像，暂停后台任务，执行迁移，再启动 worker/scheduler，最后切换 API。上线 smoke test 至少覆盖 health、ready、创建测试项目、mock 运行和报告下载。
-
-回滚时应用回滚优先回滚镜像，不自动 downgrade 数据库；只有确认迁移可逆且不会影响数据时才考虑数据库回退。某个平台异常时，把对应 `*_ENABLED=false` 后重启 worker；Nacos 不可用且允许本地配置兜底时，设置 `NACOS_ENABLED=false` 后重启服务。
-
-容器访问宿主机中间件时，不要把 `DATABASE_URL` 或 `REDIS_URL` 的 host 写成 `localhost`。优先使用服务器内网 IP，或使用 compose 中已配置的 `host.docker.internal`。
-
-常用命令：
+常用运维命令：
 
 ```bash
 docker compose logs -f --tail=100 api
 docker compose logs -f --tail=100 worker
+docker compose logs -f --tail=100 scheduler
 docker compose restart worker
 docker compose down
 ```
 
-不要轻易执行 `docker compose down -v`，它会删除报告持久卷。
+不要轻易执行 `docker compose down -v`，它会删除报告持久卷。容器访问宿主机中间件时，不要把 `DATABASE_URL` 或 `REDIS_URL` 的 host 写成 `localhost`，优先使用服务器内网 IP 或 `host.docker.internal`。
 
 ## 关键配置
 
 | 配置 | 说明 |
 | --- | --- |
-| `DATABASE_URL` | PostgreSQL 连接，生产/联调必须指向真实库 |
-| `REDIS_URL` | Redis 连接，Dramatiq 和冷却标记共用 |
-| `DRAMATIQ_BROKER` | 联调/生产用 `redis`，pytest 固定覆盖为 `stub` |
-| `REPORT_STORAGE_DIR` | 报告文件目录；容器内为 `/app/backend/data/reports` |
-| `SCHEDULER_ENABLED` | 本地 scheduler 进程需显式设为 `true` 才运行 |
-| `NACOS_ENABLED` | 为 `true` 时必须配置 Nacos 连接信息 |
-| `DOUBAO_*` / `QWEN_*` / `YUANBAO_*` / `DEEPSEEK_*` / `KIMI_*` | 各平台采集开关、模型和密钥 |
-| `AIDSO_ENABLED` / `AIDSO_BASE_URL` / `AIDSO_API_TOKEN` | Aidso 第三方数据源开关、地址和 token；深度思考由创建运行入参控制 |
-| `COLLECTION_AIDSO_MAX_POLLS` | Aidso `ING` 结果轮询上限，独立于普通失败重试次数 |
-| `AGENT_LLM_*` | Agent 语义分析使用的 OpenAI-compatible LLM |
+| `DATABASE_URL` | PostgreSQL 连接；pytest 可覆盖为 SQLite |
+| `REDIS_URL` | Redis 连接；Dramatiq 与运行时标记共用 |
+| `DRAMATIQ_BROKER` | 联调/生产使用 `redis`，测试覆盖为 `stub` |
+| `API_PREFIX` | 默认 `/api` |
+| `CORS_ALLOWED_ORIGINS` | 逗号分隔的允许跨域来源；为空时不开放跨域凭据 |
+| `REPORT_STORAGE_DIR` | 报告文件目录 |
+| `REPORT_PUBLIC_BASE_URL` | 可选报告公开访问基地址 |
+| `SCHEDULER_ENABLED` | scheduler 进程开关 |
+| `SCHEDULER_POLL_SECONDS` | 调度计划同步周期 |
+| `NACOS_ENABLED` / `NACOS_*` | 可选配置中心连接 |
+| `COLLECTION_*` | 采集超时、重试、并发、Aidso 轮询上限、原始响应保存开关 |
+| `DOUBAO_*` / `QWEN_*` / `YUANBAO_*` / `DEEPSEEK_*` / `KIMI_*` | 官方平台 Adapter 开关、模型、密钥或凭证 |
+| `AIDSO_ENABLED` / `AIDSO_BASE_URL` / `AIDSO_API_TOKEN` | Aidso 第三方数据源配置 |
+| `AGENT_LLM_*` | Agent 语义分析使用的 OpenAI-compatible 或 DashScope LLM 配置 |
 
 真实账号、密码、API Key 只写入 `.env`、Nacos 或服务器密钥管理系统，不写入仓库。
 
 ## 测试与验收
 
-后端测试必须使用 `backend/.venv`：
+后端测试必须使用 `backend/.venv`。
 
 ```powershell
+# 后端完整测试
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests
+
+# 当前监测域常用回归
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring
+
+# 快速静默回归
 backend\.venv\Scripts\python.exe -m pytest backend\tests -q
+
+# Alembic 检查
+backend\.venv\Scripts\alembic.exe -c backend\alembic.ini heads
+backend\.venv\Scripts\alembic.exe -c backend\alembic.ini upgrade head --sql
 ```
 
-接口联调脚本：
+报告相关测试在 Windows / Codex 沙箱下可能涉及文件原子替换和删除，建议使用工作区内临时目录：
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring --basetemp .pytest-tmp
+```
+
+接口联调脚本需要本地 API 已启动：
 
 ```powershell
 backend\.venv\Scripts\python.exe backend\scripts\run_api_full_test.py --base-url http://127.0.0.1:8000
+backend\.venv\Scripts\python.exe backend\scripts\run_api_focused_retest.py --base-url http://127.0.0.1:8000
+backend\.venv\Scripts\python.exe backend\scripts\run_e2e_pipeline_test.py --base-url http://127.0.0.1:8000
 ```
 
-测试默认使用 SQLite、Stub broker、mock 平台 HTTP 和 Fake Agent LLM，不连接真实官方 API。真实平台 smoke test 需要你在 `.env` 中显式启用对应平台和密钥。
+pytest 默认使用 SQLite、Stub broker、mock 平台 HTTP 和 Fake Agent LLM，不连接真实官方 API。真实平台 smoke test 需要在 `.env` 中显式启用对应平台并配置密钥。
 
-上线前最小验收：
+上线前最小 smoke test：
 
 1. `GET /api/geo-monitoring/health` 返回成功。
 2. `GET /api/geo-monitoring/ready` 确认数据库和 Redis ready。
@@ -241,33 +360,36 @@ backend\.venv\Scripts\python.exe backend\scripts\run_api_full_test.py --base-url
 6. `POST /api/geo-monitoring/runs/{run_id}/reports` 生成 `pdf`。
 7. `GET /api/geo-monitoring/reports/{report_id}/download` 能下载 PDF。
 
-## 数据库版本
+前端仅在明确改动 `frontend/` 时验证：
 
-当前迁移链：
-
-```text
-geo_monitoring_0001
-  -> geo_monitoring_0002
-  -> geo_monitoring_0003
-  -> geo_monitoring_0004
-  -> geo_monitoring_0005
-  -> geo_monitoring_0006
-  -> geo_monitoring_0007
+```powershell
+cd frontend
+npm test
+npm run build
 ```
 
-查看版本：
+## 开发依据与文档入口
 
-```sql
-SELECT version_num FROM public.alembic_version;
-```
+当前接口缺口阶段以以下文档为准：
 
-空库初始化请使用 [docs/geo-platform_schema.sql](./docs/geo-platform_schema.sql)。已有数据的库不要重复执行全量建表 SQL。
-生产库升级前先备份。应用回滚优先回滚镜像/代码，不要自动 downgrade 数据库，除非已经确认迁移可逆且不会影响现有业务数据。
-
-## 文档入口
-
-- API 接口说明：[docs/API接口文档.md](./docs/API接口文档.md)
-- API 测试说明：[docs/API测试文档.md](./docs/API测试文档.md)
+- Task 索引：[docs/Cursor接口缺口开发任务书_Task索引.md](./docs/Cursor接口缺口开发任务书_Task索引.md)
+- 主任务书：[docs/Cursor接口缺口开发任务书.md](./docs/Cursor接口缺口开发任务书.md)
+- 原型/API 映射：[docs/原型功能_API映射整合精简版.md](./docs/原型功能_API映射整合精简版.md)
+- API 接口文档：[docs/API接口文档.md](./docs/API接口文档.md)
+- API 测试文档：[docs/API测试文档.md](./docs/API测试文档.md)
 - 操作手册：[docs/AI应用监测平台操作手册.md](./docs/AI应用监测平台操作手册.md)
-- PostgreSQL Navicat 建表：[docs/PostgreSQL远程建表操作文档_无需部署代码.md](./docs/PostgreSQL远程建表操作文档_无需部署代码.md)
-- 当前 schema SQL：[docs/geo-platform_schema.sql](./docs/geo-platform_schema.sql)
+- 数据库 SQL 参考：[docs/geo-platform_schema.sql](./docs/geo-platform_schema.sql)
+- 代码审核要求：[docs/代码审核要求.md](./docs/代码审核要求.md)
+
+`docs/AI应用监测_MVP_Cursor实施任务V2.md` 属于已完成历史归档，不作为当前接口缺口开发依据。
+
+## 开发注意事项
+
+- 外部平台 API 和 LLM 调用不得运行在数据库长事务内。
+- 确定性统计指标必须由 SQL/Python 计算，LLM 不得生成或修改统计口径。
+- 平台采集失败要相互隔离，运行允许进入 `partial_success`。
+- 趋势比较必须限定同一 Prompt 集版本。
+- 新增 API 文件必须在 `backend/app/geo_monitoring/api/__init__.py` 注册 router。
+- 新增或改造接口需同步更新 API 文档、API 测试文档和原型映射文档。
+- 新增表、字段、索引、约束必须补 Alembic migration。
+- 中文文档、源码、配置和命令输出统一按 UTF-8 处理，避免在 Windows 下写入乱码。
