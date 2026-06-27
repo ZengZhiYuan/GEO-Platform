@@ -40,7 +40,13 @@ def session_factory():
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    factory = sessionmaker(
+        bind=engine,
+        autoflush=False,
+        autocommit=False,
+        expire_on_commit=False,
+        future=True,
+    )
     from app.worker.actors import analysis as analysis_actor
     from app.worker.actors import report as report_actor
 

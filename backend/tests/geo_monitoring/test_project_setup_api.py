@@ -43,6 +43,39 @@ def _setup_payload(*, project_name: str = "一步创建项目", platform_codes: 
     }
 
 
+def test_project_setup_activate_prompt_set_with_ai_questions_under_autoflush_false(
+    client, session_factory
+):
+    """回归：autoflush=False 时 persist 后须 flush，否则 activate 查不到新 Prompt。"""
+    _seed_platforms(session_factory, enabled_codes=["qwen"])
+
+    response = client.post(
+        "/api/geo-monitoring/projects:setup",
+        json=_setup_payload(),
+    ).json()
+    assert response["code"] == 0, response
+    data = response["data"]
+    assert data["monitor_setup"]["active_prompt_set_id"] is not None
+    assert len(data["monitor_setup"]["ai_questions"]) == 1
+
+    from app.geo_monitoring.models import Prompt, PromptSet
+
+    with session_factory() as db:
+        prompt_set = db.get(PromptSet, data["monitor_setup"]["active_prompt_set_id"])
+        assert prompt_set is not None
+        assert prompt_set.status == "active"
+        prompts = (
+            db.query(Prompt)
+            .filter(
+                Prompt.prompt_set_id == prompt_set.id,
+                Prompt.is_deleted.is_(False),
+            )
+            .all()
+        )
+        assert len(prompts) == 1
+        assert prompts[0].enabled is True
+
+
 def test_project_setup_creates_project_and_monitor_setup(client, session_factory):
     _seed_platforms(session_factory, enabled_codes=["qwen"])
 
