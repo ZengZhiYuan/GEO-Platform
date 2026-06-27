@@ -16,6 +16,33 @@ router = APIRouter()
 
 
 @router.post(
+    "/ai/brand-words:generate",
+    summary="AI 生成品牌词候选（无 project_id，创建向导推荐）",
+)
+def generate_brand_words_global(payload: AiBrandWordsGenerateIn) -> dict:
+    data = ai_generation_service.generate_brand_words(payload)
+    return success(data)
+
+
+@router.post(
+    "/ai/competitors:generate",
+    summary="AI 生成竞品候选（无 project_id，创建向导推荐）",
+)
+def generate_competitors_global(payload: AiCompetitorsGenerateIn) -> dict:
+    data = ai_generation_service.generate_competitors(payload)
+    return success(data)
+
+
+@router.post(
+    "/ai/questions:generate",
+    summary="AI 生成监测问题候选（无 project_id，创建向导推荐）",
+)
+def generate_questions_global(payload: AiQuestionsGenerateIn) -> dict:
+    data = ai_generation_service.generate_questions(payload)
+    return success(data)
+
+
+@router.post(
     "/projects/{project_id}/ai/brand-words:generate",
     summary="AI 生成品牌词候选",
 )
