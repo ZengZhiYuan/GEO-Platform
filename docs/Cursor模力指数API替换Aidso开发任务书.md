@@ -155,6 +155,16 @@ backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring
 backend\.venv\Scripts\alembic.exe -c backend\alembic.ini heads
 ```
 
+#### M0 验收记录（2026-06-27）
+
+| 项 | 结果 |
+| --- | --- |
+| D1–D8 决策 | 已写入任务书 §3.3 与 `docs/molizhishu-collection-source-design.md` |
+| Git 工作树 | 干净；分支 `feat/third-party-collector-api-adapter` |
+| 基线 pytest | `391 passed`，0 failed（2 warnings，非阻塞） |
+| Alembic head | `geo_monitoring_0010` |
+| 业务代码改动 | 无（仅文档） |
+
 ### Task M1：新增模力指数配置项
 
 目的：把模力指数开关、地址、令牌、超时、轮询参数纳入统一 `Settings`，并确保 token 不泄漏。

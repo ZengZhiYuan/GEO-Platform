@@ -82,7 +82,7 @@ M15
 
 | Task | 必读章节 |
 | --- | --- |
-| M0 | §1、§2、§3、Task M0 |
+| M0 | §1、§2、§3、Task M0、`docs/molizhishu-collection-source-design.md` |
 | M1 | §2、§3.3、Task M1、§10、§12 |
 | M2 | §3.3、§4、Task M2、§12 |
 | M3 | §3.1、§3.3、Task M3、§7、§10、§12 |
