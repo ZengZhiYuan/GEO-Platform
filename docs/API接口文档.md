@@ -1751,6 +1751,22 @@ Aidso 第三方数据源端侧平台编码：
 | `aidso_douyin_web` | 抖音 AI |
 | `aidso_wenxin_web` | 文心一言 |
 
+模力指数第三方采集（`collection_source=molizhishu`，平台码 `molizhishu_*` 见 Task M2）依赖以下环境变量，模板见仓库根目录 `.env.example`：
+
+| 环境变量 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `MOLIZHISHU_ENABLED` | bool | `false` | 是否启用模力指数采集适配器 |
+| `MOLIZHISHU_BASE_URL` | string | `https://business-api.molizhishu.com/api/business/monitor` | 模力指数 Business API 根地址 |
+| `MOLIZHISHU_API_TOKEN` | string | 空 | 模力指数 API 令牌；`MOLIZHISHU_ENABLED=true` 时必填 |
+| `MOLIZHISHU_REQUEST_TIMEOUT_SECONDS` | int | `30` | 单次 HTTP 请求超时（秒） |
+| `COLLECTION_MOLIZHISHU_MAX_POLLS` | int | `360` | 单 QueryTask 轮询子任务结果的最大次数 |
+| `COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS` | int | `8` | 轮询间隔（秒） |
+| `MOLIZHISHU_DEFAULT_SCREENSHOT` | int | `0` | 默认是否请求截图（0/1，具体语义见 M11） |
+| `MOLIZHISHU_CALLBACK_ENABLED` | bool | `false` | 是否启用 provider 回调（M10 实现） |
+| `MOLIZHISHU_CALLBACK_TOKEN` | string | 空 | 回调鉴权令牌（M10 实现；不得写入日志明文） |
+
+> 启动校验：`MOLIZHISHU_ENABLED=true` 且 `MOLIZHISHU_API_TOKEN` 为空时，应用启动失败并抛出明确错误。`Settings.runtime_summary()` 中 `platforms.molizhishu` 仅输出 `enabled` / `base_url` / `has_token`，不得输出 token 明文。历史 `AIDSO_*` 配置暂保留兼容，运行期下线见 Task M14。
+
 ### 10.1 分页查询 AI 平台
 
 | 项目 | 说明 |

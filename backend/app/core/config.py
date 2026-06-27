@@ -215,6 +215,18 @@ class Settings(BaseSettings):
     AIDSO_BASE_URL: str = "https://odapi.aidso.com"
     AIDSO_API_TOKEN: str = ""
 
+    MOLIZHISHU_ENABLED: bool = False
+    MOLIZHISHU_BASE_URL: str = (
+        "https://business-api.molizhishu.com/api/business/monitor"
+    )
+    MOLIZHISHU_API_TOKEN: str = ""
+    MOLIZHISHU_REQUEST_TIMEOUT_SECONDS: int = 30
+    COLLECTION_MOLIZHISHU_MAX_POLLS: int = 360
+    COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS: int = 8
+    MOLIZHISHU_DEFAULT_SCREENSHOT: int = 0
+    MOLIZHISHU_CALLBACK_ENABLED: bool = False
+    MOLIZHISHU_CALLBACK_TOKEN: str = ""
+
     # Agent LLM
     AGENT_LLM_BASE_URL: str = ""
     AGENT_LLM_API_KEY: str = ""
@@ -325,6 +337,9 @@ class Settings(BaseSettings):
         "COLLECTION_MAX_ATTEMPTS",
         "COLLECTION_RETRY_BASE_SECONDS",
         "COLLECTION_AIDSO_MAX_POLLS",
+        "COLLECTION_MOLIZHISHU_MAX_POLLS",
+        "COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS",
+        "MOLIZHISHU_REQUEST_TIMEOUT_SECONDS",
         "COLLECTION_MAX_CONCURRENCY",
         "AGENT_LLM_TIMEOUT_SECONDS",
         "AGENT_LLM_MAX_ATTEMPTS",
@@ -344,6 +359,13 @@ class Settings(BaseSettings):
             ZoneInfo(value)
         except ZoneInfoNotFoundError as exc:
             raise ValueError(f"timezone is invalid: {value}") from exc
+        return value
+
+    @field_validator("MOLIZHISHU_DEFAULT_SCREENSHOT")
+    @classmethod
+    def validate_molizhishu_default_screenshot(cls, value: int) -> int:
+        if value not in (0, 1):
+            raise ValueError("MOLIZHISHU_DEFAULT_SCREENSHOT must be 0 or 1")
         return value
 
     @field_validator("AGENT_LLM_PROVIDER")
@@ -392,6 +414,11 @@ class Settings(BaseSettings):
         if self.AIDSO_ENABLED and not self.AIDSO_API_TOKEN.strip():
             raise ValueError("AIDSO_API_TOKEN is required when AIDSO_ENABLED=true")
 
+        if self.MOLIZHISHU_ENABLED and not self.MOLIZHISHU_API_TOKEN.strip():
+            raise ValueError(
+                "MOLIZHISHU_API_TOKEN is required when MOLIZHISHU_ENABLED=true"
+            )
+
         return self
 
     # 返回数据库、Redis、Nacos 连接目标摘要（脱敏）
@@ -420,6 +447,10 @@ class Settings(BaseSettings):
                 "max_attempts": self.COLLECTION_MAX_ATTEMPTS,
                 "retry_base_seconds": self.COLLECTION_RETRY_BASE_SECONDS,
                 "aidso_max_polls": self.COLLECTION_AIDSO_MAX_POLLS,
+                "molizhishu_max_polls": self.COLLECTION_MOLIZHISHU_MAX_POLLS,
+                "molizhishu_poll_delay_seconds": (
+                    self.COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS
+                ),
                 "max_concurrency": self.COLLECTION_MAX_CONCURRENCY,
                 "raw_response_enabled": self.COLLECTION_RAW_RESPONSE_ENABLED,
             },
@@ -458,6 +489,11 @@ class Settings(BaseSettings):
                     "enabled": self.AIDSO_ENABLED,
                     "base_url": self.AIDSO_BASE_URL,
                     "has_token": bool(self.AIDSO_API_TOKEN.strip()),
+                },
+                "molizhishu": {
+                    "enabled": self.MOLIZHISHU_ENABLED,
+                    "base_url": self.MOLIZHISHU_BASE_URL,
+                    "has_token": bool(self.MOLIZHISHU_API_TOKEN.strip()),
                 },
             },
             "agent_llm": {

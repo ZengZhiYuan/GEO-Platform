@@ -66,7 +66,7 @@ AIDSO_API_TOKEN=""
 COLLECTION_AIDSO_MAX_POLLS=120
 ```
 
-模力指数配置（`MOLIZHISHU_*`）尚未引入，由 **Task M1** 实现。
+模力指数配置（`MOLIZHISHU_*`）由 **Task M1** 引入，见 `backend/app/core/config.py` 与 `.env.example`。
 
 ### 3.5 数据库迁移 head
 

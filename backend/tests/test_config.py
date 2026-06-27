@@ -153,6 +153,51 @@ def test_enabled_aidso_requires_token(tmp_path):
         )
 
 
+def test_enabled_molizhishu_requires_token(tmp_path):
+    with pytest.raises(ValidationError, match="MOLIZHISHU_API_TOKEN"):
+        make_settings(
+            REPORT_STORAGE_DIR=str(tmp_path),
+            MOLIZHISHU_ENABLED=True,
+            MOLIZHISHU_API_TOKEN="",
+        )
+
+
+def test_molizhishu_disabled_without_token_starts_ok(tmp_path):
+    settings = make_settings(
+        REPORT_STORAGE_DIR=str(tmp_path),
+        MOLIZHISHU_ENABLED=False,
+        MOLIZHISHU_API_TOKEN="",
+    )
+
+    assert settings.MOLIZHISHU_ENABLED is False
+    assert settings.MOLIZHISHU_API_TOKEN == ""
+
+
+@pytest.mark.parametrize("screenshot_value", [2, -1, 99])
+def test_molizhishu_default_screenshot_must_be_zero_or_one(
+    tmp_path, screenshot_value
+):
+    with pytest.raises(ValidationError, match="MOLIZHISHU_DEFAULT_SCREENSHOT"):
+        make_settings(
+            REPORT_STORAGE_DIR=str(tmp_path),
+            MOLIZHISHU_DEFAULT_SCREENSHOT=screenshot_value,
+        )
+
+
+def test_molizhishu_default_screenshot_accepts_zero_and_one(tmp_path):
+    zero_settings = make_settings(
+        REPORT_STORAGE_DIR=str(tmp_path),
+        MOLIZHISHU_DEFAULT_SCREENSHOT=0,
+    )
+    one_settings = make_settings(
+        REPORT_STORAGE_DIR=str(tmp_path / "one"),
+        MOLIZHISHU_DEFAULT_SCREENSHOT=1,
+    )
+
+    assert zero_settings.MOLIZHISHU_DEFAULT_SCREENSHOT == 0
+    assert one_settings.MOLIZHISHU_DEFAULT_SCREENSHOT == 1
+
+
 def test_api_keys_are_trimmed_deduped_and_empty_values_removed():
     assert _parse_comma_separated_keys(" key-a , key-b, key-a , , key-c ") == [
         "key-a",
@@ -248,6 +293,10 @@ def test_runtime_summary_redacts_all_secrets(tmp_path):
         ],
         AIDSO_ENABLED=True,
         AIDSO_API_TOKEN="aidso-secret-token",
+        MOLIZHISHU_ENABLED=True,
+        MOLIZHISHU_API_TOKEN="molizhishu-secret-token",
+        MOLIZHISHU_CALLBACK_ENABLED=True,
+        MOLIZHISHU_CALLBACK_TOKEN="molizhishu-callback-secret",
         AGENT_LLM_API_KEY="agent-secret-key",
     )
 
@@ -260,11 +309,23 @@ def test_runtime_summary_redacts_all_secrets(tmp_path):
     assert "yuanbao-id" not in rendered
     assert "yuanbao-secret" not in rendered
     assert "aidso-secret-token" not in rendered
+    assert "molizhishu-secret-token" not in rendered
+    assert "molizhishu-callback-secret" not in rendered
     assert "agent-secret-key" not in rendered
     assert settings.runtime_summary()["platforms"]["doubao"]["api_key_count"] == 2
     assert settings.runtime_summary()["platforms"]["aidso"]["enabled"] is True
     assert settings.runtime_summary()["platforms"]["aidso"]["has_token"] is True
+    molizhishu_summary = settings.runtime_summary()["platforms"]["molizhishu"]
+    assert molizhishu_summary == {
+        "enabled": True,
+        "base_url": settings.MOLIZHISHU_BASE_URL,
+        "has_token": True,
+    }
+    assert "molizhishu-secret-token" not in repr(molizhishu_summary)
+    assert "molizhishu-callback-secret" not in rendered
     assert settings.runtime_summary()["collection"]["aidso_max_polls"] == 120
+    assert settings.runtime_summary()["collection"]["molizhishu_max_polls"] == 360
+    assert settings.runtime_summary()["collection"]["molizhishu_poll_delay_seconds"] == 8
     assert settings.runtime_summary()["agent_llm"]["has_api_key"] is True
 
 
@@ -313,3 +374,11 @@ def test_env_example_uses_placeholders_without_real_connection_values():
     assert "sk-" not in text
     assert "AGENT_LLM_PROVIDER=openai_compatible" in text
     assert "APP_TIMEZONE=Asia/Shanghai" in text
+    assert "MOLIZHISHU_ENABLED=false" in text
+    assert "MOLIZHISHU_BASE_URL=" in text
+    assert "MOLIZHISHU_API_TOKEN=" in text
+    assert "COLLECTION_MOLIZHISHU_MAX_POLLS=360" in text
+    assert "COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS=8" in text
+    assert "MOLIZHISHU_DEFAULT_SCREENSHOT=0" in text
+    assert "MOLIZHISHU_CALLBACK_ENABLED=false" in text
+    assert "MOLIZHISHU_CALLBACK_TOKEN=" in text

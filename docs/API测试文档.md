@@ -2,7 +2,7 @@
 
 本文档根据当前后端代码整理，覆盖 `backend/app/api/router.py`、`backend/app/main.py` 与 `backend/app/geo_monitoring/api/` 下已实现接口。
 
-> 更新日期：2026-06-26
+> 更新日期：2026-06-27
 > 原型页面按钮与调用顺序见 `docs/原型功能_API映射整合精简版.md`；接口字段契约见 `docs/API接口文档.md`。
 
 ## 1. 通用约定
@@ -966,3 +966,27 @@ backend\.venv\Scripts\python.exe backend/scripts/run_api_full_test.py
 
 **最近全量测试结果（2026-06-22）：** 83 用例，80 通过，通过率 96.4%。未通过项主要为环境限制：采集 120 秒内未终态（`collecting`）、分析前置未满足（`40910`）、清理阶段删除已被运行引用的提示词集（`40906`）。配置域接口（含 §5.4 监测设置）全部通过。
 
+## 18. Settings 配置单元测试（模力指数 M1）
+
+覆盖 `backend/app/core/config.py` 中模力指数相关 `Settings` 字段、启动校验与 `runtime_summary()` 脱敏行为。与 HTTP 接口无关，使用 pytest 直接构造 `Settings` 实例。
+
+| 场景 | 测试函数 | 预期 |
+| --- | --- | --- |
+| 未启用且无 token | `test_molizhishu_disabled_without_token_starts_ok` | 应用配置可正常实例化 |
+| 启用但 token 为空 | `test_enabled_molizhishu_requires_token` | `ValidationError`，提示 `MOLIZHISHU_API_TOKEN` |
+| runtime summary 脱敏 | `test_runtime_summary_redacts_all_secrets` | `platforms.molizhishu` 仅含 `enabled` / `base_url` / `has_token`，不含 token 明文 |
+| screenshot 取值 | `test_molizhishu_default_screenshot_must_be_zero_or_one` | 非 0/1 抛出 `ValidationError` |
+| `.env.example` 字段一致 | `test_env_example_uses_placeholders_without_real_connection_values` | 含全部 `MOLIZHISHU_*` / `COLLECTION_MOLIZHISHU_*` 键 |
+
+**执行命令：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\test_config.py
+```
+
+**验收点（Task M1）：**
+
+- 未启用时应用照常启动。
+- 启用且 token 为空时抛出明确错误。
+- summary 和日志不包含完整 token。
+- `.env.example` 与代码字段一致。
