@@ -997,3 +997,34 @@ backend\.venv\Scripts\python.exe -m pytest -q backend\tests\test_config.py
 - 启用且 token 为空时抛出明确错误。
 - summary 和日志不包含完整 token。
 - `.env.example` 与代码字段一致。
+
+## 19. 模力指数适配器单元测试（Task M5）
+
+覆盖 `backend/app/geo_monitoring/adapters/molizhishu.py` 的提交、轮询、完成、失败与错误分类。使用 `respx` mock HTTP，不访问真实模力指数接口。
+
+| 场景 | 测试函数 | 预期 |
+| --- | --- | --- |
+| 协议兼容 | `test_molizhishu_adapter_satisfies_platform_adapter_protocol` | `isinstance(MolizhishuAdapter(...), PlatformAdapter)` |
+| 首次提交后 processing | `test_molizhishu_submits_then_pending_carries_metadata` | 抛 `MolizhishuPendingError`，`pending_metadata` 含 taskId/subTaskId/platform/mode/status |
+| 复用 taskId/subTaskId | `test_molizhishu_reuses_existing_task_and_subtask_without_resubmitting` | 不重复 POST `/task/batch/shared` |
+| 完成归一化 | `test_molizhishu_completed_returns_answer_and_citations` | `answerContent`、citations、`provider_request_id=subTaskId` |
+| referenceList fallback | `test_molizhishu_uses_reference_list_when_citation_list_empty` | `referenceList.summary` 回填 `quoted_text` |
+| HTTP 200 业务失败 | `test_molizhishu_http_200_business_failure_is_rejected` | `success=false` 抛 `AdapterError` |
+| Token 失效 | `test_molizhishu_token_expired_is_unauthorized` | `ErrorCategory.UNAUTHORIZED`，消息不含 token |
+| 余额不足 | `test_molizhishu_insufficient_balance_is_non_retryable` | `ErrorCategory.INVALID_REQUEST` |
+| 非 JSON / 超时 | `test_molizhishu_non_json_response_is_classified`、`test_molizhishu_timeout_is_network_error` | 分别归类为无效响应 / 网络错误 |
+| 子任务终态失败 | `test_molizhishu_terminal_failure_status_raises_adapter_error` | `failed/error/stopped` 抛不可重试错误 |
+| regionCode 提交 | `test_molizhishu_submit_includes_region_code_when_provided` | 提交体含 `regionCode: [code]` |
+
+**执行命令：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\adapters\test_molizhishu.py
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\adapters
+```
+
+**验收点（Task M5）：**
+
+- 单元测试覆盖提交、轮询、完成、失败、鉴权、异常响应。
+- 错误消息不泄漏 token。
+- `raw_response` 仅保存 submit/result 原始包，不含 token。

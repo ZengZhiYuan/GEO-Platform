@@ -43,6 +43,19 @@ def test_classify_content_safety_by_message():
     )
 
 
+def test_classify_molizhishu_message_maps_token_and_balance_errors():
+    from app.geo_monitoring.adapters.errors import (
+        classify_molizhishu_error,
+        classify_molizhishu_message,
+    )
+
+    assert classify_molizhishu_message("Token失效") == ErrorCategory.UNAUTHORIZED
+    assert classify_molizhishu_message("余额不足") == ErrorCategory.INVALID_REQUEST
+    assert classify_molizhishu_error(code=40101, message="鉴权失败") == ErrorCategory.UNAUTHORIZED
+    assert classify_molizhishu_error(code=40201, message="账户异常") == ErrorCategory.INVALID_REQUEST
+    assert classify_molizhishu_error(code=40001, message="参数错误") == ErrorCategory.INVALID_REQUEST
+
+
 @pytest.mark.parametrize(
     ("category", "expected"),
     [
@@ -53,6 +66,7 @@ def test_classify_content_safety_by_message():
         (ErrorCategory.UNAUTHORIZED, False),
         (ErrorCategory.INVALID_REQUEST, False),
         (ErrorCategory.CONTENT_SAFETY, False),
+        (ErrorCategory.CANCELLED, False),
     ],
 )
 def test_is_retryable(category, expected):

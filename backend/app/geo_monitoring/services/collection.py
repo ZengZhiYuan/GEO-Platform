@@ -530,13 +530,16 @@ def _handle_adapter_failure(
             db.commit()
             return should_retry
 
-        _mark_task_failed(
-            db,
-            task,
-            now,
-            error_code=error.category.value,
-            error_message=error.sanitized_message(),
-        )
+        if error.category == ErrorCategory.CANCELLED:
+            _mark_task_cancelled(db, task, now)
+        else:
+            _mark_task_failed(
+                db,
+                task,
+                now,
+                error_code=error.category.value,
+                error_message=error.sanitized_message(),
+            )
         run_id = task.run_id
         db.commit()
         _after_task_terminal(db, run_id)
