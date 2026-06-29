@@ -58,9 +58,18 @@ class TaskSnapshot:
     model_name: str
     project_id: int
     collection_source: str
+    provider_mode: str | None
+    provider_screenshot: int
+    region_code: str | None
     aidso_thinking_enabled: bool
     request_json: dict[str, Any] | None
     reclaim: bool
+
+
+@dataclass(frozen=True)
+class QueryTaskExecutionResult:
+    should_retry: bool = False
+    retry_delay_seconds: int | None = None
 
 
 @dataclass
@@ -206,6 +215,16 @@ def _resolve_aidso_thinking_enabled(run: MonitorRun, platform_code: str) -> bool
     return value if isinstance(value, bool) else True
 
 
+def _resolve_provider_mode(run: MonitorRun, platform_code: str) -> str | None:
+    configured = (run.provider_mode_by_platform or {}).get(platform_code)
+    if isinstance(configured, str) and configured.strip():
+        return configured.strip()
+    mapping = MOLIZHISHU_PLATFORM_MAPPINGS.get(platform_code)
+    if mapping:
+        return str(mapping["default_mode"])
+    return None
+
+
 def enqueue_run_query_tasks(run_id: int, *, db: Session | None = None) -> int:
     """运行事务提交后，将 pending 任务标记为 queued 并逐个入队。"""
     runtime = get_runtime()
@@ -252,11 +271,11 @@ def _after_task_terminal(db: Session, run_id: int) -> None:
 
 
 # 执行单个 QueryTask：认领、调用平台、持久化或处理失败
-async def execute_query_task(task_id: int) -> bool:
+async def execute_query_task(task_id: int) -> QueryTaskExecutionResult:
     runtime = get_runtime()
     snapshot = _claim_task_for_execution(runtime, task_id)
     if snapshot is None:
-        return False
+        return QueryTaskExecutionResult()
 
     try:
         platform_answer = await _collect_platform_answer(runtime, snapshot)
@@ -270,7 +289,7 @@ async def execute_query_task(task_id: int) -> bool:
         )
 
     _persist_success(runtime, snapshot, platform_answer)
-    return False
+    return QueryTaskExecutionResult()
 
 
 # 加锁认领 QueryTask 并构建执行快照，不可执行时返回 None
@@ -359,7 +378,7 @@ def _claim_task_for_execution(
             _after_task_terminal(db, run_id)
             return None
 
-        if not reclaim and not _is_aidso_pending_poll(task):
+        if not reclaim and not _is_provider_pending_poll(task):
             task.attempt_count += 1
         # 更新为 running 并返回执行快照
         task.status = "running"
@@ -378,6 +397,9 @@ def _claim_task_for_execution(
             model_name=_resolve_model(runtime.settings, platform),
             project_id=run.project_id,
             collection_source=run.collection_source,
+            provider_mode=_resolve_provider_mode(run, task.platform_code),
+            provider_screenshot=run.provider_screenshot,
+            region_code=run.region_code,
             aidso_thinking_enabled=_resolve_aidso_thinking_enabled(
                 run, task.platform_code
             ),
@@ -404,11 +426,7 @@ async def _collect_platform_answer(
         model=snapshot.model_name,
         temperature=None,
         request_id=snapshot.idempotency_key,
-        metadata={
-            **(snapshot.request_json or {}),
-            "collection_source": snapshot.collection_source,
-            "aidso_thinking_enabled": snapshot.aidso_thinking_enabled,
-        },
+        metadata=_build_platform_query_metadata(runtime, snapshot),
     )
     try:
         answer = await adapter.query(request, credential=credential)
@@ -516,15 +534,14 @@ def _handle_adapter_failure(
     runtime: CollectionRuntime,
     task_id: int,
     error: AdapterError,
-) -> bool:
-    """记录失败并在可重试时返回 True，由调用方在 asyncio.run 结束后入队。"""
+) -> QueryTaskExecutionResult:
+    """记录失败并在可重试时返回重试决策，由调用方在 asyncio.run 结束后入队。"""
     now = datetime.now(timezone.utc)
     db = runtime.session_factory()
-    should_retry = False
     try:
         task = db.get(QueryTask, task_id)
         if task is None or task.status not in {"running", "queued", "pending"}:
-            return False
+            return QueryTaskExecutionResult()
 
         task.last_error_code = error.category.value
         task.last_error_message = error.sanitized_message()
@@ -537,9 +554,17 @@ def _handle_adapter_failure(
             task.status = "queued"
             task.retry_count += 1
             task.started_at = None
-            should_retry = True
+            retry_delay_seconds = None
+            if (
+                error.category == ErrorCategory.PENDING
+                and task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS
+            ):
+                retry_delay_seconds = runtime.settings.COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS
             db.commit()
-            return should_retry
+            return QueryTaskExecutionResult(
+                should_retry=True,
+                retry_delay_seconds=retry_delay_seconds,
+            )
 
         if error.category == ErrorCategory.CANCELLED:
             _mark_task_cancelled(db, task, now)
@@ -554,19 +579,59 @@ def _handle_adapter_failure(
         run_id = task.run_id
         db.commit()
         _after_task_terminal(db, run_id)
-        return False
+        return QueryTaskExecutionResult()
     finally:
         db.close()
 
 
-def _is_aidso_pending_poll(task: QueryTask) -> bool:
+def _build_platform_query_metadata(
+    runtime: CollectionRuntime,
+    snapshot: TaskSnapshot,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        **(snapshot.request_json or {}),
+        "collection_source": snapshot.collection_source,
+    }
+    if snapshot.provider_mode is not None:
+        metadata["provider_mode"] = snapshot.provider_mode
+    metadata["provider_screenshot"] = snapshot.provider_screenshot
+    if snapshot.region_code:
+        metadata["region_code"] = snapshot.region_code
+    if (
+        snapshot.collection_source == "aidso"
+        and snapshot.platform_code in AIDSO_PLATFORM_MAPPINGS
+    ):
+        metadata["aidso_thinking_enabled"] = snapshot.aidso_thinking_enabled
+    return metadata
+
+
+def _is_provider_pending_poll(task: QueryTask) -> bool:
+    if task.last_error_code != ErrorCategory.PENDING.value:
+        return False
     request_json = task.request_json or {}
-    return (
-        task.platform_code in AIDSO_PLATFORM_MAPPINGS
-        and task.last_error_code == ErrorCategory.PENDING.value
-        and isinstance(request_json.get("aidso_req_id"), str)
-        and bool(request_json.get("aidso_req_id", "").strip())
-    )
+    if task.platform_code in AIDSO_PLATFORM_MAPPINGS:
+        return (
+            isinstance(request_json.get("aidso_req_id"), str)
+            and bool(request_json.get("aidso_req_id", "").strip())
+        )
+    if task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS:
+        return (
+            isinstance(request_json.get("molizhishu_subtask_id"), str)
+            and bool(request_json.get("molizhishu_subtask_id", "").strip())
+        )
+    return False
+
+
+def _pending_poll_count_key(task: QueryTask) -> str:
+    if task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS:
+        return "molizhishu_poll_count"
+    return "aidso_poll_count"
+
+
+def _pending_max_polls(runtime: CollectionRuntime, task: QueryTask) -> int:
+    if task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS:
+        return runtime.settings.COLLECTION_MOLIZHISHU_MAX_POLLS
+    return runtime.settings.COLLECTION_AIDSO_MAX_POLLS
 
 
 def _should_retry_task(
@@ -578,7 +643,7 @@ def _should_retry_task(
     if not is_retryable(error.category):
         return False
     if error.category == ErrorCategory.PENDING:
-        return (pending_poll_count or 0) < runtime.settings.COLLECTION_AIDSO_MAX_POLLS
+        return (pending_poll_count or 0) < _pending_max_polls(runtime, task)
     return task.attempt_count < task.max_attempts
 
 
@@ -590,12 +655,18 @@ def _persist_pending_metadata(task: QueryTask, error: AdapterError) -> int | Non
     request_json.update(pending_metadata)
     poll_count = None
     if error.category == ErrorCategory.PENDING:
-        poll_count = int(request_json.get("aidso_poll_count") or 0) + 1
-        request_json["aidso_poll_count"] = poll_count
+        poll_key = _pending_poll_count_key(task)
+        poll_count = int(request_json.get(poll_key) or 0) + 1
+        request_json[poll_key] = poll_count
     task.request_json = request_json
-    req_id = pending_metadata.get("aidso_req_id")
-    if isinstance(req_id, str) and req_id.strip():
-        task.provider_request_id = req_id.strip()
+    if task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS:
+        subtask_id = pending_metadata.get("molizhishu_subtask_id")
+        if isinstance(subtask_id, str) and subtask_id.strip():
+            task.provider_request_id = subtask_id.strip()
+    else:
+        req_id = pending_metadata.get("aidso_req_id")
+        if isinstance(req_id, str) and req_id.strip():
+            task.provider_request_id = req_id.strip()
     return poll_count
 
 

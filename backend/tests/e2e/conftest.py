@@ -112,8 +112,8 @@ async def drain_run_collection(session_factory, run_id: int) -> None:
         attempts = 0
         while attempts < 5:
             attempts += 1
-            should_retry = await collection_service.execute_query_task(task_id)
-            if not should_retry:
+            result = await collection_service.execute_query_task(task_id)
+            if not result.should_retry:
                 break
 
 

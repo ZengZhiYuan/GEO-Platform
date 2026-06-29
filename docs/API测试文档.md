@@ -1028,3 +1028,28 @@ backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\adapt
 - 单元测试覆盖提交、轮询、完成、失败、鉴权、异常响应。
 - 错误消息不泄漏 token。
 - `raw_response` 仅保存 submit/result 原始包，不含 token。
+
+## 20. CollectionService 轮询续跑测试（Task M7）
+
+覆盖 `backend/app/geo_monitoring/services/collection.py` 与 `backend/app/worker/actors/collection.py` 对模力指数 pending 子任务的 metadata 持久化、轮询上限与 Actor 重入队延迟。Aidso 既有 pending 行为保持兼容。
+
+| 场景 | 测试函数 | 预期 |
+| --- | --- | --- |
+| 首次 pending 保存 task/subTask | `test_molizhishu_pending_persists_task_and_subtask_ids_and_reuses_on_retry` | `request_json` 含 `molizhishu_task_id` / `molizhishu_subtask_id` / `molizhishu_poll_count=1`，`provider_request_id=subTaskId` |
+| pending 复用 metadata | 同上 | 第二次调用 metadata 含 `molizhishu_subtask_id`，`attempt_count` 仍为 1 |
+| provider 上下文注入 | 同上 | metadata 含 `provider_mode` / `provider_screenshot` / `region_code` |
+| 轮询上限 | `test_molizhishu_pending_respects_configured_max_poll_limit` | 达到 `COLLECTION_MOLIZHISHU_MAX_POLLS` 后任务 `failed`，`retry_count=0` |
+| Actor 轮询延迟 | `test_molizhishu_pending_reenqueue_uses_configured_poll_delay` | pending 重入队 delay 为 `COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS × 1000` ms |
+| 普通错误退避 | `test_retry_reenqueue_uses_configured_backoff` | 非 pending 重试仍用 `COLLECTION_RETRY_BASE_SECONDS` |
+
+**执行命令：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\worker\test_collection_actor.py
+```
+
+**验收点（Task M7）：**
+
+- 模力指数 pending 能从 `taskId/subTaskId` 收敛到 success 或 failed。
+- pending 轮询不递增 `attempt_count`。
+- 子任务失败不影响同 run 其他任务（Run 聚合逻辑不变）。

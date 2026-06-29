@@ -14,10 +14,13 @@ from app.worker import broker as _broker  # noqa: F401
 @dramatiq.actor(queue_name="collection", max_retries=0)
 def collect_query_task(task_id: int) -> None:
     """消费仅含 task_id 的消息，执行单条 QueryTask 采集。"""
-    should_retry = asyncio.run(collection_service.execute_query_task(task_id))
-    if should_retry:
-        retry_delay_ms = (
-            collection_service.get_runtime().settings.COLLECTION_RETRY_BASE_SECONDS
-            * 1000
+    result = asyncio.run(collection_service.execute_query_task(task_id))
+    if result.should_retry:
+        runtime_settings = collection_service.get_runtime().settings
+        delay_seconds = (
+            result.retry_delay_seconds or runtime_settings.COLLECTION_RETRY_BASE_SECONDS
         )
-        collect_query_task.send_with_options(args=(task_id,), delay=retry_delay_ms)
+        collect_query_task.send_with_options(
+            args=(task_id,),
+            delay=delay_seconds * 1000,
+        )
