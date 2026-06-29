@@ -10,6 +10,7 @@ from typing import Any, Callable
 from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, settings as default_settings
@@ -49,7 +50,10 @@ from app.geo_monitoring.services.brand_matcher import (
     merge_brand_context_with_provider,
     normalize_answer_text,
 )
-from app.geo_monitoring.services.platforms import AIDSO_PLATFORM_MAPPINGS, MOLIZHISHU_PLATFORM_MAPPINGS
+from app.geo_monitoring.services.platforms import (
+    AIDSO_PLATFORM_MAPPINGS,
+    MOLIZHISHU_PLATFORM_MAPPINGS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,12 +79,20 @@ class TaskSnapshot:
     aidso_thinking_enabled: bool
     request_json: dict[str, Any] | None
     reclaim: bool
+    provider_callback_url: str | None = None
 
 
 @dataclass(frozen=True)
 class QueryTaskExecutionResult:
     should_retry: bool = False
     retry_delay_seconds: int | None = None
+
+
+@dataclass(frozen=True)
+class MolizhishuCallbackResult:
+    outcome: str
+    task_id: int | None = None
+    message: str | None = None
 
 
 @dataclass
@@ -171,9 +183,13 @@ def build_credential_key_pool(
         resolved_redis,
         retry_base_seconds=runtime_settings.COLLECTION_RETRY_BASE_SECONDS,
     )
-    _register_api_keys(pool, runtime_settings, "doubao", runtime_settings.DOUBAO_API_KEYS)
+    _register_api_keys(
+        pool, runtime_settings, "doubao", runtime_settings.DOUBAO_API_KEYS
+    )
     _register_api_keys(pool, runtime_settings, "qwen", runtime_settings.QWEN_API_KEYS)
-    _register_api_keys(pool, runtime_settings, "deepseek", runtime_settings.DEEPSEEK_API_KEYS)
+    _register_api_keys(
+        pool, runtime_settings, "deepseek", runtime_settings.DEEPSEEK_API_KEYS
+    )
     _register_api_keys(pool, runtime_settings, "kimi", runtime_settings.KIMI_API_KEYS)
     yuanbao_credentials = runtime_settings.parsed_yuanbao_credentials()
     if yuanbao_credentials:
@@ -200,7 +216,11 @@ def build_credential_key_pool(
         for platform_code in MOLIZHISHU_PLATFORM_MAPPINGS:
             pool.register_platform_credentials(
                 platform_code,
-                [ApiKeyCredential(platform_code=platform_code, api_key=molizhishu_token)],
+                [
+                    ApiKeyCredential(
+                        platform_code=platform_code, api_key=molizhishu_token
+                    )
+                ],
             )
     return pool
 
@@ -299,7 +319,7 @@ async def execute_query_task(task_id: int) -> QueryTaskExecutionResult:
             AdapterError(str(exc), category=ErrorCategory.UNKNOWN),
         )
 
-    _persist_success(runtime, snapshot, platform_answer)
+    _persist_platform_answer(runtime, snapshot, platform_answer, require_running=True)
     return QueryTaskExecutionResult()
 
 
@@ -311,14 +331,11 @@ def _claim_task_for_execution(
     now = datetime.now(timezone.utc)
     db = runtime.session_factory()
     try:
-        task = (
-            db.execute(
-                select(QueryTask)
-                .where(QueryTask.id == task_id, QueryTask.is_deleted.is_(False))
-                .with_for_update()
-            )
-            .scalar_one_or_none()
-        )
+        task = db.execute(
+            select(QueryTask)
+            .where(QueryTask.id == task_id, QueryTask.is_deleted.is_(False))
+            .with_for_update()
+        ).scalar_one_or_none()
         if task is None:
             return None
 
@@ -416,6 +433,7 @@ def _claim_task_for_execution(
             ),
             request_json=task.request_json,
             reclaim=reclaim,
+            provider_callback_url=run.provider_callback_url,
         )
     finally:
         db.close()
@@ -463,89 +481,188 @@ def _persist_success(
     snapshot: TaskSnapshot,
     platform_answer: PlatformAnswer,
 ) -> None:
-    now = datetime.now(timezone.utc)
-    normalized_text = normalize_answer_text(platform_answer.text)
+    _persist_platform_answer(
+        runtime,
+        snapshot,
+        platform_answer,
+        require_running=True,
+    )
+
+
+def _persist_platform_answer(
+    runtime: CollectionRuntime,
+    snapshot: TaskSnapshot,
+    platform_answer: PlatformAnswer,
+    *,
+    require_running: bool,
+) -> bool:
+    """写入答案与引用；返回 True 表示新写入，False 表示重复或跳过。"""
     db = runtime.session_factory()
     try:
-        task = db.get(QueryTask, snapshot.task_id)
-        if task is None or task.status != "running":
-            return
-
-        existing = answer_repo.get_by_task_id(db, task.id)
-        if existing is not None:
-            task.status = "success"
-            task.completed_at = now
-            task.finished_at = now
-            db.commit()
-            _after_task_terminal(db, task.run_id)
-            return
-
-        answer = Answer(
-            task_id=task.id,
-            platform_code=snapshot.platform_code,
-            prompt_id=snapshot.prompt_id,
-            raw_text=platform_answer.text,
-            normalized_text=normalized_text,
-            model_name=platform_answer.model,
-            prompt_tokens=int(platform_answer.usage.get("prompt_tokens") or 0),
-            completion_tokens=int(platform_answer.usage.get("completion_tokens") or 0),
-            total_tokens=int(platform_answer.usage.get("total_tokens") or 0),
-            latency_ms=platform_answer.latency_ms,
-            raw_response_json=platform_answer.raw_response,
+        created = _write_platform_answer_to_session(
+            db,
+            snapshot,
+            platform_answer,
+            require_running=require_running,
         )
-        answer_repo.add(db, answer)
-        db.flush()
-
-        # 写入引用列表
-        for index, citation in enumerate(platform_answer.citations, start=1):
-            normalized_url = normalize_citation_url(citation.get("url"))
-            answer_repo.add_citation(
-                db,
-                AnswerCitation(
-                    answer_id=answer.id,
-                    citation_no=index,
-                    title=citation.get("title"),
-                    url=normalized_url,
-                    domain=extract_domain(normalized_url),
-                    source_type=citation.get("source_type"),
-                    quoted_text=citation.get("quoted_text") or citation.get("snippet"),
-                ),
-            )
-
-        # 匹配品牌提及并写入结果
-        brands, aliases_by_brand = _load_project_brands(db, snapshot.project_id)
-        provider_brand_context = build_provider_brand_context(
-            _extract_molizhishu_result_payload(platform_answer)
-        )
-        for match in match_brands_in_text(normalized_text, brands, aliases_by_brand):
-            answer_repo.add_brand_result(
-                db,
-                AnswerBrandResult(
-                    answer_id=answer.id,
-                    brand_id=match.brand_id,
-                    is_mentioned=match.is_mentioned,
-                    mention_count=match.mention_count,
-                    first_position=match.first_position,
-                    context_json=merge_brand_context_with_provider(
-                        match.context_json,
-                        provider_brand_context,
-                    ),
-                ),
-            )
-
-        task.status = "success"
-        task.latency_ms = platform_answer.latency_ms
-        task.provider_request_id = platform_answer.provider_request_id
-        _apply_provider_task_fields(task, snapshot, platform_answer)
-        task.response_http_status = 200
-        task.completed_at = now
-        task.finished_at = now
-        task.last_error_code = None
-        task.last_error_message = None
         db.commit()
-        _after_task_terminal(db, snapshot.run_id)
+        task = db.get(QueryTask, snapshot.task_id)
+        if task is not None and task.status == "success":
+            _after_task_terminal(db, task.run_id)
+        return created
+    except IntegrityError:
+        db.rollback()
+        return _recover_duplicate_platform_answer(
+            runtime,
+            snapshot,
+            platform_answer,
+            require_running=require_running,
+        )
     finally:
         db.close()
+
+
+def _recover_duplicate_platform_answer(
+    runtime: CollectionRuntime,
+    snapshot: TaskSnapshot,
+    platform_answer: PlatformAnswer,
+    *,
+    require_running: bool,
+) -> bool:
+    """唯一约束冲突后按 duplicate 收敛，避免并发写入返回异常。"""
+    db = runtime.session_factory()
+    try:
+        created = _write_platform_answer_to_session(
+            db,
+            snapshot,
+            platform_answer,
+            require_running=require_running,
+        )
+        db.commit()
+        task = db.get(QueryTask, snapshot.task_id)
+        if task is not None and task.status == "success":
+            _after_task_terminal(db, task.run_id)
+        return created
+    finally:
+        db.close()
+
+
+def _mark_task_success_if_needed(
+    db: Session,
+    task: QueryTask,
+    *,
+    platform_answer: PlatformAnswer | None = None,
+    snapshot: TaskSnapshot | None = None,
+    now: datetime | None = None,
+) -> None:
+    if task.status == "success":
+        return
+    now = now or datetime.now(timezone.utc)
+    task.status = "success"
+    task.completed_at = now
+    task.finished_at = now
+    if platform_answer is not None:
+        task.latency_ms = platform_answer.latency_ms
+        task.provider_request_id = platform_answer.provider_request_id
+        task.response_http_status = 200
+        task.last_error_code = None
+        task.last_error_message = None
+        if snapshot is not None:
+            _apply_provider_task_fields(task, snapshot, platform_answer)
+
+
+def _write_platform_answer_to_session(
+    db: Session,
+    snapshot: TaskSnapshot,
+    platform_answer: PlatformAnswer,
+    *,
+    require_running: bool,
+) -> bool:
+    """在同一 session 内写入答案；返回 True 表示新写入，False 表示重复或跳过。"""
+    now = datetime.now(timezone.utc)
+    normalized_text = normalize_answer_text(platform_answer.text)
+    task = db.get(QueryTask, snapshot.task_id)
+    if task is None:
+        return False
+    if require_running and task.status != "running":
+        return False
+    if (
+        not require_running
+        and task.status in TERMINAL_TASK_STATUSES
+        and task.status != "success"
+    ):
+        return False
+
+    existing = answer_repo.get_by_task_id(db, task.id)
+    if existing is not None:
+        _mark_task_success_if_needed(
+            db,
+            task,
+            platform_answer=platform_answer,
+            snapshot=snapshot,
+            now=now,
+        )
+        return False
+
+    answer = Answer(
+        task_id=task.id,
+        platform_code=snapshot.platform_code,
+        prompt_id=snapshot.prompt_id,
+        raw_text=platform_answer.text,
+        normalized_text=normalized_text,
+        model_name=platform_answer.model,
+        prompt_tokens=int(platform_answer.usage.get("prompt_tokens") or 0),
+        completion_tokens=int(platform_answer.usage.get("completion_tokens") or 0),
+        total_tokens=int(platform_answer.usage.get("total_tokens") or 0),
+        latency_ms=platform_answer.latency_ms,
+        raw_response_json=platform_answer.raw_response,
+    )
+    answer_repo.add(db, answer)
+    db.flush()
+
+    for index, citation in enumerate(platform_answer.citations, start=1):
+        normalized_url = normalize_citation_url(citation.get("url"))
+        answer_repo.add_citation(
+            db,
+            AnswerCitation(
+                answer_id=answer.id,
+                citation_no=index,
+                title=citation.get("title"),
+                url=normalized_url,
+                domain=extract_domain(normalized_url),
+                source_type=citation.get("source_type"),
+                quoted_text=citation.get("quoted_text") or citation.get("snippet"),
+            ),
+        )
+
+    brands, aliases_by_brand = _load_project_brands(db, snapshot.project_id)
+    provider_brand_context = build_provider_brand_context(
+        _extract_molizhishu_result_payload(platform_answer)
+    )
+    for match in match_brands_in_text(normalized_text, brands, aliases_by_brand):
+        answer_repo.add_brand_result(
+            db,
+            AnswerBrandResult(
+                answer_id=answer.id,
+                brand_id=match.brand_id,
+                is_mentioned=match.is_mentioned,
+                mention_count=match.mention_count,
+                first_position=match.first_position,
+                context_json=merge_brand_context_with_provider(
+                    match.context_json,
+                    provider_brand_context,
+                ),
+            ),
+        )
+
+    _mark_task_success_if_needed(
+        db,
+        task,
+        platform_answer=platform_answer,
+        snapshot=snapshot,
+        now=now,
+    )
+    return True
 
 
 def _handle_adapter_failure(
@@ -577,7 +694,9 @@ def _handle_adapter_failure(
                 error.category == ErrorCategory.PENDING
                 and task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS
             ):
-                retry_delay_seconds = runtime.settings.COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS
+                retry_delay_seconds = (
+                    runtime.settings.COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS
+                )
             db.commit()
             return QueryTaskExecutionResult(
                 should_retry=True,
@@ -616,6 +735,8 @@ def _build_platform_query_metadata(
     metadata["provider_screenshot"] = snapshot.provider_screenshot
     if snapshot.region_code:
         metadata["region_code"] = snapshot.region_code
+    if snapshot.provider_callback_url:
+        metadata["provider_callback_url"] = snapshot.provider_callback_url
     if (
         snapshot.collection_source == "aidso"
         and snapshot.platform_code in AIDSO_PLATFORM_MAPPINGS
@@ -629,14 +750,12 @@ def _is_provider_pending_poll(task: QueryTask) -> bool:
         return False
     request_json = task.request_json or {}
     if task.platform_code in AIDSO_PLATFORM_MAPPINGS:
-        return (
-            isinstance(request_json.get("aidso_req_id"), str)
-            and bool(request_json.get("aidso_req_id", "").strip())
+        return isinstance(request_json.get("aidso_req_id"), str) and bool(
+            request_json.get("aidso_req_id", "").strip()
         )
     if task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS:
-        return (
-            isinstance(request_json.get("molizhishu_subtask_id"), str)
-            and bool(request_json.get("molizhishu_subtask_id", "").strip())
+        return isinstance(request_json.get("molizhishu_subtask_id"), str) and bool(
+            request_json.get("molizhishu_subtask_id", "").strip()
         )
     return False
 
@@ -704,10 +823,7 @@ def _mark_task_failed(
     task.error_message = error_message
     task.last_error_code = error_code
     task.last_error_message = error_message
-    if (
-        provider_error_message
-        and task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS
-    ):
+    if provider_error_message and task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS:
         task.provider_error_message = provider_error_message
     task.completed_at = now
     task.finished_at = now
@@ -755,6 +871,295 @@ def _apply_provider_task_fields(
         if isinstance(status, str) and status.strip():
             task.provider_status = status.strip()
         task.provider_result_json = payload
+
+
+def find_query_task_by_molizhishu_ids(
+    db: Session,
+    *,
+    provider_task_id: str,
+    provider_subtask_id: str,
+) -> QueryTask | None:
+    """根据模力指数 taskId/subTaskId 查找本地 QueryTask。"""
+    task = db.execute(
+        select(QueryTask).where(
+            QueryTask.is_deleted.is_(False),
+            QueryTask.provider_task_id == provider_task_id,
+            QueryTask.provider_subtask_id == provider_subtask_id,
+        )
+    ).scalar_one_or_none()
+    if task is not None:
+        return task
+
+    molizhishu_codes = list(MOLIZHISHU_PLATFORM_MAPPINGS.keys())
+    candidates = list(
+        db.execute(
+            select(QueryTask).where(
+                QueryTask.is_deleted.is_(False),
+                QueryTask.platform_code.in_(molizhishu_codes),
+                QueryTask.provider_task_id == provider_task_id,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for candidate in candidates:
+        request_json = candidate.request_json or {}
+        subtask_id = request_json.get("molizhishu_subtask_id")
+        if candidate.provider_subtask_id == provider_subtask_id or (
+            isinstance(subtask_id, str) and subtask_id.strip() == provider_subtask_id
+        ):
+            return candidate
+
+    candidates = list(
+        db.execute(
+            select(QueryTask).where(
+                QueryTask.is_deleted.is_(False),
+                QueryTask.platform_code.in_(molizhishu_codes),
+                QueryTask.provider_task_id.is_(None),
+                QueryTask.status.notin_(tuple(TERMINAL_TASK_STATUSES)),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for candidate in candidates:
+        request_json = candidate.request_json or {}
+        task_id = request_json.get("molizhishu_task_id")
+        subtask_id = request_json.get("molizhishu_subtask_id")
+        if (
+            isinstance(task_id, str)
+            and task_id.strip() == provider_task_id
+            and isinstance(subtask_id, str)
+            and subtask_id.strip() == provider_subtask_id
+        ):
+            return candidate
+    return None
+
+
+def _build_snapshot_for_task(
+    db: Session,
+    runtime: CollectionRuntime,
+    task: QueryTask,
+) -> TaskSnapshot | None:
+    run = db.execute(
+        select(MonitorRun).where(
+            MonitorRun.id == task.run_id,
+            MonitorRun.is_deleted.is_(False),
+        )
+    ).scalar_one_or_none()
+    prompt = db.execute(
+        select(Prompt).where(
+            Prompt.id == task.prompt_id,
+            Prompt.is_deleted.is_(False),
+        )
+    ).scalar_one_or_none()
+    platform = db.execute(
+        select(AIPlatform).where(
+            AIPlatform.platform_code == task.platform_code,
+            AIPlatform.is_deleted.is_(False),
+        )
+    ).scalar_one_or_none()
+    if run is None or prompt is None or platform is None:
+        return None
+    return TaskSnapshot(
+        task_id=task.id,
+        run_id=task.run_id,
+        prompt_id=task.prompt_id,
+        platform_code=task.platform_code,
+        idempotency_key=task.idempotency_key,
+        prompt_text=prompt.prompt_text,
+        model_name=_resolve_model(runtime.settings, platform),
+        project_id=run.project_id,
+        collection_source=run.collection_source,
+        provider_mode=_resolve_provider_mode(run, task.platform_code),
+        provider_screenshot=run.provider_screenshot,
+        region_code=run.region_code,
+        aidso_thinking_enabled=_resolve_aidso_thinking_enabled(run, task.platform_code),
+        request_json=task.request_json,
+        reclaim=False,
+        provider_callback_url=run.provider_callback_url,
+    )
+
+
+def handle_molizhishu_callback(
+    db: Session,
+    payload: dict[str, Any],
+) -> MolizhishuCallbackResult:
+    """处理模力指数完成回调，与轮询共用归一化与入库逻辑。"""
+    from app.geo_monitoring.adapters.molizhishu import (
+        _PENDING_STATUSES,
+        _TERMINAL_FAILURE_STATUSES,
+        molizhishu_callback_result_status,
+        parse_molizhishu_callback_payload,
+        platform_answer_from_molizhishu_result,
+    )
+
+    runtime = get_runtime()
+    try:
+        provider_task_id, provider_subtask_id, result_data = (
+            parse_molizhishu_callback_payload(payload)
+        )
+    except ValueError as exc:
+        logger.warning("molizhishu callback invalid payload: %s", exc)
+        return MolizhishuCallbackResult(outcome="invalid_payload", message=str(exc))
+
+    task = find_query_task_by_molizhishu_ids(
+        db,
+        provider_task_id=provider_task_id,
+        provider_subtask_id=provider_subtask_id,
+    )
+    if task is None:
+        logger.warning(
+            "molizhishu callback task not found task_id=%s subtask_id=%s",
+            provider_task_id,
+            provider_subtask_id,
+        )
+        return MolizhishuCallbackResult(outcome="task_not_found")
+
+    locked_task = db.execute(
+        select(QueryTask)
+        .where(QueryTask.id == task.id, QueryTask.is_deleted.is_(False))
+        .with_for_update()
+    ).scalar_one_or_none()
+    if locked_task is None:
+        return MolizhishuCallbackResult(outcome="task_not_found")
+
+    if answer_repo.get_by_task_id(db, locked_task.id) is not None:
+        was_success = locked_task.status == "success"
+        _mark_task_success_if_needed(db, locked_task)
+        db.commit()
+        if not was_success:
+            _after_task_terminal(db, locked_task.run_id)
+        logger.info(
+            "molizhishu callback duplicate task_id=%s subtask_id=%s query_task_id=%s",
+            provider_task_id,
+            provider_subtask_id,
+            locked_task.id,
+        )
+        return MolizhishuCallbackResult(outcome="duplicate", task_id=locked_task.id)
+
+    status = molizhishu_callback_result_status(result_data)
+    if status in _PENDING_STATUSES:
+        request_json = dict(locked_task.request_json or {})
+        request_json.update(
+            {
+                "molizhishu_task_id": provider_task_id,
+                "molizhishu_subtask_id": provider_subtask_id,
+                "molizhishu_status": status,
+            }
+        )
+        locked_task.request_json = request_json
+        locked_task.provider_task_id = provider_task_id
+        locked_task.provider_subtask_id = provider_subtask_id
+        locked_task.provider_status = status
+        db.commit()
+        return MolizhishuCallbackResult(outcome="ignored", task_id=locked_task.id)
+
+    snapshot = _build_snapshot_for_task(db, runtime, locked_task)
+    if snapshot is None:
+        db.rollback()
+        return MolizhishuCallbackResult(
+            outcome="task_not_found", task_id=locked_task.id
+        )
+
+    if status in _TERMINAL_FAILURE_STATUSES or status == "stopped":
+        now = datetime.now(timezone.utc)
+        error_message = str(result_data.get("errorMessage") or f"status={status}")
+        if status == "stopped":
+            _mark_task_cancelled(db, locked_task, now)
+        else:
+            _mark_task_failed(
+                db,
+                locked_task,
+                now,
+                error_code=ErrorCategory.INVALID_REQUEST.value,
+                error_message=error_message,
+                provider_error_message=error_message,
+            )
+        locked_task.provider_task_id = provider_task_id
+        locked_task.provider_subtask_id = provider_subtask_id
+        locked_task.provider_status = status
+        locked_task.provider_result_json = result_data
+        run_id = locked_task.run_id
+        db.commit()
+        _after_task_terminal(db, run_id)
+        return MolizhishuCallbackResult(outcome="failed_task", task_id=locked_task.id)
+
+    if status != "completed":
+        db.commit()
+        return MolizhishuCallbackResult(
+            outcome="ignored",
+            task_id=locked_task.id,
+            message=f"unsupported status: {status or 'unknown'}",
+        )
+
+    try:
+        platform_answer = platform_answer_from_molizhishu_result(
+            result_data,
+            model=snapshot.model_name,
+            subtask_id=provider_subtask_id,
+            raw_response={"callback": payload, "result": {"data": result_data}},
+        )
+    except AdapterError as exc:
+        logger.warning(
+            "molizhishu callback normalize failed task_id=%s subtask_id=%s message=%s",
+            provider_task_id,
+            provider_subtask_id,
+            exc.sanitized_message(),
+        )
+        db.rollback()
+        return MolizhishuCallbackResult(
+            outcome="invalid_payload",
+            task_id=locked_task.id,
+            message=exc.sanitized_message(),
+        )
+
+    request_json = dict(locked_task.request_json or {})
+    request_json.update(
+        {
+            "molizhishu_task_id": provider_task_id,
+            "molizhishu_subtask_id": provider_subtask_id,
+            "molizhishu_status": status,
+        }
+    )
+    locked_task.request_json = request_json
+    locked_task.provider_task_id = provider_task_id
+    locked_task.provider_subtask_id = provider_subtask_id
+
+    try:
+        created = _write_platform_answer_to_session(
+            db,
+            snapshot,
+            platform_answer,
+            require_running=False,
+        )
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = answer_repo.get_by_task_id(db, task.id)
+        if existing is None:
+            raise
+        locked_task = db.get(QueryTask, task.id)
+        if locked_task is not None:
+            _mark_task_success_if_needed(
+                db,
+                locked_task,
+                platform_answer=platform_answer,
+                snapshot=snapshot,
+            )
+            db.commit()
+        created = False
+
+    _after_task_terminal(db, snapshot.run_id)
+    outcome = "processed" if created else "duplicate"
+    logger.info(
+        "molizhishu callback %s task_id=%s subtask_id=%s query_task_id=%s",
+        outcome,
+        provider_task_id,
+        provider_subtask_id,
+        locked_task.id,
+    )
+    return MolizhishuCallbackResult(outcome=outcome, task_id=locked_task.id)
 
 
 # 将 QueryTask 标记为 cancelled
@@ -943,7 +1348,9 @@ def _load_project_brands(
         .scalars()
         .all()
     )
-    aliases_by_brand: dict[int, list[BrandAlias]] = {brand_id: [] for brand_id in brand_ids}
+    aliases_by_brand: dict[int, list[BrandAlias]] = {
+        brand_id: [] for brand_id in brand_ids
+    }
     for alias in aliases:
         aliases_by_brand.setdefault(alias.brand_id, []).append(alias)
     return brands, aliases_by_brand

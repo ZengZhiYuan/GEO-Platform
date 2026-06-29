@@ -9,7 +9,11 @@ import httpx
 import pytest
 import respx
 
-from app.geo_monitoring.adapters.base import PlatformAdapter, PlatformCredential, PlatformQuery
+from app.geo_monitoring.adapters.base import (
+    PlatformAdapter,
+    PlatformCredential,
+    PlatformQuery,
+)
 from app.geo_monitoring.adapters.errors import AdapterError, ErrorCategory
 
 BASE_URL = "https://molizhishu.test"
@@ -115,7 +119,10 @@ def test_molizhishu_submits_then_pending_carries_metadata():
         asyncio.run(_adapter().query(_query(), credential=_credential()))
 
     payload = json.loads(submit_route.calls.last.request.content.decode("utf-8"))
-    assert submit_route.calls.last.request.headers["authorization"] == "Bearer molizhishu-token"
+    assert (
+        submit_route.calls.last.request.headers["authorization"]
+        == "Bearer molizhishu-token"
+    )
     assert payload == {
         "promptList": ["100w汽车推荐"],
         "platformList": [
@@ -137,7 +144,9 @@ def test_molizhishu_submits_then_pending_carries_metadata():
 @respx.mock
 def test_molizhishu_reuses_existing_task_and_subtask_without_resubmitting():
     submit_route = respx.post(f"{BASE_URL}/task/batch/shared").mock(
-        return_value=httpx.Response(500, json={"success": False, "code": 500, "message": "no"})
+        return_value=httpx.Response(
+            500, json={"success": False, "code": 500, "message": "no"}
+        )
     )
     result_route = respx.get(f"{BASE_URL}/task/result/task-existing/sub-existing").mock(
         return_value=httpx.Response(200, json=_completed_result_payload())
@@ -297,7 +306,9 @@ def test_molizhishu_non_json_response_is_classified():
 
 @respx.mock
 def test_molizhishu_timeout_is_network_error():
-    respx.post(f"{BASE_URL}/task/batch/shared").mock(side_effect=httpx.ReadTimeout("timed out"))
+    respx.post(f"{BASE_URL}/task/batch/shared").mock(
+        side_effect=httpx.ReadTimeout("timed out")
+    )
 
     with pytest.raises(AdapterError) as exc_info:
         asyncio.run(_adapter().query(_query(), credential=_credential()))
@@ -416,7 +427,9 @@ def test_molizhishu_reuse_requires_task_id_when_subtask_id_present():
     with pytest.raises(AdapterError) as exc_info:
         asyncio.run(
             _adapter().query(
-                _query({"molizhishu_subtask_id": "sub-existing", "provider_mode": "search"}),
+                _query(
+                    {"molizhishu_subtask_id": "sub-existing", "provider_mode": "search"}
+                ),
                 credential=_credential(),
             )
         )
@@ -470,3 +483,53 @@ def test_molizhishu_submit_includes_region_code_when_provided():
 
     payload = json.loads(submit_route.calls.last.request.content.decode("utf-8"))
     assert payload["regionCode"] == ["110000"]
+
+
+@respx.mock
+def test_molizhishu_submit_includes_callback_headers_when_enabled(monkeypatch):
+    monkeypatch.setattr(
+        "app.geo_monitoring.adapters.molizhishu.settings.MOLIZHISHU_CALLBACK_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        "app.geo_monitoring.adapters.molizhishu.settings.MOLIZHISHU_CALLBACK_TOKEN",
+        "cb-secret",
+    )
+    submit_route = respx.post(f"{BASE_URL}/task/batch/shared").mock(
+        return_value=httpx.Response(200, json=_submit_payload())
+    )
+    respx.get(f"{BASE_URL}/task/result/task-mlz-1/sub-1").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "code": 200,
+                "message": "ok",
+                "data": {"status": "processing"},
+            },
+        )
+    )
+    from app.geo_monitoring.adapters.molizhishu import MolizhishuPendingError
+
+    with pytest.raises(MolizhishuPendingError):
+        asyncio.run(
+            _adapter().query(
+                _query(
+                    {
+                        "provider_mode": "search",
+                        "provider_callback_url": (
+                            "https://api.example.com/api/geo-monitoring/"
+                            "provider-callbacks/molizhishu?token=must-strip"
+                        ),
+                    }
+                ),
+                credential=_credential(),
+            )
+        )
+
+    payload = json.loads(submit_route.calls.last.request.content.decode("utf-8"))
+    assert payload["callbackUrl"] == (
+        "https://api.example.com/api/geo-monitoring/provider-callbacks/molizhishu"
+    )
+    assert payload["callbackHeaders"] == {"X-Callback-Token": "cb-secret"}
+    assert "token=" not in payload["callbackUrl"]

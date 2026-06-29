@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 
@@ -22,6 +23,8 @@ from app.geo_monitoring.adapters.errors import (
 
 _PENDING_STATUSES = frozenset({"pending", "assigned", "processing"})
 _TERMINAL_FAILURE_STATUSES = frozenset({"failed", "error"})
+MOLIZHISHU_CALLBACK_PATH = "/api/geo-monitoring/provider-callbacks/molizhishu"
+CALLBACK_TOKEN_HEADER = "X-Callback-Token"
 
 
 class MolizhishuPendingError(AdapterError):
@@ -83,6 +86,7 @@ class MolizhishuAdapter:
                 mode=mode,
                 screenshot=screenshot,
                 region_code=region_code,
+                metadata=metadata,
             )
             task_id = _extract_task_id(submit_data)
             subtask_id = _extract_subtask_id(submit_data)
@@ -154,6 +158,7 @@ class MolizhishuAdapter:
         mode: str,
         screenshot: int,
         region_code: str | None,
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "promptList": [prompt],
@@ -167,6 +172,11 @@ class MolizhishuAdapter:
         }
         if region_code:
             payload["regionCode"] = [region_code]
+        callback = resolve_molizhishu_submit_callback(metadata or {})
+        if callback is not None:
+            callback_url, callback_headers = callback
+            payload["callbackUrl"] = callback_url
+            payload["callbackHeaders"] = callback_headers
         response = await _request(
             "POST",
             f"{self._base_url}/task/batch/shared",
@@ -437,5 +447,94 @@ def _metadata_text(metadata: dict[str, Any], key: str) -> str | None:
     return None
 
 
+def _strip_callback_token_query(url: str) -> str:
+    parsed = urlparse(url.strip())
+    if not parsed.query:
+        return url.strip()
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() != "token"
+    ]
+    return urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            urlencode(query),
+            "",
+        )
+    )
+
+
+def resolve_molizhishu_submit_callback(
+    metadata: dict[str, Any],
+) -> tuple[str, dict[str, str]] | None:
+    """解析提交任务时的回调 URL 与 Header 鉴权（token 不放 query）。"""
+    if not settings.MOLIZHISHU_CALLBACK_ENABLED:
+        return None
+    token = settings.MOLIZHISHU_CALLBACK_TOKEN.strip()
+    if not token:
+        return None
+    callback_url = _metadata_text(metadata, "provider_callback_url")
+    if not callback_url:
+        base_url = settings.REPORT_PUBLIC_BASE_URL.strip()
+        if not base_url:
+            return None
+        callback_url = f"{base_url.rstrip('/')}{MOLIZHISHU_CALLBACK_PATH}"
+    callback_url = _strip_callback_token_query(callback_url)
+    return callback_url, {CALLBACK_TOKEN_HEADER: token}
+
+
 def _text_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def parse_molizhishu_callback_payload(
+    payload: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    """从模力指数回调体解析 taskId、subTaskId 与子任务结果数据。"""
+    if not isinstance(payload, dict):
+        raise ValueError("callback payload must be an object")
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    if not isinstance(data, dict):
+        raise ValueError("callback payload missing result data")
+    task_id = data.get("taskId")
+    subtask_id = data.get("subTaskId")
+    if not isinstance(task_id, str) or not task_id.strip():
+        raise ValueError("callback payload missing taskId")
+    if not isinstance(subtask_id, str) or not subtask_id.strip():
+        raise ValueError("callback payload missing subTaskId")
+    return task_id.strip(), subtask_id.strip(), data
+
+
+def platform_answer_from_molizhishu_result(
+    result_data: dict[str, Any],
+    *,
+    model: str,
+    subtask_id: str,
+    raw_response: dict[str, Any] | None = None,
+) -> PlatformAnswer:
+    """将模力指数子任务结果归一化为 PlatformAnswer。"""
+    envelope = {"data": result_data}
+    text = _extract_answer_content(envelope)
+    if not text.strip():
+        raise AdapterError(
+            "molizhishu callback returned empty answer",
+            category=ErrorCategory.INVALID_REQUEST,
+        )
+    return PlatformAnswer(
+        text=text,
+        citations=_extract_citations(envelope),
+        model=model,
+        usage={},
+        latency_ms=0,
+        provider_request_id=subtask_id,
+        raw_response=raw_response or {"result": envelope},
+    )
+
+
+def molizhishu_callback_result_status(result_data: dict[str, Any]) -> str | None:
+    status = result_data.get("status")
+    return status.strip() if isinstance(status, str) and status.strip() else None

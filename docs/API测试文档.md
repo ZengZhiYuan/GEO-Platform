@@ -643,6 +643,24 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/projects/1/monitor-setup" 
 | 分页查询运行任务 | `GET` | `/api/geo-monitoring/runs/{run_id}/query-tasks` | Path：`run_id`；Query：`page`、`page_size` 默认 100 且 1-500、`status`、`platform_code` | 分页 `QueryTaskOut[]` | `code=0`，任务均属于该运行 | 运行不存在 `40400` |
 | 分页查询运行任务别名 | `GET` | `/api/geo-monitoring/runs/{run_id}/tasks` | 同上 | 分页 `QueryTaskOut[]` | 与 `/query-tasks` 返回一致 | 同上 |
 
+### 8.4 模力指数 Provider 回调
+
+| 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 模力指数子任务完成回调 | `POST` | `/api/geo-monitoring/provider-callbacks/molizhishu` | Header：`X-Callback-Token` 或 Query：`token`；Body：模力指数子任务结果 JSON（含 `taskId`、`subTaskId`、`status`、`answerContent` 等） | `{ outcome, task_id, message }` | `code=0` 且 `outcome=processed` 写入答案；重复推送 `outcome=duplicate` 不重复入库 | token 无效 HTTP `401`；未配置 token HTTP `503`；找不到任务 `40401`；payload 非法 `42201` |
+
+**pytest：**
+
+```bash
+backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_molizhishu_callback.py
+```
+
+**说明：**
+
+- 回调与轮询互为兜底；幂等键为本地 `QueryTask.id` 与 `Answer.task_id` 唯一约束。
+- 兼容前缀：`/api/v1/geo-monitoring/provider-callbacks/molizhishu`。
+- `MOLIZHISHU_CALLBACK_TOKEN` 须与部署环境一致；勿写入仓库或日志。
+
 创建运行示例：
 
 ```bash

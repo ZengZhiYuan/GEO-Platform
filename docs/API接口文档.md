@@ -2188,6 +2188,71 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
 
 ---
 
+### 11.8 模力指数 Provider 回调
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 模力指数子任务完成回调 |
+| **请求方式** | `POST` |
+| **接口路径** | `/api/geo-monitoring/provider-callbacks/molizhishu` |
+| **兼容路径** | `/api/v1/geo-monitoring/provider-callbacks/molizhishu` |
+
+**鉴权：**
+
+- Header `X-Callback-Token` 或 Query `token`，值须与部署环境 `MOLIZHISHU_CALLBACK_TOKEN` 一致。
+- token 未配置时返回 HTTP `503`；token 错误返回 HTTP `401`。
+
+**请求体：** 模力指数子任务结果 JSON。至少包含：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `taskId` | string | 是 | 模力指数主任务 ID |
+| `subTaskId` | string | 是 | 模力指数子任务 ID |
+| `status` | string | 是 | 子任务状态；`completed` 时写入答案 |
+| `answerContent` | string | 条件 | `status=completed` 时必填 |
+| `citationList` | array | 否 | 引用列表，归一化规则与轮询一致 |
+| `referenceList` | array | 否 | `citationList` 为空时备用 |
+| `errorMessage` | string | 否 | 失败/停止时错误说明 |
+
+也支持外层信封 `{ success, code, data: { ... } }`，系统从 `data` 提取上述字段。
+
+**出参 `data`：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `outcome` | string | `processed` / `duplicate` / `ignored` / `failed_task` / `task_not_found` / `invalid_payload` |
+| `task_id` | integer/null | 匹配到的本地 QueryTask ID |
+| `message` | string/null | 补充说明 |
+
+**行为说明：**
+
+- 根据 `taskId` + `subTaskId` 查找本地 `QueryTask`（优先 `provider_task_id` / `provider_subtask_id`，回退 `request_json`）。
+- 回调 payload 与轮询结果共用归一化与 `_persist_platform_answer` 入库逻辑。
+- 幂等：已成功且存在 `Answer` 时重复回调仅返回 `duplicate`，不重复写入 `Answer` / `Citation`。
+- 回调与轮询并存时，任一先到均可完成入库；后到只更新必要状态或跳过。
+- 处理异常被捕获并记录日志，不导致服务崩溃。
+
+**常见错误：**
+
+| code | 说明 |
+| --- | --- |
+| HTTP `401` | callback token 无效 |
+| HTTP `503` | `MOLIZHISHU_CALLBACK_TOKEN` 未配置 |
+| `40401` | 未找到匹配 QueryTask |
+| `42201` | payload 缺少必填字段或答案为空 |
+| `50001` | 服务端处理异常 |
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/provider-callbacks/molizhishu" \
+  -H "Content-Type: application/json" \
+  -H "X-Callback-Token: <your-callback-token>" \
+  -d '{"taskId":"task-mlz-1","subTaskId":"sub-1","status":"completed","answerContent":"推荐目标品牌。","citationList":[{"url":"https://example.com","title":"示例","snippet":"摘要"}]}'
+```
+
+---
+
 ## 12. 调度
 
 ### 12.1 分页查询项目调度

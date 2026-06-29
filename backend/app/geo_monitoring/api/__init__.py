@@ -19,6 +19,7 @@ from app.geo_monitoring.api.project_overview import router as project_overview_r
 from app.geo_monitoring.api.projects import router as projects_router
 from app.geo_monitoring.api.prompt_library import router as prompt_library_router
 from app.geo_monitoring.api.prompts import router as prompts_router
+from app.geo_monitoring.api.provider_callbacks import router as provider_callbacks_router
 from app.geo_monitoring.api.reports import router as reports_router
 from app.geo_monitoring.api.runs import router as runs_router
 from app.geo_monitoring.api.schedules import router as schedules_router
@@ -37,6 +38,7 @@ _SUB_ROUTERS = (
     metadata_router,
     benchmarks_router,
     platforms_router,
+    provider_callbacks_router,
     runs_router,
     schedules_router,
     answers_router,
