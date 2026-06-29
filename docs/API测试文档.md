@@ -1167,3 +1167,29 @@ backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\test_
 - 传 `region_code` 时提交体为长度为 1 的 `regionCode` 数组。
 - `provider_screenshot` 仅允许 `0/1/2`，并写入 `platformList[].screenshot`。
 - 区域接口为 provider 代理能力，上游失败返回清晰错误。
+
+## 24. 分析、报告与页面聚合回归测试（Task M12）
+
+覆盖模力指数入库数据在分析触发、Dashboard、竞品分析、信源分析与 Markdown/HTML/PDF 报告链路的消费兼容性。验证分析/报告服务不硬编码 `aidso` 或官方平台 code，平台展示名来自 `AIPlatform`，信源统计基于 `AnswerCitation`/`SourceStat`，报告不泄漏 token。
+
+| 场景 | 测试函数 | 预期 |
+| --- | --- | --- |
+| 分析触发与落库 | `test_molizhishu_run_triggers_analysis_and_persists_platform_analysis` | `POST /runs/{id}/analyze` 返回 `completed`；`PlatformAnalysis` 写入模力指数 platform_code |
+| 信源分析 | `test_molizhishu_source_analysis_counts_domains_and_types` | 域名 `example.com`/`news.example.com` 与类型分布可统计；`platform_columns` 含 `molizhishu_*` |
+| 竞品分析 | `test_molizhishu_competitor_analysis_boards_and_kpis` | KPI 与 boards 含目标品牌；`top1_rate` 可计算 |
+| Dashboard | `test_molizhishu_dashboard_uses_platform_catalog_name` | `platform_name` 来自 `AIPlatform.platform_name`，非裸 code |
+| 报告渲染 | `test_molizhishu_report_renders_without_token_leak` | Markdown/HTML/PDF 含指标与引用；PDF 以 `%PDF` 开头；各格式均不含 `Authorization`/token/proxyIp |
+| 结构一致性 | `test_molizhishu_and_official_run_report_field_structure_match` | 官方 run 与模力指数 run 的 analysis/dashboard/report context 字段结构一致 |
+
+**执行命令：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_molizhishu_analysis_regression.py
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\test_dashboard_api.py backend\tests\geo_monitoring\test_source_analysis_api.py backend\tests\geo_monitoring\test_competitor_analysis_api.py backend\tests\geo_monitoring\reports backend\tests\geo_monitoring\test_molizhishu_analysis_regression.py
+```
+
+**验收点（Task M12）：**
+
+- 品牌提及率、首推率、竞品提及、引用来源统计可正常生成。
+- 官方 run 与模力指数 run 的报告字段结构保持一致。
+- 分析/聚合链路不依赖 `collection_source` 或 provider 类型分支。
