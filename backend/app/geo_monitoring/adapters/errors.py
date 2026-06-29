@@ -105,10 +105,12 @@ class AdapterError(Exception):
         status_code: int | None = None,
         retry_after_seconds: float | None = None,
         secrets: Iterable[str] = (),
+        provider_error_message: str | None = None,
     ) -> None:
         self.category = category
         self.status_code = status_code
         self.retry_after_seconds = retry_after_seconds
+        self.provider_error_message = provider_error_message
         self._secrets = tuple(secrets)
         super().__init__(sanitize_message(message, self._secrets))
 

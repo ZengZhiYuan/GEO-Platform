@@ -31,6 +31,11 @@ _SAFE_CHOICE_KEYS = frozenset({"finish_reason", "index"})
 _SAFE_SEARCH_RESULT_KEYS = frozenset({"title", "url", "index"})
 _SAFE_AIDSO_DATA_KEYS = frozenset({"status", "prompt"})
 _SAFE_AIDSO_RESULT_ITEM_KEYS = frozenset(_REASONING_KEYS + _SEARCH_WORD_KEYS)
+_SAFE_MOLIZHISHU_CITATION_KEYS = frozenset({"title", "url", "site", "siteName"})
+_SAFE_MOLIZHISHU_REFERENCE_KEYS = frozenset({"title", "url", "site", "summary"})
+_SAFE_MOLIZHISHU_SCALAR_KEYS = frozenset(
+    {"status", "answerContent", "pageScreenshot", "amount", "errorMessage"}
+)
 
 
 @dataclass(frozen=True)
@@ -100,6 +105,10 @@ def build_raw_response_safe(raw_response_json: dict[str, Any] | None) -> dict[st
     if aidso_safe:
         safe["result"] = aidso_safe
 
+    molizhishu_safe = _whitelist_molizhishu_result(raw_response_json)
+    if molizhishu_safe:
+        safe.update(molizhishu_safe)
+
     return safe if safe else None
 
 
@@ -134,6 +143,140 @@ def _whitelist_search_info(search_info: dict[str, Any]) -> dict[str, Any]:
         if safe_row:
             safe_results.append(safe_row)
     return {"search_results": safe_results} if safe_results else {}
+
+
+def _molizhishu_result_payload(raw: dict[str, Any]) -> dict[str, Any] | None:
+    if not _looks_like_molizhishu_raw(raw):
+        return None
+    result = raw.get("result")
+    if isinstance(result, dict):
+        data = result.get("data")
+        if isinstance(data, dict):
+            return data
+    data = raw.get("data")
+    return data if isinstance(data, dict) else None
+
+
+def _looks_like_molizhishu_raw(raw: dict[str, Any]) -> bool:
+    if "submit" in raw:
+        return True
+    result = raw.get("result")
+    if not isinstance(result, dict):
+        return False
+    data = result.get("data")
+    if not isinstance(data, dict):
+        return False
+    if isinstance(data.get("result"), list):
+        return False
+    molizhishu_keys = (
+        "answerContent",
+        "citationList",
+        "referenceList",
+        "reasoningProcess",
+        "recommendedQuestions",
+        "pageScreenshot",
+        "amount",
+        "errorMessage",
+    )
+    return any(key in data for key in molizhishu_keys)
+
+
+def _whitelist_molizhishu_result(raw: dict[str, Any]) -> dict[str, Any] | None:
+    payload = _molizhishu_result_payload(raw)
+    if not payload:
+        return None
+
+    safe: dict[str, Any] = {}
+    for key in _SAFE_MOLIZHISHU_SCALAR_KEYS:
+        value = payload.get(key)
+        if key == "answerContent" and isinstance(value, str) and value.strip():
+            safe[key] = _truncate_text(value.strip())
+        elif key == "errorMessage" and isinstance(value, str) and value.strip():
+            safe[key] = value.strip()
+        elif isinstance(value, (str, int, float, bool)):
+            safe[key] = value
+
+    citations = payload.get("citationList")
+    if isinstance(citations, list):
+        safe_citations = _whitelist_molizhishu_citations(citations)
+        if safe_citations:
+            safe["citationList"] = safe_citations
+
+    references = payload.get("referenceList")
+    if isinstance(references, list):
+        safe_references = _whitelist_molizhishu_references(references)
+        if safe_references:
+            safe["referenceList"] = safe_references
+
+    reasoning = payload.get("reasoningProcess")
+    if isinstance(reasoning, dict):
+        content = reasoning.get("content")
+        if isinstance(content, str) and content.strip():
+            safe["reasoningProcess"] = {"content": _truncate_text(content.strip())}
+
+    recommended = payload.get("recommendedQuestions")
+    if isinstance(recommended, list):
+        safe_questions = _normalize_recommended_questions(recommended)
+        if safe_questions:
+            safe["recommendedQuestions"] = safe_questions
+
+    return safe if safe else None
+
+
+def _normalize_recommended_questions(recommended: list[Any]) -> list[str]:
+    safe_questions: list[str] = []
+    for item in recommended[:_MAX_LIST_ITEMS]:
+        text = _recommended_question_text(item)
+        if text:
+            safe_questions.append(_truncate_text(text))
+    return safe_questions
+
+
+def _recommended_question_text(item: Any) -> str | None:
+    if isinstance(item, str):
+        trimmed = item.strip()
+        return trimmed if trimmed else None
+    if isinstance(item, dict):
+        for key in ("question", "title"):
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+def _whitelist_molizhishu_citations(items: list[Any]) -> list[dict[str, Any]]:
+    safe_items: list[dict[str, Any]] = []
+    for item in items[:_MAX_LIST_ITEMS]:
+        if not isinstance(item, dict):
+            continue
+        row: dict[str, Any] = {}
+        for key in _SAFE_MOLIZHISHU_CITATION_KEYS:
+            value = item.get(key)
+            if isinstance(value, str) and value.strip():
+                if key == "siteName":
+                    row["site"] = value.strip()
+                else:
+                    row[key] = value.strip()
+        if row:
+            safe_items.append(row)
+    return safe_items
+
+
+def _whitelist_molizhishu_references(items: list[Any]) -> list[dict[str, Any]]:
+    safe_items: list[dict[str, Any]] = []
+    for item in items[:_MAX_LIST_ITEMS]:
+        if not isinstance(item, dict):
+            continue
+        row = {
+            key: _truncate_text(str(item[key]).strip())
+            for key in _SAFE_MOLIZHISHU_REFERENCE_KEYS
+            if key in item
+            and isinstance(item[key], str)
+            and str(item[key]).strip()
+        }
+        if row:
+            safe_items.append(row)
+    return safe_items
 
 
 def _whitelist_aidso_result(raw: dict[str, Any]) -> dict[str, Any] | None:
@@ -178,6 +321,16 @@ def _whitelist_aidso_result(raw: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _extract_reasoning_text(raw: dict[str, Any]) -> str | None:
+    molizhishu_payload = _molizhishu_result_payload(raw)
+    if isinstance(molizhishu_payload, dict):
+        reasoning = molizhishu_payload.get("reasoningProcess")
+        if isinstance(reasoning, dict):
+            content = reasoning.get("content")
+            if isinstance(content, str) and content.strip():
+                return _truncate_text(content.strip())
+        if isinstance(reasoning, str) and reasoning.strip():
+            return _truncate_text(reasoning.strip())
+
     for item in _iter_result_items(raw):
         for key in _REASONING_KEYS:
             value = item.get(key)
@@ -196,6 +349,15 @@ def _extract_reasoning_text(raw: dict[str, Any]) -> str | None:
 def _extract_search_keywords(raw: dict[str, Any]) -> list[str]:
     keywords: list[str] = []
     seen: set[str] = set()
+
+    molizhishu_payload = _molizhishu_result_payload(raw)
+    if isinstance(molizhishu_payload, dict):
+        recommended = molizhishu_payload.get("recommendedQuestions")
+        if isinstance(recommended, list):
+            for item in recommended:
+                text = _recommended_question_text(item)
+                if text:
+                    _append_keyword(keywords, seen, text)
 
     for item in _iter_result_items(raw):
         for key in _SEARCH_WORD_KEYS:

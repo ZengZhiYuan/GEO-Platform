@@ -698,9 +698,9 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
 | `prompt_type` | string | 问题类型 |
 | `reasoning_text` | string/null | 从 `raw_response_json` 提取的思考过程 |
 | `search_keywords` | string[] | 从 `raw_response_json` 提取的搜索关键词 |
-| `raw_response_safe` | object/null | 白名单原始响应安全子集（不含 cookie/token/正文等敏感字段） |
-| `citations` | array | 引用来源，字段包括 `citation_no`、`title`、`url`、`domain`、`source_type`、`quoted_text` |
-| `brand_results` | array | 品牌识别结果，字段包括 `brand_id`、`is_mentioned`、`mention_count`、`first_position`、`sentiment`、`context_json` |
+| `raw_response_safe` | object/null | 白名单原始响应安全子集（不含 cookie/token/正文等敏感字段）；模力指数采集额外暴露 `status`、`answerContent`（截断）、`citationList`/`referenceList` 标题与 URL、`reasoningProcess.content`（截断）、`recommendedQuestions`、`pageScreenshot`、`amount` |
+| `citations` | array | 引用来源，字段包括 `citation_no`、`title`、`url`、`domain`、`source_type`、`quoted_text`；模力指数优先 `citationList`，为空时回退 `referenceList.summary` → `quoted_text` |
+| `brand_results` | array | 品牌识别结果，字段包括 `brand_id`、`is_mentioned`、`mention_count`、`first_position`、`sentiment`、`context_json`；本地规则匹配为准，模力指数 provider 品牌字段仅写入 `context_json.provider_*` |
 
 ### 10.2 答案接口
 
@@ -1053,3 +1053,33 @@ backend\.venv\Scripts\python.exe -m pytest -q backend\tests\worker\test_collecti
 - 模力指数 pending 能从 `taskId/subTaskId` 收敛到 success 或 failed。
 - pending 轮询不递增 `attempt_count`。
 - 子任务失败不影响同 run 其他任务（Run 聚合逻辑不变）。
+
+## 21. 结果归一化、入库与安全展示测试（Task M8）
+
+覆盖 `molizhishu.py` 引用归一化、`collection.py` 成功落库与 provider 字段同步、`answer_metadata.py` 模力指数安全视图、`brand_matcher.py` provider 品牌上下文合并。
+
+| 场景 | 测试函数 | 预期 |
+| --- | --- | --- |
+| citationList 入库 | `test_molizhishu_success_persists_citation_list` | `geo_answer_citation` 写入 title/url/quoted_text |
+| referenceList 回退 | `test_molizhishu_success_falls_back_to_reference_list` | citation 为空时 reference summary 写入 quoted_text |
+| 无引用仍落库 | `test_molizhishu_success_without_citations_still_persists_answer` | `geo_answer.raw_text` 写入，citations 为空 |
+| provider 品牌不覆盖本地指标 | `test_molizhishu_provider_brand_fields_do_not_override_local_brand_metrics` | `is_mentioned/mention_count/first_position` 仍由本地匹配；`context_json.provider_*` 保留 provider 字段 |
+| provider 字段同步 | `test_molizhishu_success_syncs_provider_task_fields` | `QueryTask.provider_*` 与 `provider_result_json` 写入 |
+| 失败 errorMessage | `test_molizhishu_failure_sets_provider_error_message` | `QueryTask.provider_error_message` 写入 provider 原文 |
+| 安全视图白名单 | `test_build_raw_response_safe_molizhishu_whitelists_safe_fields` | 仅暴露安全字段，不含 token/proxy/品牌指标 |
+| 对象型 recommendedQuestions | `test_build_raw_response_safe_molizhishu_ignores_object_recommended_questions` | 仅保留字符串或对象 `question`/`title` 字段，丢弃 debug/token |
+| provider 品牌上下文 sanitize | `test_molizhishu_provider_brand_context_is_sanitized_for_api` | 字符串截断、rankings 限 20 条且仅白名单字段 |
+| 思考与追问提取 | `test_extract_molizhishu_reasoning_process_and_recommended_questions` | `reasoningProcess.content` → `reasoning_text`；`recommendedQuestions` → `search_keywords` |
+
+**执行命令：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\test_answer_metadata.py backend\tests\geo_monitoring\test_collection_contract.py -k molizhishu
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\adapters\test_molizhishu.py
+```
+
+**验收点（Task M8）：**
+
+- `Answer`、`AnswerCitation`、`AnswerBrandResult` 与现有分析服务兼容。
+- 答案详情可展示安全化 provider 原始信息。
+- source analysis 可统计模力指数引用来源。

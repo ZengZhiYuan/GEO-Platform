@@ -115,6 +115,7 @@ class MolizhishuAdapter:
                 f"molizhishu subtask failed: {error_message}",
                 category=ErrorCategory.INVALID_REQUEST,
                 secrets=(api_key,),
+                provider_error_message=error_message,
             )
         if status != "completed":
             raise AdapterError(

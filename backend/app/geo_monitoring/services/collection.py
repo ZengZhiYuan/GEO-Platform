@@ -37,7 +37,12 @@ from app.geo_monitoring.models import (
     QueryTask,
 )
 from app.geo_monitoring.repositories import answers as answer_repo
-from app.geo_monitoring.services.brand_matcher import match_brands_in_text, normalize_answer_text
+from app.geo_monitoring.services.brand_matcher import (
+    build_provider_brand_context,
+    match_brands_in_text,
+    merge_brand_context_with_provider,
+    normalize_answer_text,
+)
 from app.geo_monitoring.services.platforms import AIDSO_PLATFORM_MAPPINGS, MOLIZHISHU_PLATFORM_MAPPINGS
 
 logger = logging.getLogger(__name__)
@@ -503,6 +508,9 @@ def _persist_success(
 
         # 匹配品牌提及并写入结果
         brands, aliases_by_brand = _load_project_brands(db, snapshot.project_id)
+        provider_brand_context = build_provider_brand_context(
+            _extract_molizhishu_result_payload(platform_answer)
+        )
         for match in match_brands_in_text(normalized_text, brands, aliases_by_brand):
             answer_repo.add_brand_result(
                 db,
@@ -512,13 +520,17 @@ def _persist_success(
                     is_mentioned=match.is_mentioned,
                     mention_count=match.mention_count,
                     first_position=match.first_position,
-                    context_json=match.context_json,
+                    context_json=merge_brand_context_with_provider(
+                        match.context_json,
+                        provider_brand_context,
+                    ),
                 ),
             )
 
         task.status = "success"
         task.latency_ms = platform_answer.latency_ms
         task.provider_request_id = platform_answer.provider_request_id
+        _apply_provider_task_fields(task, snapshot, platform_answer)
         task.response_http_status = 200
         task.completed_at = now
         task.finished_at = now
@@ -575,6 +587,7 @@ def _handle_adapter_failure(
                 now,
                 error_code=error.category.value,
                 error_message=error.sanitized_message(),
+                provider_error_message=getattr(error, "provider_error_message", None),
             )
         run_id = task.run_id
         db.commit()
@@ -678,14 +691,64 @@ def _mark_task_failed(
     *,
     error_code: str,
     error_message: str,
+    provider_error_message: str | None = None,
 ) -> None:
     task.status = "failed"
     task.error_code = error_code
     task.error_message = error_message
     task.last_error_code = error_code
     task.last_error_message = error_message
+    if (
+        provider_error_message
+        and task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS
+    ):
+        task.provider_error_message = provider_error_message
     task.completed_at = now
     task.finished_at = now
+
+
+def _extract_molizhishu_result_payload(
+    platform_answer: PlatformAnswer,
+) -> dict[str, Any] | None:
+    raw = platform_answer.raw_response
+    if not isinstance(raw, dict):
+        return None
+    result = raw.get("result")
+    if not isinstance(result, dict):
+        return None
+    data = result.get("data")
+    return data if isinstance(data, dict) else None
+
+
+def _apply_provider_task_fields(
+    task: QueryTask,
+    snapshot: TaskSnapshot,
+    platform_answer: PlatformAnswer,
+) -> None:
+    if snapshot.platform_code not in MOLIZHISHU_PLATFORM_MAPPINGS:
+        return
+    request_json = snapshot.request_json or {}
+    task.provider_name = "molizhishu"
+    task_id = request_json.get("molizhishu_task_id")
+    if isinstance(task_id, str) and task_id.strip():
+        task.provider_task_id = task_id.strip()
+    subtask_id = platform_answer.provider_request_id or request_json.get(
+        "molizhishu_subtask_id"
+    )
+    if isinstance(subtask_id, str) and subtask_id.strip():
+        task.provider_subtask_id = subtask_id.strip()
+    platform_code = request_json.get("molizhishu_platform")
+    if isinstance(platform_code, str) and platform_code.strip():
+        task.provider_platform_code = platform_code.strip()
+    mode = snapshot.provider_mode or request_json.get("molizhishu_mode")
+    if isinstance(mode, str) and mode.strip():
+        task.provider_mode = mode.strip()
+    payload = _extract_molizhishu_result_payload(platform_answer)
+    if isinstance(payload, dict):
+        status = payload.get("status")
+        if isinstance(status, str) and status.strip():
+            task.provider_status = status.strip()
+        task.provider_result_json = payload
 
 
 # 将 QueryTask 标记为 cancelled

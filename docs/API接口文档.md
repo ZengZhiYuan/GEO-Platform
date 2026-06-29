@@ -347,11 +347,11 @@
 | --- | --- | --- |
 | `prompt_text` | string | 关联问题文本 |
 | `prompt_type` | string | 问题类型 |
-| `reasoning_text` | string/null | 深度思考过程；从 `raw_response_json` 安全提取，无则为 `null` |
-| `search_keywords` | string[] | 搜索关键词列表；从 `raw_response_json` 安全提取，无则为 `[]` |
-| `raw_response_safe` | object/null | 白名单原始响应安全子集（仅含 `model`/`usage`/`choices.finish_reason`/`output.search_info`/Aidso 思考与搜索词等展示字段） |
-| `citations[]` | array | 引用列表（`citation_no`、`title`、`url`、`domain`、`source_type`、`quoted_text`） |
-| `brand_results[]` | array | 品牌识别（`brand_id`、`is_mentioned`、`mention_count`、`first_position`、`sentiment`、`context_json`） |
+| `reasoning_text` | string/null | 深度思考过程；从 `raw_response_json` 安全提取，无则为 `null`；模力指数采集读取 `result.data.reasoningProcess.content` |
+| `search_keywords` | string[] | 搜索关键词列表；从 `raw_response_json` 安全提取，无则为 `[]`；模力指数采集读取 `result.data.recommendedQuestions`（仅字符串或对象的 `question`/`title` 字段） |
+| `raw_response_safe` | object/null | 白名单原始响应安全子集。官方/Aidso：含 `model`/`usage`/`choices.finish_reason`/`output.search_info`/Aidso 思考与搜索词等。模力指数额外含 `status`、`answerContent`（截断）、`citationList[]`（title/url/site）、`referenceList[]`（title/url/site/summary）、`reasoningProcess.content`（截断）、`recommendedQuestions`（仅安全字符串）、`pageScreenshot`、`amount`。不含 token/proxy/debug 等内部字段 |
+| `citations[]` | array | 引用列表（`citation_no`、`title`、`url`、`domain`、`source_type`、`quoted_text`）；模力指数优先 `citationList`，为空时回退 `referenceList.summary` → `quoted_text` |
+| `brand_results[]` | array | 品牌识别（`brand_id`、`is_mentioned`、`mention_count`、`first_position`、`sentiment`、`context_json`）；本地规则匹配为准。模力指数 provider 品牌字段仅写入 `context_json.provider_*`（字符串截断、rankings 限条数与白名单字段），不覆盖本地指标 |
 
 ### 2.12 ScheduleOut（调度）
 
