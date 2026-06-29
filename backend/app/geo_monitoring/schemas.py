@@ -5,7 +5,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
 T = TypeVar("T")
@@ -537,6 +537,15 @@ class SourceTypesOut(BaseModel):
     storage_mappings: list[SourceTypeStorageMappingOut]
 
 
+class MolizhishuRegionOut(BaseModel):
+    province: str
+    region_code: str
+
+
+class MolizhishuRegionsOut(BaseModel):
+    items: list[MolizhishuRegionOut]
+
+
 class BenchmarkMetricsOut(BaseModel):
     mention_rate: str
     mention_count: int
@@ -688,9 +697,20 @@ class RunCreate(BaseModel):
     platform_codes: list[str] | None = None
     collection_source: RunCreateCollectionSource = RunCreateCollectionSource.OFFICIAL
     provider_mode_by_platform: dict[str, str] = Field(default_factory=dict)
-    provider_screenshot: int = 0
+    provider_screenshot: StrictInt = 0
     region_code: str | None = None
     provider_callback_url: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def apply_molizhishu_default_screenshot(self) -> "RunCreate":
+        if (
+            self.collection_source == RunCreateCollectionSource.MOLIZHISHU
+            and "provider_screenshot" not in self.model_fields_set
+        ):
+            from app.core.config import settings
+
+            self.provider_screenshot = settings.MOLIZHISHU_DEFAULT_SCREENSHOT
+        return self
 
     @field_validator("platform_codes")
     @classmethod
@@ -713,6 +733,8 @@ class RunCreate(BaseModel):
     @field_validator("provider_screenshot")
     @classmethod
     def validate_provider_screenshot(cls, value: int) -> int:
+        if isinstance(value, bool):
+            raise ValueError("provider_screenshot 必须为整数 0、1 或 2")
         if value not in PROVIDER_SCREENSHOT_VALUES:
             raise ValueError("provider_screenshot 只允许 0、1 或 2")
         return value

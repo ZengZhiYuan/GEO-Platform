@@ -1131,3 +1131,39 @@ backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\adapt
 - 平台筛选与错误码清晰（`40031` / `40902`）。
 - 取消带 `provider_task_id` 的模力指数运行会尝试 provider stop。
 - 已完成子任务不会被删除或覆盖。
+
+## 23. RegionCode 与截图策略测试（Task M11）
+
+覆盖 `molizhishu.py` 提交体中的 `regionCode` / `screenshot`、`RunCreate` 校验，以及模力指数区域列表代理接口。
+
+| 场景 | 测试函数 | 预期 |
+| --- | --- | --- |
+| regionCode 提交 | `test_molizhishu_submit_includes_region_code_when_provided` | 提交体含 `regionCode: [code]` |
+| 无 region 仍可提交 | `test_molizhishu_submit_omits_region_code_when_not_provided` | 提交体不含 `regionCode` |
+| screenshot 提交 | `test_molizhishu_submit_includes_screenshot_when_provided` | `platformList[].screenshot` 为 `0/1/2` |
+| screenshot 校验 | `test_run_create_rejects_invalid_provider_screenshot` | `provider_screenshot=3` 返回校验错误 |
+| bool 截图拒绝 | `test_run_create_rejects_bool_provider_screenshot` | `provider_screenshot=true` 返回 `422` |
+| 默认截图策略 | `test_run_create_applies_molizhishu_default_screenshot_when_omitted` | 未传字段时使用 `MOLIZHISHU_DEFAULT_SCREENSHOT` |
+| 区域列表缓存 TTL | `test_molizhishu_regions_cache_expires_after_ttl` | TTL 过期后重新请求上游 |
+| TTL=0 不缓存 | `test_molizhishu_regions_skips_cache_when_ttl_zero` | 每次请求都打上游 |
+| 模力指数 run 持久化 | `test_create_molizhishu_run_persists_provider_fields` | `provider_screenshot` / `region_code` 落库 |
+| 区域列表代理 | `test_molizhishu_regions_returns_normalized_list` | 返回 `items[].province/region_code` |
+| 区域列表缓存 | `test_molizhishu_regions_uses_local_cache` | 短缓存内不重复请求上游 |
+| 上游不可用 | `test_molizhishu_regions_returns_clear_error_when_upstream_unavailable` | `code=50210` 且消息可定位 |
+| v1 兼容前缀 | `test_metadata_routes_available_on_v1_prefix` | `/api/v1/geo-monitoring/providers/molizhishu/regions` 可用 |
+
+**执行命令：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\test_metadata_api.py -k molizhishu_regions
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\adapters\test_molizhishu.py -k "region or screenshot"
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\test_models.py -k provider_screenshot
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\test_runs.py::test_create_molizhishu_run_persists_provider_fields
+```
+
+**验收点（Task M11）：**
+
+- 不传 `region_code` 时模力指数提交仍可成功。
+- 传 `region_code` 时提交体为长度为 1 的 `regionCode` 数组。
+- `provider_screenshot` 仅允许 `0/1/2`，并写入 `platformList[].screenshot`。
+- 区域接口为 provider 代理能力，上游失败返回清晰错误。

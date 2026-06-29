@@ -486,6 +486,74 @@ def test_molizhishu_submit_includes_region_code_when_provided():
 
 
 @respx.mock
+def test_molizhishu_submit_omits_region_code_when_not_provided():
+    submit_route = respx.post(f"{BASE_URL}/task/batch/shared").mock(
+        return_value=httpx.Response(200, json=_submit_payload())
+    )
+    respx.get(f"{BASE_URL}/task/result/task-mlz-1/sub-1").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "code": 200,
+                "message": "ok",
+                "data": {"status": "processing"},
+            },
+        )
+    )
+    from app.geo_monitoring.adapters.molizhishu import MolizhishuPendingError
+
+    with pytest.raises(MolizhishuPendingError):
+        asyncio.run(_adapter().query(_query(), credential=_credential()))
+
+    payload = json.loads(submit_route.calls.last.request.content.decode("utf-8"))
+    assert "regionCode" not in payload
+
+
+@respx.mock
+def test_molizhishu_submit_includes_screenshot_when_provided():
+    submit_route = respx.post(f"{BASE_URL}/task/batch/shared").mock(
+        return_value=httpx.Response(200, json=_submit_payload())
+    )
+    respx.get(f"{BASE_URL}/task/result/task-mlz-1/sub-1").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "code": 200,
+                "message": "ok",
+                "data": {"status": "processing"},
+            },
+        )
+    )
+    from app.geo_monitoring.adapters.molizhishu import MolizhishuPendingError
+
+    with pytest.raises(MolizhishuPendingError):
+        asyncio.run(
+            _adapter().query(
+                _query({"provider_mode": "search", "provider_screenshot": 2}),
+                credential=_credential(),
+            )
+        )
+
+    payload = json.loads(submit_route.calls.last.request.content.decode("utf-8"))
+    assert payload["platformList"][0]["screenshot"] == 2
+
+
+@respx.mock
+def test_molizhishu_rejects_bool_provider_screenshot():
+    with pytest.raises(AdapterError) as exc_info:
+        asyncio.run(
+            _adapter().query(
+                _query({"provider_mode": "search", "provider_screenshot": True}),
+                credential=_credential(),
+            )
+        )
+
+    assert exc_info.value.category == ErrorCategory.INVALID_REQUEST
+
+
+@respx.mock
 def test_molizhishu_submit_includes_callback_headers_when_enabled(monkeypatch):
     monkeypatch.setattr(
         "app.geo_monitoring.adapters.molizhishu.settings.MOLIZHISHU_CALLBACK_ENABLED",

@@ -186,8 +186,146 @@ def test_platform_endpoints_returns_all_platforms_without_truncation(client, ses
         ("/api/v1/geo-monitoring/platform-endpoints", "groups"),
         ("/api/v1/geo-monitoring/prompt-types", "items"),
         ("/api/v1/geo-monitoring/source-types", "storage_mappings"),
+        ("/api/v1/geo-monitoring/providers/molizhishu/regions", "items"),
     ],
 )
-def test_metadata_routes_available_on_v1_prefix(client, path, expected_key):
+def test_metadata_routes_available_on_v1_prefix(client, path, expected_key, monkeypatch):
+    if "molizhishu/regions" in path:
+        monkeypatch.setattr(
+            "app.geo_monitoring.services.metadata._fetch_molizhishu_regions_upstream",
+            lambda: _sample_molizhishu_regions_upstream(),
+        )
+        from app.geo_monitoring.services import metadata as metadata_service
+
+        metadata_service.clear_molizhishu_regions_cache()
     payload = client.get(path).json()["data"]
     assert expected_key in payload
+
+
+def _sample_molizhishu_regions_upstream() -> dict:
+    return {
+        "success": True,
+        "code": 200,
+        "message": "ok",
+        "data": [
+            {"province": "北京市", "regionCode": ["110000"]},
+            {"province": "上海市", "regionCode": ["310000"]},
+        ],
+    }
+
+
+def test_molizhishu_regions_returns_normalized_list(client, monkeypatch):
+    from app.geo_monitoring.services import metadata as metadata_service
+
+    metadata_service.clear_molizhishu_regions_cache()
+    monkeypatch.setattr(
+        "app.geo_monitoring.services.metadata._fetch_molizhishu_regions_upstream",
+        lambda: _sample_molizhishu_regions_upstream(),
+    )
+
+    payload = client.get("/api/geo-monitoring/providers/molizhishu/regions").json()
+
+    assert payload["code"] == 0
+    items = payload["data"]["items"]
+    assert items == [
+        {"province": "北京市", "region_code": "110000"},
+        {"province": "上海市", "region_code": "310000"},
+    ]
+
+
+def test_molizhishu_regions_uses_local_cache(client, monkeypatch):
+    from app.geo_monitoring.services import metadata as metadata_service
+
+    metadata_service.clear_molizhishu_regions_cache()
+    calls = {"count": 0}
+
+    def _fetch() -> dict:
+        calls["count"] += 1
+        return _sample_molizhishu_regions_upstream()
+
+    monkeypatch.setattr(
+        "app.geo_monitoring.services.metadata._fetch_molizhishu_regions_upstream",
+        _fetch,
+    )
+
+    client.get("/api/geo-monitoring/providers/molizhishu/regions")
+    client.get("/api/geo-monitoring/providers/molizhishu/regions")
+
+    assert calls["count"] == 1
+
+
+def test_molizhishu_regions_returns_clear_error_when_upstream_unavailable(
+    client, monkeypatch
+):
+    from app.core.exceptions import BusinessException
+    from app.geo_monitoring.services import metadata as metadata_service
+
+    metadata_service.clear_molizhishu_regions_cache()
+
+    def _raise() -> dict:
+        raise BusinessException(
+            code=50210,
+            message="模力指数区域列表暂不可用，请稍后重试",
+        )
+
+    monkeypatch.setattr(
+        "app.geo_monitoring.services.metadata._fetch_molizhishu_regions_upstream",
+        _raise,
+    )
+
+    payload = client.get("/api/geo-monitoring/providers/molizhishu/regions").json()
+
+    assert payload["code"] == 50210
+    assert "区域列表" in payload["message"]
+
+
+def test_molizhishu_regions_cache_expires_after_ttl(client, monkeypatch):
+    from app.core.config import settings
+    from app.geo_monitoring.services import metadata as metadata_service
+
+    metadata_service.clear_molizhishu_regions_cache()
+    calls = {"count": 0}
+    clock = {"now": 100.0}
+
+    def _fetch() -> dict:
+        calls["count"] += 1
+        return _sample_molizhishu_regions_upstream()
+
+    monkeypatch.setattr(
+        "app.geo_monitoring.services.metadata.time.monotonic",
+        lambda: clock["now"],
+    )
+    monkeypatch.setattr(settings, "MOLIZHISHU_REGIONS_CACHE_SECONDS", 60)
+    monkeypatch.setattr(
+        "app.geo_monitoring.services.metadata._fetch_molizhishu_regions_upstream",
+        _fetch,
+    )
+
+    client.get("/api/geo-monitoring/providers/molizhishu/regions")
+    clock["now"] = 161.0
+    client.get("/api/geo-monitoring/providers/molizhishu/regions")
+
+    assert calls["count"] == 2
+
+
+def test_molizhishu_regions_skips_cache_when_ttl_zero(client, monkeypatch):
+    from app.core.config import settings
+    from app.geo_monitoring.services import metadata as metadata_service
+
+    metadata_service.clear_molizhishu_regions_cache()
+    calls = {"count": 0}
+
+    def _fetch() -> dict:
+        calls["count"] += 1
+        return _sample_molizhishu_regions_upstream()
+
+    monkeypatch.setattr(settings, "MOLIZHISHU_REGIONS_CACHE_SECONDS", 0)
+    monkeypatch.setattr(
+        "app.geo_monitoring.services.metadata._fetch_molizhishu_regions_upstream",
+        _fetch,
+    )
+
+    client.get("/api/geo-monitoring/providers/molizhishu/regions")
+    client.get("/api/geo-monitoring/providers/molizhishu/regions")
+
+    assert calls["count"] == 2

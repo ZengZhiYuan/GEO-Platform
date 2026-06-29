@@ -15,6 +15,28 @@ os.environ["REDIS_URL"] = "redis://test-redis.invalid:6379/15"
 os.environ["DRAMATIQ_BROKER"] = "stub"
 os.environ["NACOS_ENABLED"] = "false"
 
+# 隔离开发机 .env 中的真实凭证，避免 client fixture 启动失败或泄露密钥形态。
+for _env_key, _env_value in {
+    "DOUBAO_ENABLED": "false",
+    "DOUBAO_API_KEYS": "",
+    "QWEN_ENABLED": "false",
+    "QWEN_API_KEYS": "",
+    "YUANBAO_ENABLED": "false",
+    "YUANBAO_CREDENTIALS_JSON": "[]",
+    "DEEPSEEK_ENABLED": "false",
+    "DEEPSEEK_API_KEYS": "",
+    "KIMI_ENABLED": "false",
+    "KIMI_API_KEYS": "",
+    "AIDSO_ENABLED": "false",
+    "AIDSO_API_TOKEN": "",
+    "MOLIZHISHU_ENABLED": "false",
+    "MOLIZHISHU_API_TOKEN": "",
+    "AGENT_LLM_API_KEY": "",
+    "NACOS_PASSWORD": "",
+    "NACOS_ACCESS_TOKEN": "",
+}.items():
+    os.environ[_env_key] = _env_value
+
 
 def pytest_configure(config):
     config.addinivalue_line(
@@ -72,10 +94,12 @@ def db(session_factory) -> Generator[Session, None, None]:
 
 @pytest.fixture
 def client(session_factory) -> Generator[TestClient, None, None]:
+    from app.core.config import get_settings
     from app.core.database import get_db
     from app.geo_monitoring.services import collection as collection_service
     from app.main import app
 
+    get_settings.cache_clear()
     collection_service.configure_runtime(
         collection_service.build_default_runtime(session_factory=session_factory)
     )

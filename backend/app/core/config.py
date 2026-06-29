@@ -226,6 +226,10 @@ class Settings(BaseSettings):
     MOLIZHISHU_DEFAULT_SCREENSHOT: int = 0
     MOLIZHISHU_CALLBACK_ENABLED: bool = False
     MOLIZHISHU_CALLBACK_TOKEN: str = ""
+    MOLIZHISHU_REGIONS_URL: str = (
+        "https://business-api.molizhishu.com/api/business/eip-edge/ports/city-info"
+    )
+    MOLIZHISHU_REGIONS_CACHE_SECONDS: int = 300
 
     # Agent LLM
     AGENT_LLM_BASE_URL: str = ""
@@ -340,6 +344,7 @@ class Settings(BaseSettings):
         "COLLECTION_MOLIZHISHU_MAX_POLLS",
         "COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS",
         "MOLIZHISHU_REQUEST_TIMEOUT_SECONDS",
+        "MOLIZHISHU_REGIONS_CACHE_SECONDS",
         "COLLECTION_MAX_CONCURRENCY",
         "AGENT_LLM_TIMEOUT_SECONDS",
         "AGENT_LLM_MAX_ATTEMPTS",
@@ -364,8 +369,8 @@ class Settings(BaseSettings):
     @field_validator("MOLIZHISHU_DEFAULT_SCREENSHOT")
     @classmethod
     def validate_molizhishu_default_screenshot(cls, value: int) -> int:
-        if value not in (0, 1):
-            raise ValueError("MOLIZHISHU_DEFAULT_SCREENSHOT must be 0 or 1")
+        if value not in (0, 1, 2):
+            raise ValueError("MOLIZHISHU_DEFAULT_SCREENSHOT must be 0, 1, or 2")
         return value
 
     @field_validator("AGENT_LLM_PROVIDER")

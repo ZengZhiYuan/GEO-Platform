@@ -432,11 +432,25 @@ def _resolve_mode(metadata: dict[str, Any], default_mode: str) -> str:
 def _resolve_screenshot(metadata: dict[str, Any]) -> int:
     value = metadata.get("provider_screenshot")
     if isinstance(value, bool):
-        return int(value)
+        raise AdapterError(
+            "provider_screenshot must be an integer 0, 1, or 2",
+            category=ErrorCategory.INVALID_REQUEST,
+        )
     if isinstance(value, int):
+        if value not in (0, 1, 2):
+            raise AdapterError(
+                "provider_screenshot must be 0, 1, or 2",
+                category=ErrorCategory.INVALID_REQUEST,
+            )
         return value
     if isinstance(value, str) and value.strip().isdigit():
-        return int(value.strip())
+        parsed = int(value.strip())
+        if parsed not in (0, 1, 2):
+            raise AdapterError(
+                "provider_screenshot must be 0, 1, or 2",
+                category=ErrorCategory.INVALID_REQUEST,
+            )
+        return parsed
     return 0
 
 

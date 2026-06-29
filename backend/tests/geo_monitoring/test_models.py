@@ -189,6 +189,43 @@ def test_run_create_rejects_invalid_provider_screenshot():
         )
 
 
+def test_run_create_rejects_bool_provider_screenshot():
+    from pydantic import ValidationError
+
+    from app.geo_monitoring.schemas import RunCreate
+
+    with pytest.raises(ValidationError):
+        RunCreate(
+            project_id=1,
+            collection_source="molizhishu",
+            platform_codes=["molizhishu_doubao_web"],
+            provider_screenshot=True,
+        )
+
+
+def test_run_create_applies_molizhishu_default_screenshot_when_omitted(monkeypatch):
+    from app.geo_monitoring.schemas import RunCreate
+
+    monkeypatch.setattr("app.core.config.settings.MOLIZHISHU_DEFAULT_SCREENSHOT", 2)
+
+    payload = RunCreate(
+        project_id=1,
+        collection_source="molizhishu",
+        platform_codes=["molizhishu_doubao_web"],
+    )
+
+    assert payload.provider_screenshot == 2
+
+
+def test_run_create_keeps_zero_default_for_official_when_omitted():
+    from app.geo_monitoring.schemas import RunCreate
+
+    payload = RunCreate(project_id=1)
+
+    assert payload.provider_screenshot == 0
+    assert "provider_screenshot" not in payload.model_fields_set
+
+
 def test_run_create_rejects_empty_region_code():
     from pydantic import ValidationError
 

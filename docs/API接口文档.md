@@ -1765,7 +1765,7 @@ Aidso 第三方数据源端侧平台编码：
 | `MOLIZHISHU_REQUEST_TIMEOUT_SECONDS` | int | `30` | 单次 HTTP 请求超时（秒） |
 | `COLLECTION_MOLIZHISHU_MAX_POLLS` | int | `360` | 单 QueryTask 轮询子任务结果的最大次数 |
 | `COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS` | int | `8` | 轮询间隔（秒） |
-| `MOLIZHISHU_DEFAULT_SCREENSHOT` | int | `0` | 默认是否请求截图（0/1，具体语义见 M11） |
+| `MOLIZHISHU_DEFAULT_SCREENSHOT` | int | `0` | 模力指数 Run 未传 `provider_screenshot` 时的默认截图策略（`0` 不截 / `1` 仅成功 / `2` 全部） |
 | `MOLIZHISHU_CALLBACK_ENABLED` | bool | `false` | 是否启用 provider 回调（M10 实现） |
 | `MOLIZHISHU_CALLBACK_TOKEN` | string | 空 | 回调鉴权令牌（M10 实现；不得写入日志明文） |
 
@@ -1976,7 +1976,59 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/source-types"
 
 ---
 
-### 10.7 获取行业基准参照指标
+### 10.7 获取模力指数区域列表（provider 代理）
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 获取模力指数区域列表 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/providers/molizhishu/regions` |
+
+**说明：** 本接口为模力指数 provider 能力的本地代理，调用免鉴权的 `city-info` 上游接口并做短缓存；不消耗本系统采集 token。创建 `collection_source=molizhishu` 的运行时，可将返回的 `region_code` 写入 `POST /runs` 的 `region_code` 字段（当前仅支持单个区域，提交体会转换为 `regionCode: [region_code]`）。
+
+**入参：** 无
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `items` | array | 省级行政区列表 |
+
+`items[]` 元素：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `province` | string | 省份/直辖市/自治区名称 |
+| `region_code` | string | 模力指数区域编码，如 `110000` |
+
+**解析规则：** 上游 `city-info` 按省级返回 `province` 与 `regionCode` 数组；本接口每个省仅暴露 `regionCode[0]` 作为 `region_code`，与创建 Run 时单值 `region_code` 口径一致。
+
+**常见错误：** `50210` 上游不可用、超时或返回无效数据
+
+**调用示例：**
+
+```bash
+curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/providers/molizhishu/regions"
+```
+
+**响应示例：**
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "items": [
+      {"province": "北京市", "region_code": "110000"},
+      {"province": "上海市", "region_code": "310000"}
+    ]
+  }
+}
+```
+
+---
+
+### 10.8 获取行业基准参照指标
 
 | 项目 | 说明 |
 | --- | --- |

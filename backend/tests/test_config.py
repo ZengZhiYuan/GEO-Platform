@@ -173,8 +173,8 @@ def test_molizhishu_disabled_without_token_starts_ok(tmp_path):
     assert settings.MOLIZHISHU_API_TOKEN == ""
 
 
-@pytest.mark.parametrize("screenshot_value", [2, -1, 99])
-def test_molizhishu_default_screenshot_must_be_zero_or_one(
+@pytest.mark.parametrize("screenshot_value", [-1, 3, 99])
+def test_molizhishu_default_screenshot_rejects_invalid_values(
     tmp_path, screenshot_value
 ):
     with pytest.raises(ValidationError, match="MOLIZHISHU_DEFAULT_SCREENSHOT"):
@@ -184,18 +184,13 @@ def test_molizhishu_default_screenshot_must_be_zero_or_one(
         )
 
 
-def test_molizhishu_default_screenshot_accepts_zero_and_one(tmp_path):
-    zero_settings = make_settings(
-        REPORT_STORAGE_DIR=str(tmp_path),
-        MOLIZHISHU_DEFAULT_SCREENSHOT=0,
-    )
-    one_settings = make_settings(
-        REPORT_STORAGE_DIR=str(tmp_path / "one"),
-        MOLIZHISHU_DEFAULT_SCREENSHOT=1,
-    )
-
-    assert zero_settings.MOLIZHISHU_DEFAULT_SCREENSHOT == 0
-    assert one_settings.MOLIZHISHU_DEFAULT_SCREENSHOT == 1
+def test_molizhishu_default_screenshot_accepts_zero_one_two(tmp_path):
+    for value in (0, 1, 2):
+        settings = make_settings(
+            REPORT_STORAGE_DIR=str(tmp_path / str(value)),
+            MOLIZHISHU_DEFAULT_SCREENSHOT=value,
+        )
+        assert settings.MOLIZHISHU_DEFAULT_SCREENSHOT == value
 
 
 def test_api_keys_are_trimmed_deduped_and_empty_values_removed():
