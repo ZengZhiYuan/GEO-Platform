@@ -10,7 +10,7 @@ def _seed_platforms(session_factory) -> None:
         db.commit()
 
 
-def test_platform_endpoints_groups_official_and_aidso_codes(client, session_factory):
+def test_platform_endpoints_groups_official_and_molizhishu_codes(client, session_factory):
     _seed_platforms(session_factory)
 
     payload = client.get("/api/geo-monitoring/platform-endpoints").json()["data"]
@@ -18,21 +18,44 @@ def test_platform_endpoints_groups_official_and_aidso_codes(client, session_fact
 
     assert "doubao" in groups
     doubao_codes = {item["platform_code"] for item in groups["doubao"]["endpoints"]}
-    assert {"doubao", "aidso_doubao_web", "aidso_doubao_app"}.issubset(doubao_codes)
+    assert {
+        "doubao",
+        "molizhishu_doubao_web",
+        "molizhishu_doubao_mobile",
+    }.issubset(doubao_codes)
 
     web = next(
-        item for item in groups["doubao"]["endpoints"] if item["platform_code"] == "aidso_doubao_web"
+        item
+        for item in groups["doubao"]["endpoints"]
+        if item["platform_code"] == "molizhishu_doubao_web"
     )
     app = next(
-        item for item in groups["doubao"]["endpoints"] if item["platform_code"] == "aidso_doubao_app"
+        item
+        for item in groups["doubao"]["endpoints"]
+        if item["platform_code"] == "molizhishu_doubao_mobile"
     )
     assert web["endpoint_type"] == "web"
     assert app["endpoint_type"] == "app"
     assert web["endpoint_label"]
     assert app["endpoint_label"]
+    assert web["base_platform"] == "doubao"
+    assert app["base_platform"] == "doubao"
 
     endpoint_types = [item["endpoint_type"] for item in groups["doubao"]["endpoints"]]
     assert endpoint_types.index("web") < endpoint_types.index("app")
+
+
+def test_platform_endpoints_labels_new_molizhishu_base_platforms(client, session_factory):
+    _seed_platforms(session_factory)
+
+    payload = client.get("/api/geo-monitoring/platform-endpoints").json()["data"]
+    groups = {group["base_platform"]: group for group in payload["groups"]}
+
+    assert groups["qianwen"]["base_platform_label"] == "通义千问"
+    assert groups["quark"]["base_platform_label"] == "夸克 AI"
+    assert groups["baiduai"]["base_platform_label"] == "百度 AI+"
+    assert groups["weibo_zhisou"]["base_platform_label"] == "微博智搜"
+    assert groups["wenxinyiyan"]["base_platform_label"] == "文心一言"
 
 
 def test_platform_endpoints_respects_extra_config(client, session_factory):

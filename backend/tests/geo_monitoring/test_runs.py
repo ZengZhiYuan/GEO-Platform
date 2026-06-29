@@ -13,7 +13,16 @@ from app.geo_monitoring.repositories import runs as run_repo
 from app.geo_monitoring.schemas import RunCreate
 from app.geo_monitoring.services import collection as collection_service
 from app.geo_monitoring.services import runs as run_service
-from app.geo_monitoring.services.platforms import DEFAULT_PLATFORMS
+from app.geo_monitoring.services.platforms import DEFAULT_PLATFORMS, OFFICIAL_PLATFORMS
+
+
+def _disabled_except(*enabled_codes: str) -> set[str]:
+    enabled = set(enabled_codes)
+    return {
+        platform["platform_code"]
+        for platform in DEFAULT_PLATFORMS
+        if platform["platform_code"] not in enabled
+    }
 
 
 def _seed_platforms(session_factory, disabled: set[str] | None = None) -> None:
@@ -171,7 +180,7 @@ def test_run_defaults_to_active_prompt_set_and_enabled_platforms(
     client, session_factory, project_id
 ):
     setup = _active_prompt_setup(client, project_id, prompt_count=1)
-    _seed_platforms(session_factory, disabled={"yuanbao", "deepseek", "kimi"})
+    _seed_platforms(session_factory, disabled=_disabled_except("doubao", "qwen"))
 
     created = client.post(
         "/api/geo-monitoring/runs", json={"project_id": project_id}
@@ -188,6 +197,23 @@ def test_run_defaults_to_active_prompt_set_and_enabled_platforms(
     assert created["expected_query_count"] == 2
     assert listed["total"] == 1
     assert detail["run_no"].startswith("RUN-")
+
+
+def test_official_run_defaults_exclude_molizhishu_when_all_platforms_enabled(
+    client, session_factory, project_id
+):
+    setup = _active_prompt_setup(client, project_id, prompt_count=1)
+    _seed_platforms(session_factory)
+
+    created = client.post(
+        "/api/geo-monitoring/runs", json={"project_id": project_id}
+    ).json()["data"]
+
+    official_codes = {platform["platform_code"] for platform in OFFICIAL_PLATFORMS}
+    assert created["prompt_set_id"] == setup["prompt_set"]["id"]
+    assert set(created["platform_codes"]) == official_codes
+    assert created["expected_query_count"] == len(official_codes)
+    assert not any(code.startswith("molizhishu_") for code in created["platform_codes"])
 
 
 def test_run_rejects_cross_project_prompt_set_and_unavailable_platforms(
@@ -224,10 +250,37 @@ def test_run_rejects_cross_project_prompt_set_and_unavailable_platforms(
 def test_official_run_rejects_aidso_platform(client, session_factory, project_id):
     _active_prompt_setup(client, project_id, prompt_count=1)
     _seed_platforms(session_factory)
+    with session_factory() as db:
+        db.add(
+            AIPlatform(
+                platform_code="aidso_doubao_web",
+                platform_name="豆包 Web 端",
+                adapter_type="aidso",
+                model_name="aidso:DB",
+                enabled=True,
+                extra_config={"aidso_name": "DB"},
+            )
+        )
+        db.commit()
 
     body = client.post(
         "/api/geo-monitoring/runs",
         json={"project_id": project_id, "platform_codes": ["aidso_doubao_web"]},
+    ).json()
+
+    assert body["code"] == 40031
+
+
+def test_official_run_rejects_molizhishu_platform(client, session_factory, project_id):
+    _active_prompt_setup(client, project_id, prompt_count=1)
+    _seed_platforms(session_factory)
+
+    body = client.post(
+        "/api/geo-monitoring/runs",
+        json={
+            "project_id": project_id,
+            "platform_codes": ["molizhishu_doubao_web"],
+        },
     ).json()
 
     assert body["code"] == 40031

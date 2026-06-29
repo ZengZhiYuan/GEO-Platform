@@ -59,9 +59,12 @@ def _enabled_prompts(db: Session, prompt_set_id: int):
 
 # 判断平台是否属于当前采集源
 def _platform_matches_collection_source(platform, collection_source: str) -> bool:
+    adapter_type = platform.adapter_type
     if collection_source == "aidso":
-        return platform.adapter_type == "aidso"
-    return platform.adapter_type != "aidso"
+        return adapter_type == "aidso"
+    if collection_source == "molizhishu":
+        return adapter_type == "molizhishu"
+    return adapter_type not in {"aidso", "molizhishu"}
 
 
 # 解析并校验可用的 AI 平台列表
@@ -447,6 +450,7 @@ def cancel_run(db: Session, run_id: int) -> MonitorRun:
     run.collection_status = "cancelled"
     run.completed_at = now
     run.finished_at = now
+    db.flush()
     refresh_run_aggregation(db, run)
     db.commit()
     db.refresh(run)
@@ -496,6 +500,7 @@ def retry_failed_tasks(db: Session, run_id: int) -> tuple[MonitorRun, int]:
     run.completed_at = None
     run.finished_at = None
     run.error_summary = None
+    db.flush()
     refresh_run_aggregation(db, run)
     db.commit()
 

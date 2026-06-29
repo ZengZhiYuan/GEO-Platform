@@ -7,6 +7,15 @@ from app.geo_monitoring.services import answers as answer_service
 from app.geo_monitoring.services.platforms import DEFAULT_PLATFORMS
 
 
+def _disabled_except(*enabled_codes: str) -> set[str]:
+    enabled = set(enabled_codes)
+    return {
+        platform["platform_code"]
+        for platform in DEFAULT_PLATFORMS
+        if platform["platform_code"] not in enabled
+    }
+
+
 def _seed_platforms(session_factory, disabled: set[str] | None = None) -> None:
     disabled = disabled or set()
     with session_factory() as db:
@@ -111,7 +120,7 @@ def test_run_detail_includes_task_counters_and_progress(
     client, session_factory, project_id
 ):
     _active_prompt_setup(client, project_id, prompt_count=2)
-    _seed_platforms(session_factory, disabled={"yuanbao", "deepseek", "kimi"})
+    _seed_platforms(session_factory, disabled=_disabled_except("doubao", "qwen"))
     run = client.post(
         "/api/geo-monitoring/runs", json={"project_id": project_id}
     ).json()["data"]
@@ -124,7 +133,7 @@ def test_run_detail_includes_task_counters_and_progress(
 
 def test_run_tasks_alias_matches_query_tasks(client, session_factory, project_id):
     _active_prompt_setup(client, project_id)
-    _seed_platforms(session_factory, disabled={"yuanbao", "deepseek", "kimi"})
+    _seed_platforms(session_factory, disabled=_disabled_except("doubao", "qwen"))
     run = client.post(
         "/api/geo-monitoring/runs", json={"project_id": project_id}
     ).json()["data"]

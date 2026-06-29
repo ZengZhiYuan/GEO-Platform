@@ -27,6 +27,11 @@ _BASE_PLATFORM_LABELS = {
     "baidu": "百度 AI",
     "douyin": "抖音 AI",
     "wenxin": "文心一言",
+    "qianwen": "通义千问",
+    "quark": "夸克 AI",
+    "baiduai": "百度 AI+",
+    "weibo_zhisou": "微博智搜",
+    "wenxinyiyan": "文心一言",
 }
 
 _ENDPOINT_TYPE_LABELS = {
