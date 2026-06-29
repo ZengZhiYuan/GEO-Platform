@@ -1,6 +1,8 @@
 from importlib.util import find_spec
 
 import pytest
+from sqlalchemy import CheckConstraint
+from sqlalchemy.exc import IntegrityError
 
 
 def test_monitoring_metadata_contains_only_expected_business_tables():
@@ -124,3 +126,93 @@ def test_run_create_rejects_aidso_thinking_platform_outside_requested_platforms(
             platform_codes=["aidso_doubao_web"],
             aidso_thinking_enabled_by_platform={"aidso_doubao_app": False},
         )
+
+
+def _collection_source_check_sql() -> str:
+    from app.geo_monitoring.models import MonitorRun
+
+    for item in MonitorRun.__table_args__:
+        if isinstance(item, CheckConstraint) and item.name == "ck_geo_monitor_run_collection_source":
+            return str(item.sqltext)
+    raise AssertionError("collection_source check constraint not found")
+
+
+def test_monitor_run_collection_source_check_includes_molizhishu():
+    assert "molizhishu" in _collection_source_check_sql()
+
+
+def test_monitor_run_provider_fields_have_defaults():
+    from app.geo_monitoring.models import MonitorRun
+
+    table = MonitorRun.__table__
+    assert table.c.provider_mode_by_platform.server_default is not None
+    assert table.c.provider_screenshot.server_default is not None
+    assert table.c.provider_callback_url.nullable is True
+    assert table.c.region_code.nullable is True
+
+
+def test_query_task_has_provider_tracking_columns():
+    from app.geo_monitoring.models import QueryTask
+
+    table = QueryTask.__table__
+    for column in {
+        "provider_name",
+        "provider_task_id",
+        "provider_subtask_id",
+        "provider_platform_code",
+        "provider_mode",
+        "provider_status",
+        "provider_result_json",
+        "provider_error_message",
+    }:
+        assert column in table.c
+
+
+def _seed_run(db, *, collection_source: str) -> None:
+    from app.geo_monitoring.models import MonitorProject, MonitorRun, PromptSet
+
+    project = MonitorProject(project_name="model-test")
+    db.add(project)
+    db.flush()
+    prompt_set = PromptSet(
+        project_id=project.id,
+        set_name="default",
+        version_no="v1",
+        status="active",
+    )
+    db.add(prompt_set)
+    db.flush()
+    db.add(
+        MonitorRun(
+            run_no=f"run-{collection_source}",
+            project_id=project.id,
+            prompt_set_id=prompt_set.id,
+            prompt_set_version="v1",
+            collection_source=collection_source,
+            platform_codes=[],
+        )
+    )
+    db.commit()
+
+
+def test_persist_monitor_run_with_molizhishu_collection_source(db):
+    from app.geo_monitoring.models import MonitorRun
+
+    _seed_run(db, collection_source="molizhishu")
+    run = db.query(MonitorRun).filter_by(run_no="run-molizhishu").one()
+    assert run.collection_source == "molizhishu"
+    assert run.provider_mode_by_platform == {}
+    assert run.provider_screenshot == 0
+
+
+def test_persist_monitor_run_with_aidso_collection_source_still_allowed(db):
+    from app.geo_monitoring.models import MonitorRun
+
+    _seed_run(db, collection_source="aidso")
+    run = db.query(MonitorRun).filter_by(run_no="run-aidso").one()
+    assert run.collection_source == "aidso"
+
+
+def test_persist_monitor_run_rejects_unknown_collection_source(db):
+    with pytest.raises(IntegrityError):
+        _seed_run(db, collection_source="unknown")

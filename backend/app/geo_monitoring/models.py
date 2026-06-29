@@ -326,7 +326,7 @@ class MonitorRun(BaseModel):
             name="ck_geo_monitor_run_report_status",
         ),
         CheckConstraint(
-            "collection_source IN ('official', 'aidso')",
+            "collection_source IN ('official', 'aidso', 'molizhishu')",
             name="ck_geo_monitor_run_collection_source",
         ),
         Index("ix_geo_monitor_run_project_created", "project_id", "created_at"),
@@ -367,6 +367,16 @@ class MonitorRun(BaseModel):
     aidso_thinking_enabled_by_platform: Mapped[dict] = mapped_column(
         JSON_VALUE, default=dict, server_default=text("'{}'"), nullable=False
     )
+    provider_mode_by_platform: Mapped[dict] = mapped_column(
+        JSON_VALUE, default=dict, server_default=text("'{}'"), nullable=False
+    )
+    provider_screenshot: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    provider_callback_url: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )
+    region_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
     platform_codes: Mapped[list[str]] = mapped_column(
         JSON_VALUE, default=list, nullable=False
     )
@@ -472,6 +482,14 @@ class QueryTask(BaseModel):
     provider_request_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )
+    provider_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_task_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    provider_subtask_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    provider_platform_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_mode: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_result_json: Mapped[dict | None] = mapped_column(JSON_VALUE, nullable=True)
+    provider_error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
