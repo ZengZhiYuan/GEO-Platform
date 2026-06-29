@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+
+import pytest
+
 from app.core.config import Settings
+from app.geo_monitoring.adapters.errors import NoAvailableCredentialError
 from app.geo_monitoring.services import collection as collection_service
+from app.geo_monitoring.services.platforms import MOLIZHISHU_PLATFORM_MAPPINGS
 
 
 def test_build_credential_key_pool_wires_redis_when_dramatiq_broker_is_redis(monkeypatch):
@@ -77,3 +83,41 @@ def test_build_credential_key_pool_honors_explicit_redis_client_override():
     pool = collection_service.build_credential_key_pool(settings, redis_client=sentinel)
 
     assert pool._redis is sentinel
+
+
+def test_build_credential_key_pool_registers_molizhishu_token_for_all_platforms():
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        DATABASE_URL="sqlite+pysqlite:///:memory:",
+        REDIS_URL="redis://test-redis.invalid:6379/15",
+        DRAMATIQ_BROKER="stub",
+        NACOS_ENABLED=False,
+        MOLIZHISHU_ENABLED=True,
+        MOLIZHISHU_API_TOKEN="molizhishu-token",
+    )
+
+    pool = collection_service.build_credential_key_pool(settings, redis_client=None)
+
+    for platform_code in MOLIZHISHU_PLATFORM_MAPPINGS:
+        credential = asyncio.run(pool.acquire(platform_code))
+        assert credential.api_key == "molizhishu-token"
+        assert credential.platform_code == platform_code
+
+
+def test_build_credential_key_pool_skips_molizhishu_when_disabled_even_with_token():
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        DATABASE_URL="sqlite+pysqlite:///:memory:",
+        REDIS_URL="redis://test-redis.invalid:6379/15",
+        DRAMATIQ_BROKER="stub",
+        NACOS_ENABLED=False,
+        MOLIZHISHU_ENABLED=False,
+        MOLIZHISHU_API_TOKEN="molizhishu-token",
+    )
+
+    pool = collection_service.build_credential_key_pool(settings, redis_client=None)
+
+    with pytest.raises(NoAvailableCredentialError):
+        asyncio.run(pool.acquire("molizhishu_doubao_web"))

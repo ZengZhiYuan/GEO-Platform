@@ -20,7 +20,11 @@ from app.geo_monitoring.adapters.key_pool import (
     CredentialKeyPool,
     YuanbaoCredential,
 )
-from app.geo_monitoring.adapters.registry import AdapterRegistry, build_adapter_registry
+from app.geo_monitoring.adapters.registry import (
+    AdapterRegistry,
+    _molizhishu_configured,
+    build_adapter_registry,
+)
 from app.geo_monitoring.models import (
     AIPlatform,
     Answer,
@@ -34,7 +38,7 @@ from app.geo_monitoring.models import (
 )
 from app.geo_monitoring.repositories import answers as answer_repo
 from app.geo_monitoring.services.brand_matcher import match_brands_in_text, normalize_answer_text
-from app.geo_monitoring.services.platforms import AIDSO_PLATFORM_MAPPINGS
+from app.geo_monitoring.services.platforms import AIDSO_PLATFORM_MAPPINGS, MOLIZHISHU_PLATFORM_MAPPINGS
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +174,13 @@ def build_credential_key_pool(
             pool.register_platform_credentials(
                 platform_code,
                 [ApiKeyCredential(platform_code=platform_code, api_key=aidso_token)],
+            )
+    molizhishu_token = runtime_settings.MOLIZHISHU_API_TOKEN.strip()
+    if _molizhishu_configured(runtime_settings) and molizhishu_token:
+        for platform_code in MOLIZHISHU_PLATFORM_MAPPINGS:
+            pool.register_platform_credentials(
+                platform_code,
+                [ApiKeyCredential(platform_code=platform_code, api_key=molizhishu_token)],
             )
     return pool
 

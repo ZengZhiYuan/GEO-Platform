@@ -116,6 +116,22 @@ def build_adapter_registry(runtime_settings: Any | None = None) -> AdapterRegist
                 )
             )
 
+    if _molizhishu_configured(runtime_settings):
+        from app.geo_monitoring.adapters.molizhishu import MolizhishuAdapter
+        from app.geo_monitoring.services.platforms import MOLIZHISHU_PLATFORM_MAPPINGS
+
+        for code, item in MOLIZHISHU_PLATFORM_MAPPINGS.items():
+            registry.register(
+                MolizhishuAdapter(
+                    code=code,
+                    molizhishu_platform=item["molizhishu_platform"],
+                    default_mode=item["default_mode"],
+                    base_url=runtime_settings.MOLIZHISHU_BASE_URL,
+                    timeout_seconds=runtime_settings.MOLIZHISHU_REQUEST_TIMEOUT_SECONDS,
+                    raw_response_enabled=raw_response_enabled,
+                )
+            )
+
     return registry
 
 
@@ -144,6 +160,13 @@ def _aidso_configured(runtime_settings: Any) -> bool:
     enabled = bool(getattr(runtime_settings, "AIDSO_ENABLED", False))
     base_url = str(getattr(runtime_settings, "AIDSO_BASE_URL", "")).strip()
     token = str(getattr(runtime_settings, "AIDSO_API_TOKEN", "")).strip()
+    return bool(enabled and base_url and token)
+
+
+def _molizhishu_configured(runtime_settings: Any) -> bool:
+    enabled = bool(getattr(runtime_settings, "MOLIZHISHU_ENABLED", False))
+    base_url = str(getattr(runtime_settings, "MOLIZHISHU_BASE_URL", "")).strip()
+    token = str(getattr(runtime_settings, "MOLIZHISHU_API_TOKEN", "")).strip()
     return bool(enabled and base_url and token)
 
 
