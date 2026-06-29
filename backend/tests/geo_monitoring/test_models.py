@@ -74,33 +74,39 @@ def test_project_and_run_input_validation():
     assert project.project_name == "测试项目"
     assert run.platform_codes == ["qwen", "deepseek"]
     assert run.collection_source == "official"
-    assert run.aidso_thinking_enabled_by_platform == {}
+    assert run.provider_mode_by_platform == {}
+    assert run.provider_screenshot == 0
+    assert run.region_code is None
+    assert run.provider_callback_url is None
 
 
-def test_run_create_accepts_aidso_collection_source():
-    assert find_spec("app.geo_monitoring.schemas") is not None
-
+def test_run_create_accepts_molizhishu_collection_source_with_valid_mode():
     from app.geo_monitoring.schemas import RunCreate
 
     run = RunCreate(
         project_id=1,
-        collection_source="aidso",
-        aidso_thinking_enabled_by_platform={
-            " aidso_doubao_web ": False,
-            "aidso_doubao_app": True,
+        collection_source="molizhishu",
+        provider_mode_by_platform={
+            " molizhishu_doubao_web ": "search",
+            "molizhishu_kimi_web": "standard",
         },
-        platform_codes=["aidso_doubao_web", "aidso_doubao_app"],
+        provider_screenshot=1,
+        region_code=" 110000 ",
+        provider_callback_url=" https://example.com/callback ",
+        platform_codes=["molizhishu_doubao_web", "molizhishu_kimi_web"],
     )
 
-    assert run.collection_source == "aidso"
-    assert run.aidso_thinking_enabled_by_platform == {
-        "aidso_doubao_web": False,
-        "aidso_doubao_app": True,
+    assert run.collection_source == "molizhishu"
+    assert run.provider_mode_by_platform == {
+        "molizhishu_doubao_web": "search",
+        "molizhishu_kimi_web": "standard",
     }
-    assert run.platform_codes == ["aidso_doubao_web", "aidso_doubao_app"]
+    assert run.provider_screenshot == 1
+    assert run.region_code == "110000"
+    assert run.provider_callback_url == "https://example.com/callback"
 
 
-def test_run_create_rejects_invalid_aidso_thinking_platform():
+def test_run_create_rejects_aidso_collection_source():
     from pydantic import ValidationError
 
     from app.geo_monitoring.schemas import RunCreate
@@ -110,11 +116,10 @@ def test_run_create_rejects_invalid_aidso_thinking_platform():
             project_id=1,
             collection_source="aidso",
             platform_codes=["aidso_doubao_web"],
-            aidso_thinking_enabled_by_platform={"qwen": False},
         )
 
 
-def test_run_create_rejects_aidso_thinking_platform_outside_requested_platforms():
+def test_run_create_rejects_legacy_aidso_thinking_field():
     from pydantic import ValidationError
 
     from app.geo_monitoring.schemas import RunCreate
@@ -122,9 +127,79 @@ def test_run_create_rejects_aidso_thinking_platform_outside_requested_platforms(
     with pytest.raises(ValidationError):
         RunCreate(
             project_id=1,
-            collection_source="aidso",
-            platform_codes=["aidso_doubao_web"],
-            aidso_thinking_enabled_by_platform={"aidso_doubao_app": False},
+            collection_source="molizhishu",
+            platform_codes=["molizhishu_doubao_web"],
+            aidso_thinking_enabled_by_platform={"aidso_doubao_web": False},
+        )
+
+
+def test_run_create_rejects_invalid_provider_mode():
+    from pydantic import ValidationError
+
+    from app.geo_monitoring.schemas import RunCreate
+
+    with pytest.raises(ValidationError):
+        RunCreate(
+            project_id=1,
+            collection_source="molizhishu",
+            platform_codes=["molizhishu_doubao_web"],
+            provider_mode_by_platform={"molizhishu_doubao_web": "reasoning"},
+        )
+
+
+def test_run_create_rejects_unknown_provider_mode_platform():
+    from pydantic import ValidationError
+
+    from app.geo_monitoring.schemas import RunCreate
+
+    with pytest.raises(ValidationError):
+        RunCreate(
+            project_id=1,
+            collection_source="molizhishu",
+            platform_codes=["molizhishu_doubao_web"],
+            provider_mode_by_platform={"qwen": "search"},
+        )
+
+
+def test_run_create_rejects_provider_mode_platform_outside_requested_platforms():
+    from pydantic import ValidationError
+
+    from app.geo_monitoring.schemas import RunCreate
+
+    with pytest.raises(ValidationError):
+        RunCreate(
+            project_id=1,
+            collection_source="molizhishu",
+            platform_codes=["molizhishu_doubao_web"],
+            provider_mode_by_platform={"molizhishu_kimi_web": "search"},
+        )
+
+
+def test_run_create_rejects_invalid_provider_screenshot():
+    from pydantic import ValidationError
+
+    from app.geo_monitoring.schemas import RunCreate
+
+    with pytest.raises(ValidationError):
+        RunCreate(
+            project_id=1,
+            collection_source="molizhishu",
+            platform_codes=["molizhishu_doubao_web"],
+            provider_screenshot=3,
+        )
+
+
+def test_run_create_rejects_empty_region_code():
+    from pydantic import ValidationError
+
+    from app.geo_monitoring.schemas import RunCreate
+
+    with pytest.raises(ValidationError):
+        RunCreate(
+            project_id=1,
+            collection_source="molizhishu",
+            platform_codes=["molizhishu_doubao_web"],
+            region_code="   ",
         )
 
 

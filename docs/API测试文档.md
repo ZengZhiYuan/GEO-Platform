@@ -603,11 +603,18 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/projects/1/monitor-setup" 
 | --- | --- | --- | --- |
 | `project_id` | integer | 是 | 项目 ID，必须大于等于 1 |
 | `prompt_set_id` | integer/null | 否 | 指定提示词集；不传则使用项目当前激活提示词集 |
+| `collection_source` | string | 否 | 采集来源，默认 `official`；新建可选 `official` / `molizhishu` |
+| `provider_mode_by_platform` | object | 否 | 模力指数平台模式映射 |
+| `provider_screenshot` | integer | 否 | 模力指数截图策略，默认 `0`，仅 `0/1/2` |
+| `region_code` | string/null | 否 | 模力指数区域编码 |
+| `provider_callback_url` | string/null | 否 | 模力指数回调地址 |
 | `platform_codes` | string[]/null | 否 | 指定平台代码；不传则使用项目 `default_platform_codes`；仍为空时使用全部已启用平台 |
+
+**废弃字段：** `aidso_thinking_enabled_by_platform`、`collection_source=aidso` 在新建请求中返回 `422`。
 
 运行响应字段：
 
-`id`、`run_no`、`project_id`、`prompt_set_id`、`prompt_set_version`、`trigger_type`、`triggered_by`、`status`、`collection_status`、`analysis_status`、`report_status`、`platform_codes`、`expected_query_count`、`total_tasks`、`succeeded_tasks`、`failed_tasks`、`cancelled_tasks`、`success_query_count`、`failed_query_count`、`valid_answer_count`、`data_completeness_rate`、`result_json`、`error_message`、`error_summary`、`started_at`、`completed_at`、`finished_at`、`created_at`、`updated_at`。
+`id`、`run_no`、`project_id`、`prompt_set_id`、`prompt_set_version`、`trigger_type`、`triggered_by`、`status`、`collection_status`、`analysis_status`、`report_status`、`collection_source`、`aidso_thinking_enabled_by_platform`（历史 Aidso 只读）、`provider_mode_by_platform`、`provider_screenshot`、`region_code`、`provider_callback_url`、`platform_codes`、`expected_query_count`、`total_tasks`、`succeeded_tasks`、`failed_tasks`、`cancelled_tasks`、`success_query_count`、`failed_query_count`、`valid_answer_count`、`data_completeness_rate`、`result_json`、`error_message`、`error_summary`、`started_at`、`completed_at`、`finished_at`、`created_at`、`updated_at`。
 
 运行详情额外返回：
 
@@ -624,7 +631,7 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/projects/1/monitor-setup" 
 | 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 分页查询监测运行 | `GET` | `/api/geo-monitoring/runs` | Query：`page`、`page_size`、`project_id`、`status`、`created_after`、`created_before` | 分页 `MonitorRunOut[]` | `code=0`，筛选条件生效 | 状态非法或时间格式非法返回 `422` |
-| 创建监测运行 | `POST` | `/api/geo-monitoring/runs` | Body：`RunCreate` | `MonitorRunOut` | 返回新 `run_no`，`total_tasks = 可用提示词数 * 平台数`，状态进入 `collecting` 或后续终态 | 项目无激活提示词集 `40030`；无可用提示词 HTTP `409`、`40901`；AI 平台不可用 `40031`；无可用平台 HTTP `409`、`40902` |
+| 创建监测运行 | `POST` | `/api/geo-monitoring/runs` | Body：`RunCreate` | `MonitorRunOut` | 返回新 `run_no`，`total_tasks = 可用提示词数 * 平台数`，状态进入 `collecting` 或后续终态；模力指数 run 持久化 `provider_*` 字段 | 项目无激活提示词集 `40030`；无可用提示词 HTTP `409`、`40901`；AI 平台不可用 `40031`；无可用平台 HTTP `409`、`40902`；非法 mode/废弃 Aidso 字段 `422` |
 | 获取运行详情 | `GET` | `/api/geo-monitoring/runs/{run_id}` | Path：`run_id` | `MonitorRunOut + progress_rate` | `data.id = run_id`，任务统计刷新 | 不存在 `40400` |
 | 取消运行 | `POST` | `/api/geo-monitoring/runs/{run_id}/cancel` | Path：`run_id` | `MonitorRunOut` | 未终态运行返回 `status=cancelled`；已终态运行返回当前终态 | 不存在 `40400` |
 | 重试失败任务 | `POST` | `/api/geo-monitoring/runs/{run_id}/retry-failed` | Path：`run_id` | `MonitorRunOut + retried_count` | `retried_count` 等于重置的失败任务数；有失败任务时状态回到 `collecting` | 已取消运行不可重试 `40040` |

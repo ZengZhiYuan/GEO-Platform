@@ -109,6 +109,19 @@ def _resolve_platforms(
     return platforms
 
 
+def _validate_provider_mode_for_resolved_platforms(
+    payload: RunCreate, resolved_platform_codes: list[str]
+) -> None:
+    if not payload.provider_mode_by_platform:
+        return
+    outside = set(payload.provider_mode_by_platform) - set(resolved_platform_codes)
+    if outside:
+        raise BusinessException(
+            message="provider_mode_by_platform 只能配置本次 platform_codes 内的平台",
+            code=422,
+        )
+
+
 def prepare_run_create(db: Session, payload: RunCreate):
     """校验并解析创建运行所需的项目、问题集、提示词与平台，不落库。"""
     project = require_active_project(db, payload.project_id)
@@ -124,6 +137,7 @@ def prepare_run_create(db: Session, payload: RunCreate):
         collection_source=payload.collection_source.value,
     )
     resolved_platform_codes = [platform.platform_code for platform in platforms]
+    _validate_provider_mode_for_resolved_platforms(payload, resolved_platform_codes)
     return project, prompt_set, prompts, platforms, resolved_platform_codes
 
 
@@ -316,7 +330,11 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
         analysis_status="skipped",
         report_status="skipped",
         collection_source=payload.collection_source.value,
-        aidso_thinking_enabled_by_platform=payload.aidso_thinking_enabled_by_platform,
+        aidso_thinking_enabled_by_platform={},
+        provider_mode_by_platform=payload.provider_mode_by_platform,
+        provider_screenshot=payload.provider_screenshot,
+        region_code=payload.region_code,
+        provider_callback_url=payload.provider_callback_url,
         platform_codes=platform_codes,
         expected_query_count=task_count,
         total_tasks=task_count,

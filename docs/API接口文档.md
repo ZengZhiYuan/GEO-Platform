@@ -264,8 +264,12 @@
 | `collection_status` | string | 采集阶段状态 |
 | `analysis_status` | string | 分析阶段状态 |
 | `report_status` | string | 报告阶段状态 |
-| `collection_source` | string | 采集来源：`official` / `aidso` |
-| `aidso_thinking_enabled_by_platform` | object | Aidso 数据源各平台端侧是否开启深度思考，键为平台编码，值为 boolean；未配置的平台默认开启 |
+| `collection_source` | string | 采集来源：`official` / `aidso` / `molizhishu` |
+| `aidso_thinking_enabled_by_platform` | object | 历史 Aidso 运行各平台深度思考开关（只读兼容） |
+| `provider_mode_by_platform` | object | 模力指数各平台采集模式，键为 `molizhishu_*` 平台编码，值为 `standard` / `reasoning` / `search` / `reasoning_search` |
+| `provider_screenshot` | integer | 模力指数截图策略：`0` 不截 / `1` 仅成功 / `2` 全部 |
+| `region_code` | string/null | 模力指数区域编码 |
+| `provider_callback_url` | string/null | 模力指数回调地址 |
 | `platform_codes` | string[] | 参与采集的平台 |
 | `expected_query_count` | integer | 预期查询数 |
 | `total_tasks` | integer | 总任务数 |
@@ -2068,9 +2072,18 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/benchmarks" \
 | --- | --- | --- | --- |
 | `project_id` | integer | 是 | 项目 ID，≥ 1 |
 | `prompt_set_id` | integer/null | 否 | 指定提示词集；不传则用激活集 |
-| `collection_source` | string | 否 | 采集来源，默认 `official`；可选 `official` / `aidso` |
-| `aidso_thinking_enabled_by_platform` | object | 否 | Aidso 数据源各平台端侧是否开启深度思考，键为平台编码，值为 boolean；未配置的平台默认开启 |
+| `collection_source` | string | 否 | 采集来源，默认 `official`；新建运行可选 `official` / `molizhishu`（`aidso` 已废弃，返回 `422`） |
+| `provider_mode_by_platform` | object | 否 | 模力指数各平台采集模式；键须在 `MOLIZHISHU_PLATFORM_MAPPINGS` 且属于本次 `platform_codes`；值须为平台支持的 `standard` / `reasoning` / `search` / `reasoning_search` |
+| `provider_screenshot` | integer | 否 | 模力指数截图策略，默认 `0`；仅允许 `0` / `1` / `2` |
+| `region_code` | string/null | 否 | 模力指数区域编码；若提供则非空 |
+| `provider_callback_url` | string/null | 否 | 模力指数回调地址，最大 500 字符 |
 | `platform_codes` | string[]/null | 否 | 指定平台；不传则用项目默认或全部启用平台 |
+
+**校验规则：**
+
+- 官方 run 仅允许官方平台（`adapter_type` 非 `aidso`/`molizhishu`）；模力指数 run 仅允许 `molizhishu_*` 平台；二者不可混用。
+- 请求体禁止携带已废弃字段 `aidso_thinking_enabled_by_platform`（`extra=forbid`，返回 `422`）。
+- `provider_mode_by_platform`、`provider_screenshot`、`region_code`、`provider_callback_url` 仅在 `collection_source=molizhishu` 时有效。
 
 **出参 `data`：** [MonitorRunOut](#29-monitorrunout监测运行)
 
@@ -2084,13 +2097,15 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
   -d '{"project_id": 1, "platform_codes": ["qwen", "deepseek"]}'
 ```
 
-Aidso 数据源示例：
+模力指数数据源示例：
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
   -H "Content-Type: application/json" \
-  -d '{"project_id": 1, "collection_source": "aidso", "aidso_thinking_enabled_by_platform": {"aidso_doubao_web": false, "aidso_doubao_app": true}, "platform_codes": ["aidso_doubao_web", "aidso_doubao_app"]}'
+  -d '{"project_id": 1, "collection_source": "molizhishu", "provider_mode_by_platform": {"molizhishu_doubao_web": "search", "molizhishu_kimi_web": "standard"}, "provider_screenshot": 1, "region_code": "110000", "platform_codes": ["molizhishu_doubao_web", "molizhishu_kimi_web"]}'
 ```
+
+**常见校验错误（HTTP 200 + `code=422`）：** 非法 `provider_mode`、未知平台、mode 配置不属于本次平台、携带废弃 `aidso_thinking_enabled_by_platform`、`collection_source=aidso`。
 
 ---
 

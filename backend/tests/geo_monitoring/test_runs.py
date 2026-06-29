@@ -123,43 +123,25 @@ def test_create_run_uses_configured_collection_max_attempts(
     assert [task.max_attempts for task in tasks] == [5]
 
 
-def test_create_aidso_run_persists_collection_source(
+def test_create_molizhishu_run_persists_provider_fields(
     client, session_factory, project_id
 ):
     setup = _active_prompt_setup(client, project_id, prompt_count=1)
-    with session_factory() as db:
-        db.add(
-            AIPlatform(
-                platform_code="aidso_doubao_web",
-                platform_name="豆包 Web 端",
-                adapter_type="aidso",
-                model_name="aidso:DB",
-                enabled=True,
-                extra_config={"aidso_name": "DB"},
-            )
-        )
-        db.add(
-            AIPlatform(
-                platform_code="aidso_doubao_app",
-                platform_name="豆包 App 端",
-                adapter_type="aidso",
-                model_name="aidso:DOUBA",
-                enabled=True,
-                extra_config={"aidso_name": "DOUBA"},
-            )
-        )
-        db.commit()
+    _seed_platforms(session_factory)
 
     response = client.post(
         "/api/geo-monitoring/runs",
         json={
             "project_id": project_id,
-            "collection_source": "aidso",
-            "aidso_thinking_enabled_by_platform": {
-                "aidso_doubao_web": False,
-                "aidso_doubao_app": True,
+            "collection_source": "molizhishu",
+            "provider_mode_by_platform": {
+                "molizhishu_doubao_web": "search",
+                "molizhishu_kimi_web": "standard",
             },
-            "platform_codes": ["aidso_doubao_web", "aidso_doubao_app"],
+            "provider_screenshot": 2,
+            "region_code": "110000",
+            "provider_callback_url": "https://example.com/callback",
+            "platform_codes": ["molizhishu_doubao_web", "molizhishu_kimi_web"],
         },
     ).json()
 
@@ -167,13 +149,136 @@ def test_create_aidso_run_persists_collection_source(
     assert response["code"] == 0
     assert run["prompt_set_id"] == setup["prompt_set"]["id"]
     assert run["prompt_set_version"] == "v1"
-    assert run["collection_source"] == "aidso"
-    assert run["aidso_thinking_enabled_by_platform"] == {
-        "aidso_doubao_web": False,
-        "aidso_doubao_app": True,
+    assert run["collection_source"] == "molizhishu"
+    assert run["provider_mode_by_platform"] == {
+        "molizhishu_doubao_web": "search",
+        "molizhishu_kimi_web": "standard",
     }
-    assert run["platform_codes"] == ["aidso_doubao_web", "aidso_doubao_app"]
+    assert run["provider_screenshot"] == 2
+    assert run["region_code"] == "110000"
+    assert run["provider_callback_url"] == "https://example.com/callback"
+    assert run["platform_codes"] == ["molizhishu_doubao_web", "molizhishu_kimi_web"]
     assert run["expected_query_count"] == 2
+
+
+def test_create_run_rejects_aidso_collection_source(client, session_factory, project_id):
+    _active_prompt_setup(client, project_id, prompt_count=1)
+    _seed_platforms(session_factory)
+
+    response = client.post(
+        "/api/geo-monitoring/runs",
+        json={
+            "project_id": project_id,
+            "collection_source": "aidso",
+            "platform_codes": ["aidso_doubao_web"],
+        },
+    ).json()
+
+    assert response["code"] == 422
+
+
+def test_create_run_rejects_legacy_aidso_thinking_field(
+    client, session_factory, project_id
+):
+    _active_prompt_setup(client, project_id, prompt_count=1)
+    _seed_platforms(session_factory)
+
+    response = client.post(
+        "/api/geo-monitoring/runs",
+        json={
+            "project_id": project_id,
+            "collection_source": "molizhishu",
+            "platform_codes": ["molizhishu_doubao_web"],
+            "aidso_thinking_enabled_by_platform": {"aidso_doubao_web": False},
+        },
+    ).json()
+
+    assert response["code"] == 422
+
+
+def test_molizhishu_run_rejects_official_platform(client, session_factory, project_id):
+    _active_prompt_setup(client, project_id, prompt_count=1)
+    _seed_platforms(session_factory)
+
+    body = client.post(
+        "/api/geo-monitoring/runs",
+        json={
+            "project_id": project_id,
+            "collection_source": "molizhishu",
+            "platform_codes": ["qwen"],
+        },
+    ).json()
+
+    assert body["code"] == 40031
+
+
+def test_molizhishu_run_rejects_invalid_mode_via_api(client, session_factory, project_id):
+    _active_prompt_setup(client, project_id, prompt_count=1)
+    _seed_platforms(session_factory)
+
+    response = client.post(
+        "/api/geo-monitoring/runs",
+        json={
+            "project_id": project_id,
+            "collection_source": "molizhishu",
+            "platform_codes": ["molizhishu_doubao_web"],
+            "provider_mode_by_platform": {"molizhishu_doubao_web": "reasoning"},
+        },
+    ).json()
+
+    assert response["code"] == 422
+
+
+def test_molizhishu_run_rejects_provider_mode_outside_default_platforms(
+    client, session_factory, project_id
+):
+    from app.geo_monitoring.models import MonitorProject
+
+    _active_prompt_setup(client, project_id, prompt_count=1)
+    _seed_platforms(session_factory)
+    with session_factory() as db:
+        project = db.get(MonitorProject, project_id)
+        project.default_platform_codes = ["molizhishu_doubao_web"]
+        db.commit()
+
+    response = client.post(
+        "/api/geo-monitoring/runs",
+        json={
+            "project_id": project_id,
+            "collection_source": "molizhishu",
+            "provider_mode_by_platform": {"molizhishu_kimi_web": "search"},
+        },
+    ).json()
+
+    assert response["code"] == 422
+    assert "provider_mode_by_platform" in response["message"]
+
+
+def test_molizhishu_run_persists_provider_mode_for_default_platforms(
+    client, session_factory, project_id
+):
+    from app.geo_monitoring.models import MonitorProject
+
+    _active_prompt_setup(client, project_id, prompt_count=1)
+    _seed_platforms(session_factory)
+    with session_factory() as db:
+        project = db.get(MonitorProject, project_id)
+        project.default_platform_codes = ["molizhishu_doubao_web"]
+        db.commit()
+
+    response = client.post(
+        "/api/geo-monitoring/runs",
+        json={
+            "project_id": project_id,
+            "collection_source": "molizhishu",
+            "provider_mode_by_platform": {"molizhishu_doubao_web": "search"},
+        },
+    ).json()
+
+    run = response["data"]
+    assert response["code"] == 0
+    assert run["platform_codes"] == ["molizhishu_doubao_web"]
+    assert run["provider_mode_by_platform"] == {"molizhishu_doubao_web": "search"}
 
 
 def test_run_defaults_to_active_prompt_set_and_enabled_platforms(
@@ -286,20 +391,6 @@ def test_official_run_rejects_molizhishu_platform(client, session_factory, proje
     assert body["code"] == 40031
 
 
-def test_aidso_run_rejects_official_platform(client, session_factory, project_id):
-    _active_prompt_setup(client, project_id, prompt_count=1)
-    _seed_platforms(session_factory)
-
-    body = client.post(
-        "/api/geo-monitoring/runs",
-        json={
-            "project_id": project_id,
-            "collection_source": "aidso",
-            "platform_codes": ["qwen"],
-        },
-    ).json()
-
-    assert body["code"] == 40031
 
 
 def test_run_rejects_inactive_project_and_empty_enabled_prompts(
