@@ -195,6 +195,30 @@ class MolizhishuAdapter:
         _raise_for_envelope(response, data, api_key=api_key)
         return data
 
+    async def stop_task(
+        self,
+        task_id: str,
+        *,
+        credential: PlatformCredential,
+    ) -> None:
+        """调用模力指数 stop API 停止主任务。"""
+        api_key = _require_api_key(credential)
+        normalized_task_id = task_id.strip()
+        if not normalized_task_id:
+            raise AdapterError(
+                "molizhishu task id is required",
+                category=ErrorCategory.INVALID_REQUEST,
+                secrets=(api_key,),
+            )
+        response = await _request(
+            "PUT",
+            f"{self._base_url}/task/{normalized_task_id}/stop",
+            api_key=api_key,
+            timeout_seconds=min(self._timeout_seconds, 10.0),
+        )
+        data = _json_response(response, api_key=api_key)
+        _raise_for_envelope(response, data, api_key=api_key)
+
 
 def _require_api_key(credential: PlatformCredential) -> str:
     if not credential.api_key:

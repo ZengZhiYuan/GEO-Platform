@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -14,7 +15,12 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, settings as default_settings
 from app.core.database import SessionLocal
 from app.geo_monitoring.adapters.base import PlatformAnswer, PlatformQuery
-from app.geo_monitoring.adapters.errors import AdapterError, ErrorCategory, is_retryable
+from app.geo_monitoring.adapters.errors import (
+    AdapterError,
+    ErrorCategory,
+    NoAvailableCredentialError,
+    is_retryable,
+)
 from app.geo_monitoring.adapters.key_pool import (
     ApiKeyCredential,
     CredentialKeyPool,
@@ -756,6 +762,154 @@ def _mark_task_cancelled(db: Session, task: QueryTask, now: datetime) -> None:
     task.status = "cancelled"
     task.completed_at = now
     task.finished_at = now
+
+
+async def _stop_single_molizhishu_provider_task(
+    run_id: int,
+    task_id: str,
+    subtask_ids: list[str | None],
+    *,
+    adapter: Any,
+    credential: Any,
+    platform_code: str,
+    runtime: CollectionRuntime,
+) -> bool:
+    for subtask_id in subtask_ids:
+        logger.info(
+            "molizhishu stop requested run_id=%s task_id=%s subtask_id=%s",
+            run_id,
+            task_id,
+            subtask_id,
+        )
+    try:
+        await adapter.stop_task(task_id, credential=credential)
+        await runtime.key_pool.report_success(
+            credential.fingerprint, platform_code=platform_code
+        )
+        return True
+    except AdapterError as exc:
+        await runtime.key_pool.report_failure(
+            credential.fingerprint,
+            exc,
+            platform_code=platform_code,
+        )
+        logger.warning(
+            "molizhishu stop failed run_id=%s task_id=%s category=%s message=%s",
+            run_id,
+            task_id,
+            exc.category.value,
+            exc.sanitized_message(),
+        )
+        return False
+
+
+async def _stop_molizhishu_provider_tasks_async(
+    run_id: int,
+    task_subtasks: dict[str, list[str | None]],
+) -> int:
+    runtime = get_runtime()
+    platform_code = next(iter(MOLIZHISHU_PLATFORM_MAPPINGS))
+    try:
+        credential = await runtime.key_pool.acquire(platform_code)
+    except NoAvailableCredentialError:
+        logger.warning(
+            "molizhishu stop skipped run_id=%s: no credential available",
+            run_id,
+        )
+        return 0
+
+    adapter = runtime.adapter_registry.get(platform_code)
+    from app.geo_monitoring.adapters.molizhishu import MolizhishuAdapter
+
+    if not isinstance(adapter, MolizhishuAdapter):
+        logger.warning(
+            "molizhishu stop skipped run_id=%s: adapter unavailable",
+            run_id,
+        )
+        return 0
+
+    results = await asyncio.gather(
+        *[
+            _stop_single_molizhishu_provider_task(
+                run_id,
+                task_id,
+                subtask_ids,
+                adapter=adapter,
+                credential=credential,
+                platform_code=platform_code,
+                runtime=runtime,
+            )
+            for task_id, subtask_ids in sorted(task_subtasks.items())
+        ]
+    )
+    return sum(1 for succeeded in results if succeeded)
+
+
+def collect_molizhishu_provider_stop_targets(
+    db: Session, run_id: int
+) -> dict[str, list[str | None]]:
+    """收集取消前需要 provider stop 的唯一 taskId（仅未终态且已有 provider_task_id）。"""
+    from app.geo_monitoring.repositories import runs as run_repo
+
+    run = run_repo.get_by_id(db, run_id)
+    if run is None or run.collection_source != "molizhishu":
+        return {}
+
+    rows = db.execute(
+        select(QueryTask.provider_task_id, QueryTask.provider_subtask_id).where(
+            QueryTask.run_id == run_id,
+            QueryTask.status.in_(CLAIMABLE_TASK_STATUSES),
+            QueryTask.provider_task_id.isnot(None),
+            QueryTask.is_deleted.is_(False),
+        )
+    ).all()
+
+    task_subtasks: dict[str, list[str | None]] = {}
+    for task_id, subtask_id in rows:
+        if not isinstance(task_id, str) or not task_id.strip():
+            continue
+        normalized_task_id = task_id.strip()
+        task_subtasks.setdefault(normalized_task_id, []).append(subtask_id)
+    return task_subtasks
+
+
+def stop_molizhishu_provider_tasks(
+    run_id: int, task_subtasks: dict[str, list[str | None]]
+) -> int:
+    """对已收集的 taskId 并发调用 provider stop（供后台线程与测试使用）。"""
+    if not task_subtasks:
+        return 0
+    if not _molizhishu_configured(get_runtime().settings):
+        logger.warning(
+            "molizhishu stop skipped run_id=%s: provider not configured",
+            run_id,
+        )
+        return 0
+    return asyncio.run(_stop_molizhishu_provider_tasks_async(run_id, task_subtasks))
+
+
+def schedule_molizhishu_provider_stop(
+    run_id: int, task_subtasks: dict[str, list[str | None]]
+) -> bool:
+    """后台调度 provider stop，不阻塞取消 API。"""
+    import threading
+
+    if not task_subtasks:
+        return False
+    thread = threading.Thread(
+        target=stop_molizhishu_provider_tasks,
+        args=(run_id, task_subtasks),
+        name=f"molizhishu-stop-run-{run_id}",
+        daemon=True,
+    )
+    thread.start()
+    return True
+
+
+def stop_molizhishu_provider_tasks_for_run(db: Session, run_id: int) -> int:
+    """同步收集并 stop（保留给脚本或测试；取消 API 应使用 schedule）。"""
+    task_subtasks = collect_molizhishu_provider_stop_targets(db, run_id)
+    return stop_molizhishu_provider_tasks(run_id, task_subtasks)
 
 
 # 加载项目活跃品牌及按品牌分组的启用别名

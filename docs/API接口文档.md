@@ -2133,6 +2133,12 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
 
 **出参 `data`：** [MonitorRunOut](#29-monitorrunout监测运行)（`status=cancelled` 或保持终态）
 
+**行为说明：**
+
+- 将 `pending` / `queued` / `running` 的 QueryTask 标记为 `cancelled`；已成功（`success`）子任务保留结果与答案。
+- 当运行 `collection_source=molizhishu` 时，取消请求**先完成本地落库**，再在后台并发调用模力指数 `PUT /task/{taskId}/stop`（按唯一 `taskId` 去重，单次 stop 超时上限 10 秒）；日志记录 `run_id`、`task_id`、`subtask_id`。
+- 模力指数 stop 仅能停止尚未分配的 pending 子任务；已 `assigned` / `processing` 的子任务可能继续计费直至 provider 侧终态，本地仍标记为 `cancelled` 且不再轮询。
+
 ---
 
 ### 11.5 重试失败任务

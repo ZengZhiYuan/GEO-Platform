@@ -427,6 +427,22 @@ def test_molizhishu_reuse_requires_task_id_when_subtask_id_present():
 
 
 @respx.mock
+def test_molizhishu_stop_task_calls_put_endpoint():
+    stop_route = respx.put(f"{BASE_URL}/task/task-mlz-1/stop").mock(
+        return_value=httpx.Response(
+            200,
+            json={"success": True, "code": 200, "message": "ok"},
+        )
+    )
+
+    asyncio.run(_adapter().stop_task("task-mlz-1", credential=_credential()))
+
+    assert stop_route.called
+    request = stop_route.calls[0].request
+    assert request.headers["Authorization"] == "Bearer molizhishu-token"
+
+
+@respx.mock
 def test_molizhishu_submit_includes_region_code_when_provided():
     submit_route = respx.post(f"{BASE_URL}/task/batch/shared").mock(
         return_value=httpx.Response(200, json=_submit_payload())

@@ -8,7 +8,10 @@ from sqlalchemy import select
 from app.geo_monitoring.models import (
     AIPlatform,
     Answer,
+    MonitorProject,
     MonitorRun,
+    Prompt,
+    PromptSet,
     QueryTask,
 )
 from app.geo_monitoring.services import runs as run_service
@@ -301,6 +304,306 @@ def test_list_runs_filters_by_status_and_created_range(
     assert in_range["total"] == 1
     assert in_range["items"][0]["id"] == run["id"]
     assert out_of_range["total"] == 0
+
+
+def _seed_molizhishu_run_with_provider_tasks(
+    client,
+    session_factory,
+    project_id: int,
+    *,
+    statuses: list[str],
+    provider_task_ids: list[str | None],
+) -> dict:
+    from app.geo_monitoring.models import MonitorProject
+
+    _active_prompt_setup(client, project_id, prompt_count=len(statuses))
+    _seed_platforms(session_factory)
+    with session_factory() as db:
+        project = db.get(MonitorProject, project_id)
+        project.default_platform_codes = ["molizhishu_doubao_web"]
+        db.commit()
+
+    run = client.post(
+        "/api/geo-monitoring/runs",
+        json={
+            "project_id": project_id,
+            "collection_source": "molizhishu",
+            "platform_codes": ["molizhishu_doubao_web"],
+        },
+    ).json()["data"]
+
+    with session_factory() as db:
+        tasks = list(
+            db.execute(
+                select(QueryTask)
+                .where(QueryTask.run_id == run["id"], QueryTask.is_deleted.is_(False))
+                .order_by(QueryTask.id)
+            )
+            .scalars()
+            .all()
+        )
+        assert len(tasks) == len(statuses)
+        now = datetime.now(timezone.utc)
+        for task, status, provider_task_id in zip(
+            tasks, statuses, provider_task_ids, strict=True
+        ):
+            task.status = status
+            if provider_task_id:
+                task.provider_task_id = provider_task_id
+                task.provider_subtask_id = f"sub-{task.id}"
+                task.provider_name = "molizhishu"
+            if status == "success":
+                task.completed_at = now
+                task.finished_at = now
+            elif status in {"failed", "cancelled"}:
+                task.completed_at = now
+                task.finished_at = now
+        db.commit()
+    return run
+
+
+def test_cancel_molizhishu_run_schedules_provider_stop_after_local_cancel(
+    client, session_factory, project_id, monkeypatch
+):
+    from app.geo_monitoring.services import collection as collection_service
+
+    run = _seed_molizhishu_run_with_provider_tasks(
+        client,
+        session_factory,
+        project_id,
+        statuses=["success", "running"],
+        provider_task_ids=[None, "provider-task-1"],
+    )
+    with session_factory() as db:
+        running_task = db.execute(
+            select(QueryTask).where(
+                QueryTask.run_id == run["id"],
+                QueryTask.provider_task_id == "provider-task-1",
+            )
+        ).scalar_one()
+        expected_subtask_id = running_task.provider_subtask_id
+
+    scheduled: list[tuple[int, dict[str, list[str | None]]]] = []
+    sync_stop_calls: list[int] = []
+
+    def _record_schedule(run_id: int, targets: dict[str, list[str | None]]) -> bool:
+        scheduled.append((run_id, dict(targets)))
+        return True
+
+    def _reject_sync_stop(db, run_id: int) -> int:
+        sync_stop_calls.append(run_id)
+        raise AssertionError("cancel API must not synchronously call provider stop")
+
+    monkeypatch.setattr(
+        collection_service,
+        "schedule_molizhishu_provider_stop",
+        _record_schedule,
+    )
+    monkeypatch.setattr(
+        collection_service,
+        "stop_molizhishu_provider_tasks_for_run",
+        _reject_sync_stop,
+    )
+
+    cancelled = client.post(
+        f"/api/geo-monitoring/runs/{run['id']}/cancel"
+    ).json()["data"]
+
+    assert sync_stop_calls == []
+    assert scheduled == [
+        (run["id"], {"provider-task-1": [expected_subtask_id]}),
+    ]
+    assert cancelled["status"] == "cancelled"
+    assert cancelled["succeeded_tasks"] == 1
+    assert cancelled["cancelled_tasks"] == 1
+
+
+def test_cancel_molizhishu_run_preserves_successful_tasks(
+    client, session_factory, project_id, monkeypatch
+):
+    from app.geo_monitoring.services import collection as collection_service
+
+    monkeypatch.setattr(
+        collection_service,
+        "schedule_molizhishu_provider_stop",
+        lambda run_id, targets: False,
+    )
+    run = _seed_molizhishu_run_with_provider_tasks(
+        client,
+        session_factory,
+        project_id,
+        statuses=["success", "queued"],
+        provider_task_ids=["provider-task-done", "provider-task-pending"],
+    )
+
+    client.post(f"/api/geo-monitoring/runs/{run['id']}/cancel")
+    tasks = client.get(
+        f"/api/geo-monitoring/runs/{run['id']}/tasks"
+    ).json()["data"]["items"]
+
+    statuses = {task["status"] for task in tasks}
+    assert statuses == {"success", "cancelled"}
+
+
+def _seed_molizhishu_run_graph(db, *, task_specs: list[tuple[str, str | None, str | None]]) -> int:
+    """task_specs: (status, provider_task_id, provider_subtask_id)"""
+    project = MonitorProject(project_name="molizhishu-stop", status="active")
+    db.add(project)
+    db.flush()
+    prompt_set = PromptSet(
+        project_id=project.id,
+        set_name="stop",
+        version_no="v1",
+        status="active",
+        prompt_count=len(task_specs),
+    )
+    db.add(prompt_set)
+    db.flush()
+    prompt_ids: list[int] = []
+    for index, _ in enumerate(task_specs):
+        prompt = Prompt(
+            prompt_set_id=prompt_set.id,
+            prompt_code=f"p{index}",
+            prompt_text=f"q{index}",
+            content_hash=f"{index:064d}",
+        )
+        db.add(prompt)
+        db.flush()
+        prompt_ids.append(prompt.id)
+    run = MonitorRun(
+        run_no="RUN-STOP-TEST",
+        project_id=project.id,
+        prompt_set_id=prompt_set.id,
+        prompt_set_version="v1",
+        trigger_type="manual",
+        status="collecting",
+        collection_status="running",
+        analysis_status="skipped",
+        report_status="skipped",
+        collection_source="molizhishu",
+        platform_codes=["molizhishu_doubao_web"],
+        expected_query_count=len(task_specs),
+        total_tasks=len(task_specs),
+    )
+    db.add(run)
+    db.flush()
+    for index, (status, provider_task_id, provider_subtask_id) in enumerate(task_specs):
+        db.add(
+            QueryTask(
+                run_id=run.id,
+                prompt_id=prompt_ids[index],
+                platform_code="molizhishu_doubao_web",
+                idempotency_key=f"stop-test-{run.id}-{index}",
+                status=status,
+                provider_task_id=provider_task_id,
+                provider_subtask_id=provider_subtask_id,
+                provider_name="molizhishu" if provider_task_id else None,
+            )
+        )
+    db.commit()
+    return run.id
+
+
+def test_collect_molizhishu_provider_stop_targets_filters_dedupes_and_skips_blank(
+    db,
+):
+    from app.geo_monitoring.services import collection as collection_service
+
+    run_id = _seed_molizhishu_run_graph(
+        db,
+        task_specs=[
+            ("success", "task-done", "sub-done"),
+            ("failed", "task-failed", "sub-failed"),
+            ("cancelled", "task-cancelled", "sub-cancelled"),
+            ("running", "task-shared", "sub-a"),
+            ("queued", "task-shared", "sub-b"),
+            ("running", "  ", "sub-blank"),
+            ("pending", "task-pending", "sub-pending"),
+        ],
+    )
+
+    targets = collection_service.collect_molizhishu_provider_stop_targets(db, run_id)
+
+    assert set(targets) == {"task-shared", "task-pending"}
+    assert set(targets["task-shared"]) == {"sub-a", "sub-b"}
+    assert targets["task-pending"] == ["sub-pending"]
+
+
+def test_stop_molizhishu_provider_tasks_continues_after_adapter_error(
+    session_factory, tmp_path, monkeypatch
+):
+    import asyncio
+
+    from app.core.config import Settings
+    from app.geo_monitoring.adapters.errors import AdapterError, ErrorCategory
+    from app.geo_monitoring.adapters.key_pool import ApiKeyCredential, CredentialKeyPool
+    from app.geo_monitoring.adapters.molizhishu import MolizhishuAdapter
+    from app.geo_monitoring.adapters.registry import AdapterRegistry
+    from app.geo_monitoring.services import collection as collection_service
+    from app.geo_monitoring.services.platforms import MOLIZHISHU_PLATFORM_MAPPINGS
+
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        DATABASE_URL="sqlite+pysqlite:///:memory:",
+        REDIS_URL="redis://test-redis.invalid:6379/15",
+        DRAMATIQ_BROKER="stub",
+        NACOS_ENABLED=False,
+        REPORT_STORAGE_DIR=str(tmp_path),
+        MOLIZHISHU_ENABLED=True,
+        MOLIZHISHU_BASE_URL="https://molizhishu.test",
+        MOLIZHISHU_API_TOKEN="token",
+    )
+    registry = AdapterRegistry()
+    platform_code = next(iter(MOLIZHISHU_PLATFORM_MAPPINGS))
+    mapping = MOLIZHISHU_PLATFORM_MAPPINGS[platform_code]
+    registry.register(
+        MolizhishuAdapter(
+            code=platform_code,
+            molizhishu_platform=mapping["molizhishu_platform"],
+            default_mode=mapping["default_mode"],
+            base_url="https://molizhishu.test",
+            timeout_seconds=0.2,
+            raw_response_enabled=False,
+        )
+    )
+    key_pool = CredentialKeyPool(None)
+    key_pool.register_platform_credentials(
+        platform_code,
+        [ApiKeyCredential(platform_code=platform_code, api_key="token")],
+    )
+    collection_service.configure_runtime(
+        collection_service.CollectionRuntime(
+            session_factory=session_factory,
+            settings=settings,
+            adapter_registry=registry,
+            key_pool=key_pool,
+        )
+    )
+
+    stop_calls: list[str] = []
+
+    async def fake_stop_task(self, task_id, *, credential):
+        stop_calls.append(task_id)
+        if task_id == "task-bad":
+            raise AdapterError("stop failed", category=ErrorCategory.INVALID_REQUEST)
+
+    monkeypatch.setattr(MolizhishuAdapter, "stop_task", fake_stop_task)
+    try:
+        stopped = asyncio.run(
+            collection_service._stop_molizhishu_provider_tasks_async(
+                99,
+                {
+                    "task-bad": ["sub-bad"],
+                    "task-good": ["sub-good"],
+                },
+            )
+        )
+    finally:
+        collection_service.reset_runtime()
+
+    assert set(stop_calls) == {"task-bad", "task-good"}
+    assert stopped == 1
 
 
 def test_run_answers_and_answer_detail(client, session_factory, project_id, db):

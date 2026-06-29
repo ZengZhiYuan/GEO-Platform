@@ -633,7 +633,7 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/projects/1/monitor-setup" 
 | 分页查询监测运行 | `GET` | `/api/geo-monitoring/runs` | Query：`page`、`page_size`、`project_id`、`status`、`created_after`、`created_before` | 分页 `MonitorRunOut[]` | `code=0`，筛选条件生效 | 状态非法或时间格式非法返回 `422` |
 | 创建监测运行 | `POST` | `/api/geo-monitoring/runs` | Body：`RunCreate` | `MonitorRunOut` | 返回新 `run_no`，`total_tasks = 可用提示词数 * 平台数`，状态进入 `collecting` 或后续终态；模力指数 run 持久化 `provider_*` 字段 | 项目无激活提示词集 `40030`；无可用提示词 HTTP `409`、`40901`；AI 平台不可用 `40031`；无可用平台 HTTP `409`、`40902`；非法 mode/废弃 Aidso 字段 `422` |
 | 获取运行详情 | `GET` | `/api/geo-monitoring/runs/{run_id}` | Path：`run_id` | `MonitorRunOut + progress_rate` | `data.id = run_id`，任务统计刷新 | 不存在 `40400` |
-| 取消运行 | `POST` | `/api/geo-monitoring/runs/{run_id}/cancel` | Path：`run_id` | `MonitorRunOut` | 未终态运行返回 `status=cancelled`；已终态运行返回当前终态 | 不存在 `40400` |
+| 取消运行 | `POST` | `/api/geo-monitoring/runs/{run_id}/cancel` | Path：`run_id` | `MonitorRunOut` | 未终态运行返回 `status=cancelled`；已终态运行返回当前终态；模力指数运行本地先落库，后台调度 provider stop | 不存在 `40400` |
 | 重试失败任务 | `POST` | `/api/geo-monitoring/runs/{run_id}/retry-failed` | Path：`run_id` | `MonitorRunOut + retried_count` | `retried_count` 等于重置的失败任务数；有失败任务时状态回到 `collecting` | 已取消运行不可重试 `40040` |
 
 ### 8.3 查询任务接口
@@ -1083,3 +1083,33 @@ backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\adapt
 - `Answer`、`AnswerCitation`、`AnswerBrandResult` 与现有分析服务兼容。
 - 答案详情可展示安全化 provider 原始信息。
 - source analysis 可统计模力指数引用来源。
+
+## 22. Run 路由、取消与停止任务测试（Task M9）
+
+覆盖 `backend/app/geo_monitoring/services/runs.py`、`backend/app/geo_monitoring/services/collection.py`、`backend/app/geo_monitoring/adapters/molizhishu.py` 的平台筛选、模力指数 run 创建与取消时 provider stop。
+
+| 场景 | 测试函数 | 预期 |
+| --- | --- | --- |
+| 模力指数 run 拒绝官方平台 | `test_molizhishu_run_rejects_official_platform` | `code=40031` |
+| 官方 run 拒绝模力指数平台 | `test_official_run_rejects_molizhishu_platform` | `code=40031` |
+| 官方默认平台排除 molizhishu | `test_official_run_defaults_exclude_molizhishu_when_all_platforms_enabled` | `platform_codes` 不含 `molizhishu_*` |
+| 模力指数 run 持久化 provider 字段 | `test_create_molizhishu_run_persists_provider_fields` | `provider_mode_by_platform` 等字段落库 |
+| provider stop API | `test_molizhishu_stop_task_calls_put_endpoint` | `PUT /task/{taskId}/stop` |
+| 取消模力指数 run 后台调度 stop | `test_cancel_molizhishu_run_schedules_provider_stop_after_local_cancel` | 本地先 `cancelled`，`schedule_molizhishu_provider_stop` 被调用 |
+| stop 目标收集 | `test_collect_molizhishu_provider_stop_targets_filters_dedupes_and_skips_blank` | 排除终态、去重 taskId、跳过空白 taskId |
+| stop 失败不阻断 | `test_stop_molizhishu_provider_tasks_continues_after_adapter_error` | 部分 `AdapterError` 后仍 stop 其他 taskId |
+| 取消保留已完成子任务 | `test_cancel_molizhishu_run_preserves_successful_tasks` | `success` 与 `cancelled` 共存 |
+| 通用取消行为 | `test_cancel_run_cancels_incomplete_tasks` | 仅未完成子任务变 `cancelled` |
+
+**执行命令：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\test_runs.py backend\tests\geo_monitoring\test_run_lifecycle.py -k "molizhishu or cancel"
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\adapters\test_molizhishu.py::test_molizhishu_stop_task_calls_put_endpoint
+```
+
+**验收点（Task M9）：**
+
+- 平台筛选与错误码清晰（`40031` / `40902`）。
+- 取消带 `provider_task_id` 的模力指数运行会尝试 provider stop。
+- 已完成子任务不会被删除或覆盖。

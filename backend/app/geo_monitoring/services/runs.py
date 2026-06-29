@@ -444,6 +444,14 @@ def cancel_run(db: Session, run_id: int) -> MonitorRun:
         db.refresh(run)
         return run
 
+    stop_targets: dict[str, list[str | None]] = {}
+    if run.collection_source == "molizhishu":
+        from app.geo_monitoring.services import collection as collection_service
+
+        stop_targets = collection_service.collect_molizhishu_provider_stop_targets(
+            db, run_id
+        )
+
     now = datetime.now(timezone.utc)
     # 锁定并取消所有 pending/queued/running 任务
     tasks = list(
@@ -472,6 +480,12 @@ def cancel_run(db: Session, run_id: int) -> MonitorRun:
     refresh_run_aggregation(db, run)
     db.commit()
     db.refresh(run)
+
+    if stop_targets:
+        from app.geo_monitoring.services import collection as collection_service
+
+        collection_service.schedule_molizhishu_provider_stop(run_id, stop_targets)
+
     return run
 
 
