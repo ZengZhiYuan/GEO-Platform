@@ -274,6 +274,16 @@
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
+`extra_config` 常用字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `base_platform` | string/null | 基础平台编码，如 `doubao`、`qwen`；用于平台端分组 |
+| `endpoint_type` | string/null | 端类型：`web` / `app` / `other` |
+| `endpoint_label` | string/null | 端侧展示名，如“网页端”“手机端” |
+| `logo_url` | string/null | 平台 Logo 地址 |
+| `thinking_mode` | string/null | 深度思考模式展示值 |
+
 ### 2.9 MonitorRunOut（监测运行）
 
 | 字段 | 类型 | 说明 |
@@ -314,6 +324,19 @@
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
 
+`aidso_thinking_enabled_by_platform` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `<platform_code>` | boolean | 动态键，平台端编码；值表示该平台端采集时是否开启 Aidso 深度思考，缺省平台按开启处理 |
+
+`result_json` 常用字段（当前主要用于调度运行扩展信息，后续可追加兼容字段）：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `schedule_idempotency_key` | string | 调度触发幂等键，仅 `trigger_type=schedule` 的运行可能返回 |
+| `planned_fire_time` | string (ISO8601) | 调度计划触发时间，UTC ISO8601 字符串，仅调度运行可能返回 |
+
 运行详情在此基础上额外包含 `progress_rate`（任务进度比例，decimal 字符串）。
 
 ### 2.10 QueryTaskOut（查询任务）
@@ -344,6 +367,18 @@
 | `finished_at` | string/null | 结束时间 |
 | `created_at` | string | 创建时间 |
 | `updated_at` | string | 更新时间 |
+
+`request_json` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `prompt_code` | string | 提示词编码 |
+| `prompt_text` | string | 实际发送给平台的提示词正文 |
+| `prompt_type` | string | 提示词类型 |
+| `scene_tag` | string/null | 场景标签 |
+| `contains_brand` | boolean | 提示词正文是否包含目标品牌 |
+| `content_hash` | string/null | 提示词内容哈希 |
+| `prompt_set_version` | string | 创建任务时使用的提示词集版本 |
 
 ### 2.11 AnswerRead / AnswerDetailRead（答案）
 
@@ -377,6 +412,22 @@
 | `raw_response_safe` | object/null | 白名单原始响应安全子集。官方/Aidso：含 `model`/`usage`/`choices.finish_reason`/`output.search_info`/Aidso 思考与搜索词等。模力指数额外含 `status`、`answerContent`（截断）、`citationList[]`（title/url/site）、`referenceList[]`（title/url/site/summary）、`reasoningProcess.content`（截断）、`recommendedQuestions`（仅安全字符串）、`pageScreenshot`、`amount`。不含 token/proxy/debug 等内部字段 |
 | `citations[]` | array | 引用列表（`citation_no`、`title`、`url`、`domain`、`source_type`、`quoted_text`）；模力指数优先 `citationList`，为空时回退 `referenceList.summary` → `quoted_text` |
 | `brand_results[]` | array | 品牌识别（`brand_id`、`is_mentioned`、`mention_count`、`first_position`、`sentiment`、`context_json`）；本地规则匹配为准。模力指数 provider 品牌字段仅写入 `context_json.provider_*`（字符串截断、rankings 限条数与白名单字段），不覆盖本地指标 |
+
+`raw_response_safe` 对象字段（按白名单从上游原始响应提取；无可展示字段时为 `null`）：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` / `model` / `object` / `provider` / `system_fingerprint` | string/null | 上游响应的安全标识类字段，存在时返回 |
+| `created` | integer/null | 上游响应创建时间戳，存在时返回 |
+| `usage` | object/null | Token 用量子集 |
+| `choices` | array | OpenAI-compatible choices 安全子集 |
+| `output` | object/null | 搜索信息安全子集 |
+| `result` | object/null | Aidso 响应安全子集 |
+
+`raw_response_safe.usage` 字段：`prompt_tokens`、`completion_tokens`、`total_tokens`。
+`raw_response_safe.choices[]` 字段：`finish_reason`、`index`。
+`raw_response_safe.output.search_info.search_results[]` 字段：`title`、`url`、`index`。
+`raw_response_safe.result.data` 字段：`status`、`prompt`、`result[]`；其中 `result[]` 仅保留思考过程与搜索词相关键，如 `thinking`、`reasoning`、`search_word`、`search_keywords`。
 
 ### 2.12 ScheduleOut（调度）
 
@@ -474,6 +525,13 @@ curl -X GET "http://127.0.0.1:8000/api/health"
 | `database` | object | `{ "ok": bool, "target": string }` |
 | `redis` | object | `{ "ok": bool, "target": string }` |
 
+`database` / `redis` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `ok` | boolean | 对应依赖探测是否成功 |
+| `target` | string | 探测目标标识，数据库通常为连接目标，Redis 通常为连接地址 |
+
 **调用示例：**
 
 ```bash
@@ -523,6 +581,13 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/health"
 | `platform_runtime.collection_ready` | boolean | DB 中已启用平台是否均满足运行时 adapter / 凭证 |
 | `platform_runtime.platforms[]` | array | 每项含 `platform_code`、`db_enabled`、`runtime_configured`、`credential_count`、`adapter_registered`、`ready_for_collection` |
 | `nacos` | object | 仅 `NACOS_ENABLED=true` 时返回 |
+
+`database` / `redis` / `nacos` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `ok` | boolean | 对应依赖探测是否成功 |
+| `target` | string | 探测目标标识；`nacos` 仅在启用 Nacos 时返回 |
 
 **HTTP 状态码：** 就绪时 `200`；未就绪时 `503`（响应体仍为统一 JSON）
 
@@ -624,6 +689,8 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects" \
 | `monitor_setup` | object | 同 GET monitor-setup 响应结构 |
 | `run` | [MonitorRunOut](#monitorrunout) / null | `run_after_create=true` 且激活问题集成功时返回新运行，否则为 `null` |
 
+`monitor_setup` 对象字段：同 [8.1 获取监测设置](#81-获取监测设置) 的 `data` 结构，包含 `brand`、`competitors`、`core_keywords`、`ai_questions`、`available_platforms`、`selected_platform_codes`、`draft_prompt_set_id`、`active_prompt_set_id`；各对象/数组元素字段见 8.1 下方明细。
+
 **常见错误：** 与 monitor-setup 保存一致，如 `40028` 品牌为空、`40025` 平台不可用；上述校验失败时不会创建项目记录。`run_after_create=true` 时额外要求：`activate_prompt_set=true`（否则 `40055`）、至少一个监测问题（否则 HTTP `409`、`40901`），且默认 `collection_source=official` 下所选平台须可创建运行（如 Aidso 端码会返回 `40031`）；不满足时在提交前回滚，不留半成品项目。
 
 **调用示例：**
@@ -681,6 +748,20 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects:setup" \
 | `project` | object | 已保存的项目字段 |
 | `monitor_setup` | object | 已保存的监测设置字段 |
 | `created_at` / `updated_at` | string | ISO8601 时间 |
+
+`project` 对象字段（按向导进度部分保存，可能只包含下列字段的一部分）：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `project_name` | string | 项目名称 |
+| `industry` | string | 行业 |
+| `description` | string/null | 项目描述 |
+| `timezone` | string | 时区 |
+| `official_domain` | string/null | 官方域名 |
+| `report_title` | string/null | 报告标题 |
+| `report_subtitle` | string/null | 报告副标题 |
+
+`monitor_setup` 对象字段：同 [8.1 获取监测设置](#81-获取监测设置) 的 `data` 结构；草稿允许部分填写，未填写步骤对应字段可能不存在或为空数组。
 
 **常见错误：** `40400` 草稿不存在或 `draft_key` 不匹配；`current` / `PUT /project-drafts` 更新时 `draft_key` 为空返回 `422`；`current_step` 越界返回 `422`
 
@@ -855,6 +936,13 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/projects/options"
 | `last_updated_at` | string | 首页“更新”展示时间，优先取最近 run 的 `completed_at`，否则取 `updated_at` |
 | `updated_at` | string | 项目更新时间 |
 
+`competitors[]` 每项字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `brand_id` | integer | 竞品品牌 ID |
+| `brand_name` | string | 竞品品牌名称 |
+
 `platform_endpoints[]` 每项字段：
 
 | 字段 | 类型 | 说明 |
@@ -866,6 +954,24 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/projects/options"
 | `endpoint_label` | string | 端展示文案 |
 | `logo_url` | string/null | Logo 地址 |
 | `enabled` | boolean | 是否启用 |
+
+`homepage_badges[]` 每项字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `code` | string | 状态标签编码，如 `monitoring`、`paused` |
+| `label` | string | 状态标签展示文案 |
+
+`latest_run` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `run_id` | integer | 最近一次运行 ID |
+| `run_no` | string | 最近一次运行编号 |
+| `status` | string | 运行总状态 |
+| `collection_status` | string | 采集阶段状态 |
+| `analysis_status` | string | 分析阶段状态 |
+| `completed_at` | string/null | 运行完成时间 |
 
 **首页按钮调用建议：**
 
@@ -1262,6 +1368,54 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/prompt-library" \
 | `selected_platform_codes` | string[] | 已选默认平台 |
 | `draft_prompt_set_id` | integer/null | 草稿问题集 ID |
 | `active_prompt_set_id` | integer/null | 激活问题集 ID |
+
+`brand` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | integer | 目标品牌 ID |
+| `brand_name` | string | 目标品牌名称 |
+| `official_domain` | string/null | 官方域名 |
+| `description` | string/null | 品牌描述 |
+| `brand_words` | string[] | 目标品牌启用别名/品牌词 |
+
+`competitors[]` 元素字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | integer | 竞品品牌 ID |
+| `brand_name` | string | 竞品品牌名称 |
+| `competitor_words` | string[] | 竞品启用别名/竞品词 |
+
+`core_keywords[]` 元素字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | integer | 核心词 ID |
+| `keyword` | string | 核心词文本 |
+| `description` | string/null | 核心词说明 |
+| `sort_order` | integer | 排序 |
+| `enabled` | boolean | 是否启用 |
+
+`ai_questions[]` 元素字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `prompt_id` | integer | 提示词 ID |
+| `prompt_code` | string | 提示词编码 |
+| `prompt_text` | string | 问题正文 |
+| `prompt_type` | string | 问题类型 |
+| `core_keyword` | string/null | 关联核心词文本 |
+| `core_keyword_id` | integer/null | 关联核心词 ID |
+| `from_library` | boolean | 是否来自 Prompt 词库 |
+
+`available_platforms[]` 元素字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `platform_code` | string | 平台编码 |
+| `platform_name` | string | 平台名称 |
+| `enabled` | boolean | 平台是否启用 |
 
 ---
 
@@ -2145,6 +2299,22 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/providers/molizhishu/regio
 | `top1_rate` | string | 行业平均首位率 |
 | `share_of_voice` | string | 行业平均 SOV |
 
+`industries[]` 元素字段（列表模式）：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `industry` | string | 行业名称 |
+| `metrics` | object | 行业基准指标，字段同上方 `metrics` |
+| `market_position_thresholds` | array | 市场地位阈值，字段同下方 |
+
+`market_position_thresholds[]` 元素字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `code` | string | 市场地位编码，如 `leading`、`above_average`、`average`、`below_average` |
+| `label` | string | 市场地位展示文案 |
+| `min_mention_rate` | string | 达到该档位所需的最低提及率（decimal 字符串） |
+
 **错误码：** 行业不存在 `40400`。
 
 **调用示例：**
@@ -2620,6 +2790,53 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/analyze"
 | `improvement_json` | 改进建议 JSON |
 | `summary_json` | 汇总 JSON |
 
+`top_competitors[]` 元素字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `brand_id` | integer | 竞品品牌 ID |
+| `brand_name` | string | 竞品品牌名称 |
+| `mention_answer_count` | integer | 提及该竞品的回答数 |
+| `visibility_rate` | string/null | 竞品可见度（decimal 字符串；无分母为 `null`） |
+
+`top_sources[]` 元素字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `platform_code` | string | 平台编码 |
+| `domain` | string | 引用域名 |
+| `citation_count` | integer | 引用次数 |
+| `answer_coverage_count` | integer | 覆盖回答数 |
+| `share_rate` | string/null | 引用份额（decimal 字符串） |
+| `rank_no` | integer | 当前平台内排名 |
+
+`prompt_competitiveness_summary[]` 元素字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `prompt_id` | integer | 问题 ID |
+| `platform_code` | string | 平台编码 |
+| `target_rank` | integer/null | 目标品牌在该问题回答中的相对排名 |
+| `target_first` | boolean/null | 目标品牌是否首位 |
+| `competitiveness_score` | string/null | 竞争力分数 |
+| `competitors_json` | array | 该问题下竞品对比明细 |
+| `position_label` | string/null | 位置/竞争状态标签 |
+
+`improvement_json` 对象字段（Agent 建议，可能随提示词版本扩展）：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `platform_summary` | string | 平台洞察摘要 |
+| `key_gaps` | string[] | 主要短板或差距 |
+| `suggestions` | array | 改进建议列表，每项含 `priority`、`title`、`detail` |
+
+`summary_json` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `risk` | object/null | Agent 风险摘要，如 `level`、`topics`、`summary` |
+| `metrics` | object | 确定性指标快照，含 `brand_visibility`、`brand_top1_mention_rate`、`brand_top3_mention_rate`、`brand_top10_mention_rate`、`citation_rate`、`source_coverage`、`average_mention_rank`、`share_of_voice`、`brand_metrics[]` 等 |
+
 ---
 
 ### 14.3 分页查询 Agent 执行审计
@@ -2642,6 +2859,9 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/analyze"
 **出参 `items[]` 字段：**
 
 `id`、`run_id`、`platform_code`、`agent_code`、`status`、`schema_version`、`input_snapshot`、`output_json`、`model_name`、`prompt_version`、`prompt_tokens`、`completion_tokens`、`error_message`、`started_at`、`finished_at`
+
+`input_snapshot` 对象字段：Agent 执行时的输入快照，通常包含 `run_id`、`platform_code`、`target_brand_id`、`target_brand_name`、`competitor_brand_ids`、`brand_names`、指标摘要或回答样本等，具体随 `agent_code` 与 `schema_version` 变化。
+`output_json` 对象字段：Agent 输出 JSON，风险类通常包含 `level`、`topics`、`summary`；平台洞察类通常包含 `platform_summary`、`key_gaps`、`suggestions[]`（每项含 `priority`、`title`、`detail`）。
 
 ---
 
@@ -2671,6 +2891,50 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/analyze"
 | `platforms` | array | 分平台采集/分析明细 |
 
 **`latest_run` 字段：** `run_id`、`run_no`、`status`、`collection_status`、`analysis_status`、`platform_codes`、`valid_answer_count`、`data_completeness_rate`、任务计数、`completed_at`
+
+`latest_run` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `run_id` | integer | 运行 ID |
+| `run_no` | string | 运行编号 |
+| `status` | string | 运行总状态 |
+| `collection_status` | string | 采集阶段状态 |
+| `analysis_status` | string | 分析阶段状态 |
+| `platform_codes` | string[] | 参与采集的平台编码 |
+| `valid_answer_count` | integer | 有效答案数 |
+| `data_completeness_rate` | string | 数据完整率（decimal 字符串） |
+| `total_tasks` / `succeeded_tasks` / `failed_tasks` / `cancelled_tasks` | integer | 任务计数 |
+| `completed_at` | string/null | 运行完成时间 |
+
+`summary` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `scope` | string | 汇总范围，当前为 `all` |
+| `valid_answer_count` | integer | 有效答案数 |
+| `brand_mention_count` / `brand_mention_rate` | integer / string | 目标品牌提及对话数/率 |
+| `brand_first_count` / `brand_first_rate` | integer / string | 目标品牌首位次数/率 |
+| `brand_top1_mention_count` / `brand_top1_mention_rate` | integer / string | Top1 提及次数/率 |
+| `brand_top3_mention_count` / `brand_top3_mention_rate` | integer / string | Top3 提及次数/率 |
+| `brand_top10_mention_count` / `brand_top10_mention_rate` | integer / string | Top10 提及次数/率 |
+| `data_completeness_rate` | string | 数据完整率 |
+| `brand_mention_total_count` | integer/null | 品牌提及次数合计 |
+| `positive_rate` / `neutral_rate` / `negative_rate` | string/null | 目标品牌提及对话情感率 |
+| `metrics` | array | 聚合后的指标快照列表 |
+
+`platforms[]` 元素字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `platform_code` | string | 平台编码 |
+| `platform_name` | string | 平台名称 |
+| `collection` | object | 采集任务计数 |
+| `analysis` | object/null | 分平台分析结果，字段同 [14.2](#142-获取运行平台指标与洞察) 的 `platforms[]`，并额外包含 Top10、平均排名、SOV、情感率等扩展指标 |
+| `metrics` | array | 当前平台指标快照列表 |
+
+`platforms[].collection` 对象字段：`total_tasks`、`succeeded_tasks`、`failed_tasks`、`cancelled_tasks`。
+`summary.metrics[]` / `platforms[].metrics[]` 元素字段：`metric_code`、`platform_code`、`brand_id`、`numerator`、`denominator`、`metric_value`、`prompt_set_version`、`snapshot_at`、`completeness_rate`。
 
 **调用示例：**
 
@@ -2723,6 +2987,34 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/dashboard" \
 | `share_of_voice` | SOV；优先从竞品分析聚合，时间筛选时按答案重算 |
 | `brand_mention_total_count` | 品牌提及次数汇总（`mention_count` 求和） |
 | `positive_rate` / `neutral_rate` / `negative_rate` | 目标品牌提及对话的情感率；无对应情感对话时为 `null` |
+
+`platforms[]` 元素字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `platform_code` | string | 平台编码 |
+| `platform_name` | string | 平台名称 |
+| `analysis` | object/null | 分平台分析结果，字段同 [14.2](#142-获取运行平台指标与洞察) 的 `platforms[]`；未完成分析时为 `null` |
+
+`competitor_preview` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `boards` | object | 竞品榜单预览，含 `mention_rate`、`average_rank`、`mention_count` 三个数组；各数组元素字段同 [18.1](#181-竞品分析页面级聚合) 的 `boards.*[]` |
+
+`source_preview` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `items` | array | 信源站点预览，元素字段同 [17.1](#171-信源引用分析页面级聚合) 的 `sites.items[]` |
+| `total` | integer | 满足当前筛选的站点总数 |
+
+`recent_questions` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `items` | array | 最近问题预览，元素字段同 [16.1](#161-按-ai-问题聚合对话记录主表) 的 `items[]` |
+| `total` | integer | 满足当前筛选的问题总数 |
 
 无运行、或仅有采集未分析 run 时，KPI 字段为 `null`（`brand_mention_count` 等计数型在无分析时亦为 `null`），接口仍返回 `code=0`。
 
@@ -2836,6 +3128,16 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/trends" \
 | `top1_rate` / `top3_rate` | 单答案 `first_position <= 1/3` 的占比 |
 | `sentiment` | `{ positive, neutral, negative }` 计数 |
 | `platform_metrics` | 分平台同上指标 |
+
+`sentiment` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `positive` | integer | 正向提及答案数 |
+| `neutral` | integer | 中性提及答案数 |
+| `negative` | integer | 负向提及答案数 |
+
+`platform_metrics[]` 元素字段：`platform_code`、`valid_answer_count`、`visibility_rate`、`mention_count`、`brand_mention_total_count`、`average_rank`、`top1_rate`、`top3_rate`、`top10_rate`、`share_of_voice`、`positive_rate`、`neutral_rate`、`negative_rate`、`sentiment`；其中 `sentiment` 字段结构同上。
 
 **调用示例：**
 
@@ -3012,6 +3314,31 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questi
 | `platform_columns` | array | 矩阵平台列及 `has_citation_data` |
 | `sites` | object | 站点矩阵分页 `{ items, total, page, page_size }` |
 
+`kpi` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `citation_count` | integer | 当前筛选范围内引用链接数 |
+| `site_count` | integer | 当前筛选范围内去重域名数 |
+| `article_count` | integer | 当前 run 内引用 URL 去重文章数 |
+| `citation_rate` | string/null | 有效回答中含有效引用的占比（decimal 字符串；无分母为 `null`） |
+
+`platform_columns[]` 元素字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `platform_code` | string | 平台端编码 |
+| `has_citation_data` | boolean | 该平台是否存在信源引用数据 |
+
+`sites` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `items` | array | 站点矩阵行 |
+| `total` | integer | 站点总数 |
+| `page` | integer | 当前页码 |
+| `page_size` | integer | 每页条数 |
+
 **`type_distribution[]` / `sites.items[]` 公共字段：**
 
 | 字段 | 说明 |
@@ -3020,6 +3347,14 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questi
 | `link_count` | 链接数（`SourceStat.citation_count` 聚合） |
 | `citation_rate` | 占当前筛选总链接数的比率（decimal 字符串；无分母为 `null`） |
 | `display_value` | `metric=links` 时为 `link_count` 字符串；`metric=rate` 时为 `citation_rate` |
+
+`sites.items[]` 额外字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `domain` | string | 引用域名 |
+| `source_name` | string/null | 站点名称 |
+| `platform_values` | array | 分平台矩阵值 |
 
 **`sites.items[].platform_values[]`：**
 
@@ -3106,6 +3441,40 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/source-analysis/exp
 | `kpis` | object | 目标品牌 KPI：`mention_rate`、`mention_count`、`average_rank`、`top1_rate`、`share_of_voice` |
 | `boards` | object | 三个榜单：`mention_rate`、`average_rank`、`mention_count` |
 | `trends` | object | `{ days, mention_rate, average_rank, mention_count }`；当前均为空数组，竞品历史趋势请用 `GET /trends?metric_code=...&brand_id=...` |
+
+`target_brand` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `brand_id` | integer | 目标品牌 ID |
+| `brand_name` | string | 目标品牌名称 |
+
+`kpis` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `mention_rate` | string/null | 目标品牌提及率（decimal 字符串；无分母为 `null`） |
+| `mention_count` | integer | 目标品牌提及次数 |
+| `average_rank` | string/null | 目标品牌平均提及排名 |
+| `top1_rate` | string/null | 目标品牌 Top1 提及率 |
+| `share_of_voice` | string/null | 目标品牌声量份额 |
+
+`boards` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `mention_rate` | array | 按提及率排序的品牌榜单 |
+| `average_rank` | array | 按平均排名排序的品牌榜单 |
+| `mention_count` | array | 按提及次数排序的品牌榜单 |
+
+`trends` 对象字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `days` | string[] | 趋势日期序列；当前为空数组 |
+| `mention_rate` | array | 提及率趋势；当前为空数组 |
+| `average_rank` | array | 平均排名趋势；当前为空数组 |
+| `mention_count` | array | 提及次数趋势；当前为空数组 |
 
 **`boards.*[]` 字段：**
 
