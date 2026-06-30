@@ -525,3 +525,43 @@ def test_molizhishu_collection_source_downgrade_deletes_only_seeded_platforms():
     assert "platform_code IN (" in downgrade_section
     for code in MOLIZHISHU_SEED_PLATFORM_CODES:
         assert code in migration
+
+
+PROVIDER_BATCH_NAME = "20260630_0012-geo_monitoring_0012_provider_batch.py"
+
+
+def _provider_batch_migration_text() -> str:
+    return (VERSIONS_DIR / PROVIDER_BATCH_NAME).read_text(encoding="utf-8")
+
+
+def test_provider_batch_revision_extends_molizhishu_collection_source():
+    migration = _provider_batch_migration_text()
+
+    assert 'revision = "geo_monitoring_0012"' in migration
+    assert 'down_revision = "geo_monitoring_0011"' in migration
+
+
+def test_provider_batch_creates_batch_table_and_query_task_link():
+    migration = _provider_batch_migration_text()
+
+    assert '"geo_provider_batch"' in migration
+    assert '"provider_batch_id"' in migration
+    for column in {
+        "provider_task_id",
+        "batch_no",
+        "total_items",
+        "completed_items",
+        "failed_items",
+        "raw_submit_json",
+        "raw_status_json",
+        "raw_result_json",
+    }:
+        assert f'"{column}"' in migration
+
+
+def test_provider_batch_upgrade_sql_renders_table_and_fk():
+    sql = _run_alembic_sql("upgrade", "geo_monitoring_0011:geo_monitoring_0012")
+
+    assert "geo_provider_batch" in sql
+    assert "provider_batch_id" in sql
+    assert "version_num='geo_monitoring_0012'" in sql

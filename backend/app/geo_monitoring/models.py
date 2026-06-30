@@ -421,6 +421,65 @@ class MonitorRun(BaseModel):
     )
 
 
+# Provider 批任务：模力指数 run 级合并提交与状态追踪。
+class ProviderBatch(BaseModel):
+    __tablename__ = "geo_provider_batch"
+    __table_args__ = (
+        UniqueConstraint("run_id", "batch_no", name="uq_geo_provider_batch_run_no"),
+        CheckConstraint(
+            "status IN ('pending', 'submitted', 'processing', 'completed', "
+            "'partial_completed', 'failed', 'cancelled')",
+            name="ck_geo_provider_batch_status",
+        ),
+        CheckConstraint("total_items >= 0", name="ck_geo_provider_batch_total_items"),
+        CheckConstraint(
+            "completed_items >= 0", name="ck_geo_provider_batch_completed_items"
+        ),
+        CheckConstraint("failed_items >= 0", name="ck_geo_provider_batch_failed_items"),
+        Index("ix_geo_provider_batch_run_status", "run_id", "status"),
+        Index(
+            "ix_geo_provider_batch_provider_task",
+            "provider_name",
+            "provider_task_id",
+        ),
+    )
+
+    run_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_monitor_run.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    provider_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_task_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    batch_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32), default="pending", server_default="pending", nullable=False
+    )
+    total_items: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    completed_items: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    failed_items: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    raw_submit_json: Mapped[dict | None] = mapped_column(JSON_VALUE, nullable=True)
+    raw_status_json: Mapped[dict | None] = mapped_column(JSON_VALUE, nullable=True)
+    raw_result_json: Mapped[dict | None] = mapped_column(JSON_VALUE, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    query_tasks: Mapped[list["QueryTask"]] = relationship(
+        "QueryTask",
+        back_populates="provider_batch",
+    )
+
+
 # 查询任务：单条 Prompt 在单个平台上的采集子任务。
 class QueryTask(BaseModel):
     __tablename__ = "geo_query_task"
@@ -490,6 +549,11 @@ class QueryTask(BaseModel):
     provider_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
     provider_result_json: Mapped[dict | None] = mapped_column(JSON_VALUE, nullable=True)
     provider_error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_batch_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("geo_provider_batch.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -498,6 +562,10 @@ class QueryTask(BaseModel):
     )
     finished_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    provider_batch: Mapped["ProviderBatch | None"] = relationship(
+        "ProviderBatch",
+        back_populates="query_tasks",
     )
     answer: Mapped["Answer | None"] = relationship(
         "Answer",

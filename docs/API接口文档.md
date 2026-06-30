@@ -2297,6 +2297,15 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
 
 也支持外层信封 `{ success, code, data: { ... } }`，系统从 `data` 提取上述字段。
 
+**ProviderBatch 批量回调（Task M15）：** 当 payload 含 `taskId` + `subTaskList` 且不含顶层 `subTaskId` 时，按 batch 处理：根据 `taskId` 定位 `geo_provider_batch`，逐条 subTask 复用单任务入库逻辑，并刷新 batch/run 聚合。原始 callback 写入 `geo_provider_batch.raw_result_json`。
+
+**配置（ProviderBatch 正式版）：**
+
+| 环境变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `MOLIZHISHU_PROVIDER_BATCH_ENABLED` | `true` | molizhishu run 启用 run 级拆批提交 |
+| `MOLIZHISHU_PROVIDER_BATCH_MAX_SUBTASKS` | `100` | 单 provider batch 最大 subTask 数 |
+
 **出参 `data`：**
 
 | 字段 | 类型 | 说明 |

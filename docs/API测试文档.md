@@ -1276,3 +1276,30 @@ backend\.venv\Scripts\python.exe backend\scripts\molizhishu_smoke_test.py --prom
 - smoke 脚本只有手动运行才访问真实接口。
 - 旧官方 API 采集测试（`test_qwen.py`、`test_doubao.py` 等）仍通过。
 - 真实 smoke 成功时，provider `status` 可能仍为 `processing`；以 `answerContent` 非空为准，与 adapter 生产口径一致。
+
+## 26. ProviderBatch 批量化正式版（Task M15）
+
+文件：`backend/tests/geo_monitoring/test_molizhishu_provider_batch.py`
+
+| 场景 | 测试函数 | 预期 |
+| --- | --- | --- |
+| 50×5 拆批 | `test_plan_50_prompts_5_platforms_splits_into_three_batches` | 250 子任务拆为 100 + 100 + 50 |
+| subTask 映射 | `test_each_query_task_maps_to_batch_and_subtask_id` | 每条 QueryTask 映射唯一 subTaskId |
+| Run 创建 | `test_create_run_builds_three_provider_batches` | 写入 3 条 `geo_provider_batch`，QueryTask 带 `provider_batch_id` |
+| 部分 batch 失败 | `test_partial_batch_failure_run_enters_partial_success` | batch `partial_completed`，run `partial_success` |
+| batch 重试 | `test_batch_retry_does_not_rewrite_successful_query_task` | 已成功 QueryTask/答案保留，失败任务重置为 queued |
+| 重复 prompt 文本 | `test_duplicate_prompt_text_keeps_one_prompt_entry_per_prompt_id` | 按 prompt_id 拆 prompt 索引，subTask 可正确映射 |
+| subTaskList 异常 | `test_malformed_subtask_list_marks_batch_failed` | batch 进入 `failed`，Run 不永久 `collecting` |
+| raw 状态落库 | `test_provider_batch_poll_records_status_and_result_json` | `raw_status_json` / `raw_result_json` 写入 provider 状态 |
+| actor 重试 | `test_collect_provider_batch_actor_schedules_retry_on_pending` | pending 时 `collect_provider_batch` 延迟重入队 |
+| batch callback | `test_batch_callback_processes_subtask_list` | `taskId+subTaskList` 批量回填并写 `raw_result_json` |
+| 官方 run | `test_provider_batch_disabled_for_official_runs` | `provider_batch_enabled(official)` 为 false |
+
+**执行命令：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\test_molizhishu_provider_batch.py
+backend\.venv\Scripts\alembic.exe -c backend\alembic.ini heads
+```
+
+**配置项：** `MOLIZHISHU_PROVIDER_BATCH_ENABLED`（默认 true）、`MOLIZHISHU_PROVIDER_BATCH_MAX_SUBTASKS`（默认 100）。

@@ -350,6 +350,13 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
             platforms,
             max_attempts=_collection_max_attempts(),
         )
+        from app.geo_monitoring.services.provider_batches import (
+            create_provider_batches_for_run,
+            provider_batch_enabled,
+        )
+
+        if provider_batch_enabled(run.collection_source):
+            create_provider_batches_for_run(db, run)
         db.commit()
     except Exception:
         db.rollback()

@@ -19,6 +19,7 @@ def test_monitoring_metadata_contains_only_expected_business_tables():
         "geo_prompt",
         "geo_ai_platform",
         "geo_monitor_run",
+        "geo_provider_batch",
         "geo_query_task",
         "geo_answer",
         "geo_answer_citation",
@@ -44,6 +45,7 @@ def test_model_table_names_are_stable():
         MonitorRun,
         Prompt,
         PromptSet,
+        ProviderBatch,
         QueryTask,
     )
 
@@ -54,6 +56,7 @@ def test_model_table_names_are_stable():
     assert Prompt.__tablename__ == "geo_prompt"
     assert AIPlatform.__tablename__ == "geo_ai_platform"
     assert MonitorRun.__tablename__ == "geo_monitor_run"
+    assert ProviderBatch.__tablename__ == "geo_provider_batch"
     assert QueryTask.__tablename__ == "geo_query_task"
     assert Answer.__tablename__ == "geo_answer"
     assert AnswerCitation.__tablename__ == "geo_answer_citation"

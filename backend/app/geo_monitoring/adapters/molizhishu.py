@@ -250,6 +250,114 @@ class MolizhishuAdapter:
         _raise_for_envelope(response, data, api_key=api_key)
 
 
+async def submit_molizhishu_shared_batch(
+    *,
+    prompts: list[str],
+    platforms: list[dict[str, Any]],
+    api_key: str,
+    base_url: str,
+    timeout_seconds: float,
+    region_code: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """向模力指数 batch/shared 提交多 prompt × 多 platform 任务。"""
+    payload: dict[str, Any] = {
+        "prompts": prompts,
+        "platforms": platforms,
+    }
+    if region_code:
+        payload["regionCode"] = [region_code]
+    callback = resolve_molizhishu_submit_callback(metadata or {})
+    if callback is not None:
+        callback_url, callback_headers = callback
+        payload["callbackUrl"] = callback_url
+        payload["callbackHeaders"] = callback_headers
+    response = await _request(
+        "POST",
+        f"{base_url.rstrip('/')}/task/batch/shared",
+        api_key=api_key,
+        timeout_seconds=timeout_seconds,
+        json_payload=payload,
+    )
+    data = _json_response(response, api_key=api_key)
+    _raise_for_envelope(response, data, api_key=api_key)
+    return data
+
+
+async def get_molizhishu_task_status(
+    task_id: str,
+    *,
+    api_key: str,
+    base_url: str,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    """查询模力指数主任务状态。"""
+    response = await _request(
+        "GET",
+        f"{base_url.rstrip('/')}/task/status/{task_id.strip()}",
+        api_key=api_key,
+        timeout_seconds=timeout_seconds,
+    )
+    data = _json_response(response, api_key=api_key)
+    _raise_for_envelope(response, data, api_key=api_key)
+    return data
+
+
+async def get_molizhishu_subtask_result(
+    task_id: str,
+    subtask_id: str,
+    *,
+    api_key: str,
+    base_url: str,
+    timeout_seconds: float,
+    molizhishu_platform: str,
+    mode: str,
+    last_status: str | None = None,
+) -> dict[str, Any]:
+    """查询模力指数单个子任务结果。"""
+    response = await _request(
+        "GET",
+        f"{base_url.rstrip('/')}/task/result/{task_id.strip()}/{subtask_id.strip()}",
+        api_key=api_key,
+        timeout_seconds=timeout_seconds,
+    )
+    try:
+        parsed = response.json()
+    except ValueError as exc:
+        raise MolizhishuPendingError(
+            pending_metadata={
+                "molizhishu_task_id": task_id,
+                "molizhishu_subtask_id": subtask_id,
+                "molizhishu_platform": molizhishu_platform,
+                "molizhishu_mode": mode,
+                "molizhishu_status": last_status or "unknown",
+            }
+        ) from exc
+    data = parsed if isinstance(parsed, dict) else {"data": parsed}
+    _raise_for_envelope(response, data, api_key=api_key)
+    return data
+
+
+def extract_molizhishu_subtask_list(submit_data: dict[str, Any]) -> list[dict[str, Any]]:
+    payload = submit_data.get("data") if isinstance(submit_data.get("data"), dict) else {}
+    subtasks = payload.get("subTaskList") if isinstance(payload, dict) else None
+    if not isinstance(subtasks, list):
+        raise AdapterError(
+            "molizhishu response missing subTaskList",
+            category=ErrorCategory.INVALID_REQUEST,
+        )
+    normalized: list[dict[str, Any]] = []
+    for item in subtasks:
+        if isinstance(item, dict):
+            normalized.append(item)
+    if len(normalized) != len(subtasks):
+        raise AdapterError(
+            "molizhishu response has invalid subTaskList entries",
+            category=ErrorCategory.INVALID_REQUEST,
+        )
+    return normalized
+
+
 def _require_api_key(credential: PlatformCredential) -> str:
     if not credential.api_key:
         raise AdapterError(
@@ -541,6 +649,35 @@ def parse_molizhishu_callback_payload(
     if not isinstance(subtask_id, str) or not subtask_id.strip():
         raise ValueError("callback payload missing subTaskId")
     return task_id.strip(), subtask_id.strip(), data
+
+
+def try_parse_molizhishu_batch_callback_payload(
+    payload: dict[str, Any],
+) -> tuple[str, list[dict[str, Any]]] | None:
+    """解析 batch 回调：taskId + subTaskList（无顶层 subTaskId）。"""
+    if not isinstance(payload, dict):
+        return None
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    if not isinstance(data, dict):
+        return None
+    if isinstance(data.get("subTaskId"), str) and data.get("subTaskId", "").strip():
+        return None
+    task_id = data.get("taskId")
+    if not isinstance(task_id, str) or not task_id.strip():
+        return None
+    subtask_list = data.get("subTaskList")
+    if not isinstance(subtask_list, list) or not subtask_list:
+        return None
+    normalized = [item for item in subtask_list if isinstance(item, dict)]
+    if not normalized:
+        return None
+    return task_id.strip(), normalized
+
+
+def extract_molizhishu_task_status_payload(status_data: dict[str, Any]) -> str | None:
+    payload = status_data.get("data") if isinstance(status_data.get("data"), dict) else {}
+    status = payload.get("status") if isinstance(payload, dict) else None
+    return status.strip() if isinstance(status, str) and status.strip() else None
 
 
 def platform_answer_from_molizhishu_result(

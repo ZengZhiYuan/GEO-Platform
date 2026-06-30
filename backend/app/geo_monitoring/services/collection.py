@@ -32,6 +32,7 @@ from app.geo_monitoring.adapters.registry import (
     _molizhishu_configured,
     build_adapter_registry,
 )
+from app.geo_monitoring.adapters.molizhishu import MolizhishuPendingError
 from app.geo_monitoring.models import (
     AIPlatform,
     Answer,
@@ -41,9 +42,11 @@ from app.geo_monitoring.models import (
     BrandAlias,
     MonitorRun,
     Prompt,
+    ProviderBatch,
     QueryTask,
 )
 from app.geo_monitoring.repositories import answers as answer_repo
+from app.geo_monitoring.repositories import provider_batches as batch_repo
 from app.geo_monitoring.services.brand_matcher import (
     build_provider_brand_context,
     match_brands_in_text,
@@ -86,6 +89,17 @@ class TaskSnapshot:
 class QueryTaskExecutionResult:
     should_retry: bool = False
     retry_delay_seconds: int | None = None
+
+
+@dataclass(frozen=True)
+class ProviderBatchExecutionResult:
+    should_retry: bool = False
+    retry_delay_seconds: int | None = None
+
+
+TERMINAL_BATCH_STATUSES = frozenset(
+    {"completed", "partial_completed", "failed", "cancelled"}
+)
 
 
 @dataclass(frozen=True)
@@ -259,6 +273,37 @@ def _resolve_provider_mode(run: MonitorRun, platform_code: str) -> str | None:
 def enqueue_run_query_tasks(run_id: int, *, db: Session | None = None) -> int:
     """运行事务提交后，将 pending 任务标记为 queued 并逐个入队。"""
     runtime = get_runtime()
+    owns_session = db is None
+    if owns_session:
+        db = runtime.session_factory()
+
+    try:
+        run = db.execute(
+            select(MonitorRun).where(
+                MonitorRun.id == run_id,
+                MonitorRun.is_deleted.is_(False),
+            )
+        ).scalar_one_or_none()
+        if run is not None:
+            from app.geo_monitoring.services.provider_batches import (
+                provider_batch_enabled,
+            )
+
+            if provider_batch_enabled(
+                run.collection_source,
+                runtime_settings=runtime.settings,
+            ):
+                batches = batch_repo.list_by_run_id(db, run_id)
+                if batches:
+                    return _enqueue_run_provider_batches(run_id, db=db)
+        return _enqueue_individual_query_tasks(run_id, db=db)
+    finally:
+        if owns_session:
+            db.close()
+
+
+def _enqueue_individual_query_tasks(run_id: int, *, db: Session | None = None) -> int:
+    runtime = get_runtime()
     now = datetime.now(timezone.utc)
     task_ids: list[int] = []
     owns_session = db is None
@@ -277,7 +322,6 @@ def enqueue_run_query_tasks(run_id: int, *, db: Session | None = None) -> int:
             .scalars()
             .all()
         )
-        # 批量标记 queued 并收集待入队 ID
         for task in tasks:
             task.status = "queued"
             task.queued_at = now
@@ -292,6 +336,46 @@ def enqueue_run_query_tasks(run_id: int, *, db: Session | None = None) -> int:
     for task_id in task_ids:
         collect_query_task.send(task_id)
     return len(task_ids)
+
+
+def _enqueue_run_provider_batches(run_id: int, *, db: Session | None = None) -> int:
+    runtime = get_runtime()
+    now = datetime.now(timezone.utc)
+    batch_ids: list[int] = []
+    owns_session = db is None
+    if owns_session:
+        db = runtime.session_factory()
+
+    try:
+        batches = batch_repo.list_by_run_id(db, run_id)
+        tasks = list(
+            db.execute(
+                select(QueryTask).where(
+                    QueryTask.run_id == run_id,
+                    QueryTask.status == "pending",
+                    QueryTask.is_deleted.is_(False),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for task in tasks:
+            task.status = "queued"
+            task.queued_at = now
+        for batch in batches:
+            if batch.status in TERMINAL_BATCH_STATUSES:
+                continue
+            batch_ids.append(batch.id)
+        db.commit()
+    finally:
+        if owns_session:
+            db.close()
+
+    from app.worker.actors.collection import collect_provider_batch
+
+    for batch_id in batch_ids:
+        collect_provider_batch.send(batch_id)
+    return len(batch_ids)
 
 
 # QueryTask 终态后回调刷新 Run 聚合状态
@@ -323,6 +407,487 @@ async def execute_query_task(task_id: int) -> QueryTaskExecutionResult:
     return QueryTaskExecutionResult()
 
 
+async def execute_provider_batch(batch_id: int) -> ProviderBatchExecutionResult:
+    """执行 ProviderBatch：合并提交、轮询子任务并回填 QueryTask。"""
+    runtime = get_runtime()
+    db = runtime.session_factory()
+    try:
+        batch = batch_repo.get_by_id(db, batch_id)
+        if batch is None or batch.status in TERMINAL_BATCH_STATUSES:
+            return ProviderBatchExecutionResult()
+
+        run = db.execute(
+            select(MonitorRun).where(
+                MonitorRun.id == batch.run_id,
+                MonitorRun.is_deleted.is_(False),
+            )
+        ).scalar_one_or_none()
+        if run is None:
+            return ProviderBatchExecutionResult()
+        if run.status == "cancelled":
+            _mark_provider_batch_cancelled(db, batch)
+            db.commit()
+            _after_task_terminal(db, run.id)
+            return ProviderBatchExecutionResult()
+
+        tasks = batch_repo.list_tasks_for_batch(db, batch.id)
+        if not tasks:
+            batch.status = "completed"
+            batch.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            return ProviderBatchExecutionResult()
+
+        from app.geo_monitoring.services.provider_batches import (
+            ProviderBatchItem,
+            build_submit_indexes,
+            map_subtasks_to_items,
+            refresh_batch_counters,
+        )
+
+        items = _provider_batch_items_from_tasks(tasks, run)
+        credential_platform = tasks[0].platform_code
+        credential = await runtime.key_pool.acquire(
+            credential_platform,
+            request_id=f"provider-batch-{batch.id}",
+        )
+        api_key = credential.api_key or ""
+        settings = runtime.settings
+
+        try:
+            if not batch.provider_task_id:
+                prompts, platforms, item_indexes = build_submit_indexes(items)
+                from app.geo_monitoring.adapters.molizhishu import (
+                    extract_molizhishu_subtask_list,
+                    submit_molizhishu_shared_batch,
+                )
+
+                submit_data = await submit_molizhishu_shared_batch(
+                    prompts=prompts,
+                    platforms=platforms,
+                    api_key=api_key,
+                    base_url=settings.MOLIZHISHU_BASE_URL,
+                    timeout_seconds=settings.MOLIZHISHU_REQUEST_TIMEOUT_SECONDS,
+                    region_code=run.region_code,
+                    metadata={"provider_callback_url": run.provider_callback_url},
+                )
+                payload = submit_data.get("data")
+                provider_task_id = (
+                    payload.get("taskId")
+                    if isinstance(payload, dict)
+                    else None
+                )
+                if not isinstance(provider_task_id, str) or not provider_task_id.strip():
+                    raise AdapterError(
+                        "molizhishu batch submit missing taskId",
+                        category=ErrorCategory.INVALID_REQUEST,
+                    )
+                subtask_list = extract_molizhishu_subtask_list(submit_data)
+                try:
+                    mapping = map_subtasks_to_items(subtask_list, items, item_indexes)
+                except ValueError as exc:
+                    raise AdapterError(
+                        str(exc),
+                        category=ErrorCategory.INVALID_REQUEST,
+                    ) from exc
+                now = datetime.now(timezone.utc)
+                for task in tasks:
+                    if task.status == "success":
+                        continue
+                    subtask_id = mapping.get(task.id)
+                    if subtask_id is None:
+                        continue
+                    request_json = dict(task.request_json or {})
+                    request_json["molizhishu_task_id"] = provider_task_id.strip()
+                    request_json["molizhishu_subtask_id"] = subtask_id
+                    item = next(
+                        (entry for entry in items if entry.query_task_id == task.id),
+                        None,
+                    )
+                    if item is not None:
+                        request_json["molizhishu_platform"] = item.molizhishu_platform
+                        request_json["molizhishu_mode"] = item.mode
+                    task.request_json = request_json
+                    task.provider_name = "molizhishu"
+                    task.provider_task_id = provider_task_id.strip()
+                    task.provider_subtask_id = subtask_id
+                    task.status = "running"
+                    task.started_at = now
+                batch.provider_task_id = provider_task_id.strip()
+                batch.status = "submitted"
+                batch.submitted_at = now
+                batch.raw_submit_json = submit_data
+                db.flush()
+
+            from app.geo_monitoring.adapters.molizhishu import (
+                extract_molizhishu_task_status_payload,
+                get_molizhishu_task_status,
+            )
+
+            status_response: dict[str, Any] | None = None
+            if batch.provider_task_id:
+                status_response = await get_molizhishu_task_status(
+                    batch.provider_task_id,
+                    api_key=api_key,
+                    base_url=settings.MOLIZHISHU_BASE_URL,
+                    timeout_seconds=settings.MOLIZHISHU_REQUEST_TIMEOUT_SECONDS,
+                )
+                provider_main_status = extract_molizhishu_task_status_payload(
+                    status_response
+                )
+                if provider_main_status == "failed":
+                    now = datetime.now(timezone.utc)
+                    for task in tasks:
+                        if task.status == "success":
+                            continue
+                        _mark_task_failed(
+                            db,
+                            task,
+                            now,
+                            error_code=ErrorCategory.INVALID_REQUEST.value,
+                            error_message="molizhishu provider batch failed",
+                        )
+                    batch.status = "failed"
+                    batch.error_message = "molizhishu provider batch failed"
+                    batch.completed_at = now
+                    _record_provider_batch_poll(
+                        batch,
+                        status_response=status_response,
+                    )
+                    db.commit()
+                    _after_task_terminal(db, run.id)
+                    return ProviderBatchExecutionResult()
+                if provider_main_status == "stopped":
+                    now = datetime.now(timezone.utc)
+                    for task in tasks:
+                        if task.status in TERMINAL_TASK_STATUSES:
+                            continue
+                        _mark_task_cancelled(db, task, now)
+                    batch.status = "cancelled"
+                    batch.completed_at = now
+                    _record_provider_batch_poll(
+                        batch,
+                        status_response=status_response,
+                    )
+                    db.commit()
+                    _after_task_terminal(db, run.id)
+                    return ProviderBatchExecutionResult()
+
+            pending_any = False
+            subtask_snapshots: list[dict[str, Any]] = []
+            for task in tasks:
+                if task.status in TERMINAL_TASK_STATUSES:
+                    continue
+                snapshot = _build_snapshot_for_task(db, runtime, task)
+                if snapshot is None:
+                    continue
+                item = next(
+                    (entry for entry in items if entry.query_task_id == task.id),
+                    None,
+                )
+                if item is None:
+                    continue
+                try:
+                    platform_answer = await _fetch_molizhishu_subtask_answer(
+                        runtime,
+                        snapshot=snapshot,
+                        item=item,
+                        provider_task_id=batch.provider_task_id or "",
+                        api_key=api_key,
+                    )
+                    _write_platform_answer_to_session(
+                        db,
+                        snapshot,
+                        platform_answer,
+                        require_running=False,
+                    )
+                    subtask_snapshots.append(
+                        {
+                            "query_task_id": task.id,
+                            "subtask_id": task.provider_subtask_id,
+                            "status": "success",
+                        }
+                    )
+                except MolizhishuPendingError as exc:
+                    pending_any = True
+                    subtask_snapshots.append(
+                        {
+                            "query_task_id": task.id,
+                            "subtask_id": task.provider_subtask_id,
+                            "status": exc.pending_metadata.get(
+                                "molizhishu_status", "pending"
+                            ),
+                        }
+                    )
+                except AdapterError as exc:
+                    _mark_task_failed(
+                        db,
+                        task,
+                        datetime.now(timezone.utc),
+                        error_code=exc.category.value,
+                        error_message=exc.sanitized_message(),
+                        provider_error_message=getattr(
+                            exc, "provider_error_message", None
+                        ),
+                    )
+                    subtask_snapshots.append(
+                        {
+                            "query_task_id": task.id,
+                            "subtask_id": task.provider_subtask_id,
+                            "status": "failed",
+                            "error": exc.sanitized_message(),
+                        }
+                    )
+
+            poll_count = 0
+            if batch.provider_task_id and (
+                status_response is not None or subtask_snapshots
+            ):
+                poll_count = _record_provider_batch_poll(
+                    batch,
+                    status_response=status_response,
+                    subtask_snapshots=subtask_snapshots or None,
+                )
+
+            refresh_batch_counters(db, batch)
+            if batch.status in TERMINAL_BATCH_STATUSES:
+                batch.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            _after_task_terminal(db, run.id)
+
+            if pending_any:
+                if poll_count >= settings.COLLECTION_MOLIZHISHU_MAX_POLLS:
+                    _fail_pending_provider_batch_tasks(db, batch, tasks)
+                    refresh_batch_counters(db, batch)
+                    batch.completed_at = datetime.now(timezone.utc)
+                    db.commit()
+                    _after_task_terminal(db, run.id)
+                    return ProviderBatchExecutionResult()
+                return ProviderBatchExecutionResult(
+                    should_retry=True,
+                    retry_delay_seconds=settings.COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS,
+                )
+
+            await runtime.key_pool.report_success(
+                credential.fingerprint,
+                platform_code=credential_platform,
+            )
+            return ProviderBatchExecutionResult()
+        except ValueError as exc:
+            await runtime.key_pool.report_failure(
+                credential.fingerprint,
+                AdapterError(str(exc), category=ErrorCategory.INVALID_REQUEST),
+                platform_code=credential_platform,
+                request_id=f"provider-batch-{batch.id}",
+            )
+            now = datetime.now(timezone.utc)
+            for task in tasks:
+                if task.status == "success":
+                    continue
+                _mark_task_failed(
+                    db,
+                    task,
+                    now,
+                    error_code=ErrorCategory.INVALID_REQUEST.value,
+                    error_message=str(exc),
+                )
+            batch.status = "failed"
+            batch.error_message = str(exc)
+            batch.completed_at = now
+            db.commit()
+            _after_task_terminal(db, run.id)
+            return ProviderBatchExecutionResult()
+        except AdapterError as exc:
+            await runtime.key_pool.report_failure(
+                credential.fingerprint,
+                exc,
+                platform_code=credential_platform,
+                request_id=f"provider-batch-{batch.id}",
+            )
+            now = datetime.now(timezone.utc)
+            for task in tasks:
+                if task.status == "success":
+                    continue
+                _mark_task_failed(
+                    db,
+                    task,
+                    now,
+                    error_code=exc.category.value,
+                    error_message=exc.sanitized_message(),
+                )
+            batch.status = "failed"
+            batch.error_message = exc.sanitized_message()
+            batch.completed_at = now
+            db.commit()
+            _after_task_terminal(db, run.id)
+            return ProviderBatchExecutionResult()
+    finally:
+        db.close()
+
+
+def _provider_batch_items_from_tasks(
+    tasks: list[QueryTask],
+    run: MonitorRun,
+) -> list:
+    from app.geo_monitoring.services.provider_batches import (
+        ProviderBatchItem,
+        _resolve_mode,
+        _resolve_molizhishu_platform,
+    )
+
+    items: list[ProviderBatchItem] = []
+    for task in tasks:
+        request_json = task.request_json or {}
+        prompt_text = str(request_json.get("prompt_text") or "").strip()
+        items.append(
+            ProviderBatchItem(
+                query_task_id=task.id,
+                prompt_id=task.prompt_id,
+                platform_code=task.platform_code,
+                prompt_text=prompt_text,
+                molizhishu_platform=_resolve_molizhishu_platform(task.platform_code),
+                mode=_resolve_mode(run, task.platform_code),
+                screenshot=run.provider_screenshot,
+            )
+        )
+    return items
+
+
+async def _fetch_molizhishu_subtask_answer(
+    runtime: CollectionRuntime,
+    *,
+    snapshot: TaskSnapshot,
+    item,
+    provider_task_id: str,
+    api_key: str,
+) -> PlatformAnswer:
+    from app.geo_monitoring.adapters.molizhishu import (
+        MolizhishuPendingError,
+        get_molizhishu_subtask_result,
+        platform_answer_from_molizhishu_result,
+    )
+
+    request_json = snapshot.request_json or {}
+    last_status = request_json.get("molizhishu_status")
+    subtask_id = snapshot.request_json.get("molizhishu_subtask_id") if snapshot.request_json else None
+    if not isinstance(subtask_id, str) or not subtask_id.strip():
+        subtask_id = None
+    if subtask_id is None:
+        raise AdapterError(
+            "molizhishu batch task missing subTaskId",
+            category=ErrorCategory.INVALID_REQUEST,
+        )
+
+    result_data = await get_molizhishu_subtask_result(
+        provider_task_id,
+        subtask_id,
+        api_key=api_key,
+        base_url=runtime.settings.MOLIZHISHU_BASE_URL,
+        timeout_seconds=runtime.settings.MOLIZHISHU_REQUEST_TIMEOUT_SECONDS,
+        molizhishu_platform=item.molizhishu_platform,
+        mode=item.mode,
+        last_status=last_status if isinstance(last_status, str) else None,
+    )
+    payload = result_data.get("data")
+    if not isinstance(payload, dict):
+        payload = result_data
+    status = payload.get("status")
+    status_text = status.strip() if isinstance(status, str) else ""
+    text = str(payload.get("answerContent") or "")
+    if status_text in {"pending", "assigned", "processing"} and not text.strip():
+        raise MolizhishuPendingError(
+            pending_metadata={
+                "molizhishu_task_id": provider_task_id,
+                "molizhishu_subtask_id": subtask_id,
+                "molizhishu_platform": item.molizhishu_platform,
+                "molizhishu_mode": item.mode,
+                "molizhishu_status": status_text or "unknown",
+            }
+        )
+    if status_text == "stopped":
+        raise AdapterError(
+            f"molizhishu subtask stopped: {payload.get('errorMessage') or ''}",
+            category=ErrorCategory.CANCELLED,
+        )
+    if status_text in {"failed", "error"}:
+        raise AdapterError(
+            f"molizhishu subtask failed: {payload.get('errorMessage') or ''}",
+            category=ErrorCategory.INVALID_REQUEST,
+            provider_error_message=str(payload.get("errorMessage") or ""),
+        )
+    return platform_answer_from_molizhishu_result(
+        payload,
+        model=snapshot.model_name,
+        subtask_id=subtask_id,
+        raw_response={"result": result_data},
+    )
+
+
+def _record_provider_batch_poll(
+    batch: ProviderBatch,
+    *,
+    status_response: dict[str, Any] | None = None,
+    subtask_snapshots: list[dict[str, Any]] | None = None,
+) -> int:
+    status_json = dict(batch.raw_status_json or {})
+    poll_count = int(status_json.get("poll_count") or 0) + 1
+    status_json["poll_count"] = poll_count
+    if status_response is not None:
+        status_json["last_provider_status"] = status_response
+    batch.raw_status_json = status_json
+    if subtask_snapshots is not None:
+        batch.raw_result_json = {
+            "poll_count": poll_count,
+            "subtasks": subtask_snapshots,
+        }
+    return poll_count
+
+
+def _increment_provider_batch_poll_count(batch: ProviderBatch) -> int:
+    return _record_provider_batch_poll(batch)
+
+
+def _fail_pending_provider_batch_tasks(
+    db: Session,
+    batch: ProviderBatch,
+    tasks: list[QueryTask],
+) -> None:
+    now = datetime.now(timezone.utc)
+    for task in tasks:
+        if task.status in TERMINAL_TASK_STATUSES:
+            continue
+        _mark_task_failed(
+            db,
+            task,
+            now,
+            error_code=ErrorCategory.PENDING.value,
+            error_message="molizhishu batch poll limit exceeded",
+        )
+    batch.error_message = "molizhishu batch poll limit exceeded"
+
+
+def _mark_provider_batch_cancelled(db: Session, batch: ProviderBatch) -> None:
+    now = datetime.now(timezone.utc)
+    batch.status = "cancelled"
+    batch.completed_at = now
+    for task in batch_repo.list_tasks_for_batch(db, batch.id):
+        if task.status not in TERMINAL_TASK_STATUSES:
+            _mark_task_cancelled(db, task, now)
+
+
+def _refresh_provider_batch_after_task(db: Session, task: QueryTask) -> None:
+    if task.provider_batch_id is None:
+        return
+    from app.geo_monitoring.services.provider_batches import refresh_batch_counters
+
+    batch = batch_repo.get_by_id(db, task.provider_batch_id)
+    if batch is None:
+        return
+    refresh_batch_counters(db, batch)
+    if batch.status in TERMINAL_BATCH_STATUSES and batch.completed_at is None:
+        batch.completed_at = datetime.now(timezone.utc)
+    db.flush()
+
+
 # 加锁认领 QueryTask 并构建执行快照，不可执行时返回 None
 def _claim_task_for_execution(
     runtime: CollectionRuntime,
@@ -340,6 +905,9 @@ def _claim_task_for_execution(
             return None
 
         if task.status in TERMINAL_TASK_STATUSES:
+            return None
+
+        if task.provider_batch_id is not None:
             return None
 
         run = db.execute(
@@ -981,11 +1549,81 @@ def _build_snapshot_for_task(
     )
 
 
-def handle_molizhishu_callback(
+def _aggregate_molizhishu_callback_outcomes(
+    outcomes: list[MolizhishuCallbackResult],
+) -> MolizhishuCallbackResult:
+    if not outcomes:
+        return MolizhishuCallbackResult(outcome="ignored")
+    if any(item.outcome == "processed" for item in outcomes):
+        task_id = next(
+            item.task_id for item in outcomes if item.outcome == "processed"
+        )
+        return MolizhishuCallbackResult(outcome="processed", task_id=task_id)
+    if any(item.outcome == "failed_task" for item in outcomes):
+        task_id = next(
+            item.task_id for item in outcomes if item.outcome == "failed_task"
+        )
+        return MolizhishuCallbackResult(outcome="failed_task", task_id=task_id)
+    if all(item.outcome == "duplicate" for item in outcomes):
+        return MolizhishuCallbackResult(
+            outcome="duplicate",
+            task_id=outcomes[0].task_id,
+        )
+    if all(item.outcome == "ignored" for item in outcomes):
+        return MolizhishuCallbackResult(
+            outcome="ignored",
+            task_id=outcomes[0].task_id,
+        )
+    return MolizhishuCallbackResult(
+        outcome="ignored",
+        task_id=outcomes[0].task_id,
+        message="batch callback mixed outcomes",
+    )
+
+
+def _dispatch_molizhishu_batch_callback(
+    db: Session,
+    payload: dict[str, Any],
+    *,
+    provider_task_id: str,
+    subtask_list: list[dict[str, Any]],
+) -> MolizhishuCallbackResult:
+    """处理 batch 形态 callback：按 subTaskList 逐条复用单任务入库逻辑。"""
+    from app.geo_monitoring.services.provider_batches import refresh_batch_counters
+
+    batch = batch_repo.get_by_provider_task_id(db, provider_task_id)
+    if batch is not None:
+        batch.raw_result_json = {"callback": payload}
+        db.flush()
+
+    outcomes: list[MolizhishuCallbackResult] = []
+    for subtask_data in subtask_list:
+        subtask_id = subtask_data.get("subTaskId")
+        if not isinstance(subtask_id, str) or not subtask_id.strip():
+            continue
+        synthetic_payload = {
+            **subtask_data,
+            "taskId": provider_task_id,
+            "subTaskId": subtask_id.strip(),
+        }
+        outcomes.append(
+            _handle_molizhishu_single_subtask_callback(db, synthetic_payload)
+        )
+
+    if batch is not None:
+        refresh_batch_counters(db, batch)
+        if batch.status in TERMINAL_BATCH_STATUSES and batch.completed_at is None:
+            batch.completed_at = datetime.now(timezone.utc)
+        db.commit()
+
+    return _aggregate_molizhishu_callback_outcomes(outcomes)
+
+
+def _handle_molizhishu_single_subtask_callback(
     db: Session,
     payload: dict[str, Any],
 ) -> MolizhishuCallbackResult:
-    """处理模力指数完成回调，与轮询共用归一化与入库逻辑。"""
+    """处理单条 subTask callback（供 batch dispatch 与 HTTP 入口复用）。"""
     from app.geo_monitoring.adapters.molizhishu import (
         _PENDING_STATUSES,
         _TERMINAL_FAILURE_STATUSES,
@@ -1082,6 +1720,7 @@ def handle_molizhishu_callback(
         locked_task.provider_result_json = result_data
         run_id = locked_task.run_id
         db.commit()
+        _refresh_provider_batch_after_task(db, locked_task)
         _after_task_terminal(db, run_id)
         return MolizhishuCallbackResult(outcome="failed_task", task_id=locked_task.id)
 
@@ -1150,6 +1789,7 @@ def handle_molizhishu_callback(
             db.commit()
         created = False
 
+    _refresh_provider_batch_after_task(db, locked_task)
     _after_task_terminal(db, snapshot.run_id)
     outcome = "processed" if created else "duplicate"
     logger.info(
@@ -1160,6 +1800,27 @@ def handle_molizhishu_callback(
         locked_task.id,
     )
     return MolizhishuCallbackResult(outcome=outcome, task_id=locked_task.id)
+
+
+def handle_molizhishu_callback(
+    db: Session,
+    payload: dict[str, Any],
+) -> MolizhishuCallbackResult:
+    """处理模力指数完成回调，与轮询共用归一化与入库逻辑。"""
+    from app.geo_monitoring.adapters.molizhishu import (
+        try_parse_molizhishu_batch_callback_payload,
+    )
+
+    batch_parsed = try_parse_molizhishu_batch_callback_payload(payload)
+    if batch_parsed is not None:
+        provider_task_id, subtask_list = batch_parsed
+        return _dispatch_molizhishu_batch_callback(
+            db,
+            payload,
+            provider_task_id=provider_task_id,
+            subtask_list=subtask_list,
+        )
+    return _handle_molizhishu_single_subtask_callback(db, payload)
 
 
 # 将 QueryTask 标记为 cancelled
