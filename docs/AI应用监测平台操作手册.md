@@ -1,7 +1,7 @@
 # AI 应用监测平台操作手册
 
 > 本文档面向平台使用者与运维人员，说明从**输入品牌名称**开始，到**查看数据看板**与**导出监测报告**的完整操作流程。  
-> 更新日期：2026-06-22  
+> 更新日期：2026-06-30  
 > 接口细节见 [API接口文档.md](./API接口文档.md)；在线 Swagger：`http://127.0.0.1:8000/docs`
 
 ---
@@ -37,7 +37,7 @@ AI 应用监测平台用于：
 2. **采集 AI 回答**：向通义千问、DeepSeek 等 AI 平台发送问题，获取原始回答与引用；
 3. **确定性指标计算**：品牌提及率、首推率、竞品对比等由程序计算，不由 LLM 改写；
 4. **Agent 语义分析**：生成竞争力摘要、改进建议等语义洞察；
-5. **看板与报告**：汇总最新运行结果，支持趋势对比与 MD/HTML 报告导出。
+5. **看板与报告**：汇总最新运行结果，支持趋势对比与 MD/HTML/PDF 报告导出。
 
 当前阶段后端 API 已完整实现上述流水线；前端界面可按同一接口对接。
 
@@ -54,7 +54,7 @@ flowchart LR
     E --> F[查看采集答案]
     F --> G[触发 Agent 分析]
     G --> H[查看数据看板 / 趋势]
-    H --> I[生成 MD / HTML 报告]
+    H --> I[生成 MD / HTML / PDF 报告]
     I --> J[下载报告文件]
 ```
 
@@ -66,7 +66,7 @@ flowchart LR
 | 采集 | 至少 1 个 AI 平台已启用且有密钥；collection worker 运行中 | 答案文本、引用、品牌识别结果 |
 | 分析 | 采集已完成；Agent LLM 已配置 | 平台指标、语义洞察 |
 | 看板 | 分析已完成（或仅有采集数据时显示采集摘要） | 汇总指标、分平台明细 |
-| 报告 | 分析已完成 | MD / HTML 文件 |
+| 报告 | 分析已完成 | MD / HTML / PDF 文件 |
 
 ---
 
@@ -79,6 +79,7 @@ flowchart LR
 | PostgreSQL | 业务数据存储 | 需执行 Alembic 迁移或导入 `docs/geo-platform_schema.sql` |
 | Redis | Dramatiq 消息队列 | 采集、分析、报告异步任务 |
 | 外部 AI 平台密钥 | 采集阶段 | 如 `QWEN_API_KEYS`、`DEEPSEEK_API_KEYS` |
+| 模力指数 API Token | 第三方端侧采集 | 启用 `collection_source=molizhishu` 时配置 `MOLIZHISHU_ENABLED=true` 与 `MOLIZHISHU_API_TOKEN` |
 | Agent LLM | 分析阶段 | `.env` 中 `AGENT_LLM_*` 配置 |
 
 ### 3.2 配置文件
@@ -101,7 +102,18 @@ AGENT_LLM_API_KEY=sk-xxx
 AGENT_LLM_MODEL=qwen-plus
 
 REPORT_STORAGE_DIR=./data/reports
+
+# 生产环境必须开启业务 API 鉴权
+API_AUTH_ENABLED=false
+API_AUTH_BEARER_TOKENS=
+
+# 可选：第三方模力指数端侧采集
+MOLIZHISHU_ENABLED=false
+MOLIZHISHU_API_TOKEN=
+MOLIZHISHU_PROVIDER_BATCH_ENABLED=true
 ```
+
+`APP_ENV=prod` 时，后端会对 `DRAMATIQ_BROKER=redis`、`AGENT_LLM_*`、`API_AUTH_*` 以及已启用的模力指数 token 做 fail-fast 校验；缺失配置会导致服务启动失败，而不是在采集或分析时才报错。
 
 ### 3.3 数据库初始化
 
@@ -128,7 +140,7 @@ curl http://127.0.0.1:8000/api/ready
 curl http://127.0.0.1:8000/api/geo-monitoring/ready
 ```
 
-`data.status` 为 `ready` 表示可开始操作。
+`data.status` 为 `ready` 表示数据库与 Redis 可用；监测服务就绪接口还会返回 `platform_runtime`，用于查看 DB 中已启用平台是否具备运行时 adapter 与凭证。若 `platform_runtime.collection_ready=false`，先补 `.env` 或关闭对应平台后再创建运行。
 
 ---
 
@@ -176,8 +188,9 @@ docker compose up -d api worker scheduler
 ### 4.3 启动检查清单
 
 - [ ] `/api/ready` 返回 `ready`
+- [ ] `/api/geo-monitoring/ready` 的 `platform_runtime.collection_ready=true`
 - [ ] `/api/geo-monitoring/platforms?page=1&page_size=10` 能列出平台
-- [ ] 目标 AI 平台 `enabled=true` 且 `.env` 中对应 `*_ENABLED=true` 并有密钥
+- [ ] 目标 AI 平台 `enabled=true` 且 `.env` 中对应 `*_ENABLED=true`、模型和密钥齐全；模力指数平台还需 `MOLIZHISHU_ENABLED=true` 与 token
 - [ ] Worker 进程在运行（否则创建运行后任务会一直排队）
 
 ---
@@ -343,7 +356,12 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/platforms/qwen" \
   -d '{"enabled": true, "max_concurrency": 5}'
 ```
 
-**支持的平台编码：** `doubao`、`qwen`、`yuanbao`、`deepseek`、`kimi`（以数据库种子数据为准）。
+**支持的平台编码：**
+
+- 官方直连：`doubao`、`qwen`、`yuanbao`、`deepseek`、`kimi`。
+- 模力指数第三方端侧：`molizhishu_deepseek_web`、`molizhishu_deepseek_mobile`、`molizhishu_doubao_web`、`molizhishu_doubao_mobile`、`molizhishu_yuanbao_web`、`molizhishu_kimi_web`、`molizhishu_qianwen_web`、`molizhishu_quark_web`、`molizhishu_baiduai_web`、`molizhishu_weibo_zhisou_web`、`molizhishu_wenxinyiyan_web`。
+
+一次 Run 只能选择同一采集来源的平台：默认 `collection_source=official` 只能传官方平台码；`collection_source=molizhishu` 只能传 `molizhishu_*` 平台码。
 
 ---
 
@@ -368,6 +386,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
 | `project_id` | 必填，监测项目 ID |
 | `prompt_set_id` | 可选；不传则使用当前 **active** 问题集 |
 | `platform_codes` | 可选；不传则使用项目默认或全部已启用平台 |
+| `collection_source` | 可选；默认 `official`，第三方端侧采集传 `molizhishu` |
 
 **记录返回的 `data.id`**，下文记为 `{run_id}`。
 
@@ -389,6 +408,25 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
 }
 ```
 
+**模力指数第三方采集示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": {project_id},
+    "collection_source": "molizhishu",
+    "platform_codes": ["molizhishu_doubao_web", "molizhishu_kimi_web"],
+    "provider_mode_by_platform": {
+      "molizhishu_doubao_web": "search",
+      "molizhishu_kimi_web": "standard"
+    },
+    "provider_screenshot": 1
+  }'
+```
+
+模力指数 Run 会在创建前校验平台 DB 启用状态、adapter 注册和 token；启用 ProviderBatch 时会按 run 级拆批提交并通过轮询或回调入库结果。
+
 **常见错误：**
 
 | code | 含义 |
@@ -396,6 +434,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
 | `40030` | 无激活的问题集 — 回到 5.2 激活问题集 |
 | `40901` | 问题集内无可用问题 |
 | `40902` / `40031` | 无可用 AI 平台 |
+| `40908` | 平台 DB 已启用但运行时 adapter / 凭证未配置 |
 
 ---
 
@@ -460,7 +499,7 @@ curl "http://127.0.0.1:8000/api/geo-monitoring/answers/{answer_id}"
 
 ### 5.6 触发 Agent 分析
 
-采集完成后，调用分析接口。系统会：
+采集完成后，调用分析接口。接口会先校验 Agent LLM 配置，然后把分析任务投递到 `analysis` 队列；worker 异步执行时会：
 
 1. 计算确定性指标（提及率、首推率、完整率等）；
 2. 调用 Agent LLM 生成语义摘要与改进建议；
@@ -472,7 +511,7 @@ curl "http://127.0.0.1:8000/api/geo-monitoring/answers/{answer_id}"
 curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/{run_id}/analyze"
 ```
 
-> 该接口可能耗时 **20～120 秒**（取决于答案量与 LLM 响应），请设置足够超时。
+> 该接口通常会快速返回 `queued=true`。真实 LLM 分析耗时取决于答案量与模型响应，建议每 5 秒轮询 `GET /runs/{run_id}`，直到 `analysis_status=completed`。
 
 **成功响应示例：**
 
@@ -481,10 +520,17 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/{run_id}/analyze"
   "code": 0,
   "data": {
     "run_id": 16,
-    "analysis_status": "completed",
-    "run_analysis_status": "completed"
+    "analysis_status": "pending",
+    "queued": true,
+    "run_analysis_status": "pending"
   }
 }
+```
+
+**等待分析完成：**
+
+```bash
+curl "http://127.0.0.1:8000/api/geo-monitoring/runs/{run_id}"
 ```
 
 #### 5.6.1 查看平台分析指标
@@ -521,6 +567,8 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/runs/{run_id}/agent-executions
 | code | 含义 |
 | --- | --- |
 | `40910` | 采集未完成 — 等待 5.5 终态后再分析 |
+| `40911` | 分析正在进行中 — 不要重复触发，继续轮询 |
+| `50301` | Agent LLM 配置不完整 — 补齐 `AGENT_LLM_*` |
 
 ---
 
@@ -589,7 +637,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/runs" \
 
 ### 5.8 生成并下载报告
 
-分析完成后，可导出 Markdown 与 HTML 格式监测报告。
+分析完成后，可导出 Markdown、HTML 与 PDF 格式监测报告。
 
 #### 5.8.1 生成报告
 
@@ -608,7 +656,8 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/{run_id}/reports" \
     "run_id": 16,
     "reports": [
       {"id": 9, "format": "md", "status": "completed", "file_name": "report_16.md", "checksum": "..."},
-      {"id": 10, "format": "html", "status": "completed", "file_name": "report_16.html", "checksum": "..."}
+      {"id": 10, "format": "html", "status": "completed", "file_name": "report_16.html", "checksum": "..."},
+      {"id": 11, "format": "pdf", "status": "completed", "file_name": "report_16.pdf", "checksum": "..."}
     ]
   }
 }
@@ -647,6 +696,7 @@ Invoke-WebRequest `
 | --- | --- |
 | `md` | 便于归档、二次编辑、接入文档系统 |
 | `html` | 便于浏览器直接阅读、邮件或内部分享 |
+| `pdf` | 便于正式交付、离线传阅和归档 |
 
 报告通常包含：项目信息、运行摘要、分平台指标、竞品对比、引用来源、Agent 改进建议等。
 
@@ -727,6 +777,7 @@ pending → collecting → analyzing → reporting → completed
 | Redis 不可达 | 检查 `REDIS_URL` 与 `/api/ready` |
 | AI 平台密钥无效 | 查看任务 `error_message`；检查 `.env` |
 | 平台未启用 | `PUT /platforms/{code}` 设置 `enabled: true` |
+| 运行时配置不一致 | 查看 `/api/geo-monitoring/ready` 的 `platform_runtime`；`POST /runs` 返回 `40908` 时补齐 adapter/凭证或关闭平台 |
 
 ### 8.2 分析失败或超时
 
@@ -767,10 +818,9 @@ backend\.venv\Scripts\python.exe backend\scripts\run_e2e_pipeline_test.py
 
 成功后：
 
-- 测试报告：`docs/端到端流水线测试报告.md`
 - 下载的报告样例：`data/e2e_test_output/`
 
-**脚本前提：** API @ `:8000`、collection worker 运行、至少一个 AI 平台密钥与 Agent LLM 已配置。
+**脚本前提：** API @ `:8000`、collection worker 运行、至少一个 AI 平台密钥与 Agent LLM 已配置。真实模力指数 smoke 需单独手动运行 `backend\scripts\molizhishu_smoke_test.py` 并确认费用风险，自动化回归不访问真实第三方接口。
 
 ---
 
@@ -779,10 +829,10 @@ backend\.venv\Scripts\python.exe backend\scripts\run_e2e_pipeline_test.py
 | 文档 | 说明 |
 | --- | --- |
 | [API接口文档.md](./API接口文档.md) | 全部 REST 接口字段与错误码 |
-| [API测试文档.md](./API测试文档.md) | 接口测试用例与脚本说明 |
-| [API全量接口测试报告.md](./API全量接口测试报告.md) | 自动化接口回归结果 |
-| [端到端流水线测试报告.md](./端到端流水线测试报告.md) | 业务流水线验收结果 |
+| [采集任务生命周期说明.md](./采集任务生命周期说明.md) | Run、QueryTask、ProviderBatch、回调与轮询生命周期 |
 | [PostgreSQL远程建表操作文档_无需部署代码.md](./PostgreSQL远程建表操作文档_无需部署代码.md) | 无代码部署时的建表指南 |
+| `backend/scripts/run_api_full_test.py` | 本地 API 全量联调脚本 |
+| `backend/scripts/run_e2e_pipeline_test.py` | 本地业务流水线端到端脚本 |
 | `http://127.0.0.1:8000/docs` | 在线 OpenAPI / Swagger UI |
 
 ---

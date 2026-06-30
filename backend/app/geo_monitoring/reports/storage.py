@@ -31,6 +31,10 @@ from app.geo_monitoring.reports.renderer import (
 )
 from app.geo_monitoring.reports.pdf_renderer import render_pdf
 from app.geo_monitoring.services.runs import get_run
+from app.geo_monitoring.services.tenant_access import (
+    ensure_project_tenant_access,
+    stamp_tenant_fields,
+)
 from app.models.base import BaseModel
 
 RETAIN_MARKER = -1
@@ -54,6 +58,7 @@ class GeoReport(BaseModel):
         ),
         Index("uq_geo_report_relative_storage_path", "relative_storage_path", unique=True),
         Index("ix_geo_report_project_run", "project_id", "run_id"),
+        Index("ix_geo_report_tenant", "tenant_id"),
     )
 
     project_id: Mapped[int] = mapped_column(
@@ -195,6 +200,7 @@ def create_run_reports(
             file_name=f"report-{run.run_no}.{fmt}",
             relative_storage_path="pending",
         )
+        stamp_tenant_fields(report)
         db.add(report)
         db.flush()
         # flush 后获得 report.id，再确定最终存储路径
@@ -347,6 +353,7 @@ def get_report(db: Session, report_id: int) -> GeoReport:
     report = db.get(GeoReport, report_id)
     if report is None or report.is_deleted:
         raise BusinessException(message="报告不存在", code=40420, status_code=404)
+    ensure_project_tenant_access(db, report.project_id)
     return report
 
 

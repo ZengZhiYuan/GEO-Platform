@@ -3,17 +3,24 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
+import httpx
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.core.exceptions import BusinessException
 from app.geo_monitoring.models import AIPlatform
 from app.geo_monitoring.repositories import platforms as platform_repo
 from app.geo_monitoring.schemas import (
+    MolizhishuRegionsOut,
     PlatformEndpointsOut,
     PromptTypesOut,
     SourceTypesOut,
 )
+
+_regions_cache: dict[str, Any] = {"expires_at": 0.0, "payload": None}
 
 _ENDPOINT_ORDER = {"web": 0, "app": 1, "other": 2}
 _AIDSO_CODE_PATTERN = re.compile(r"^aidso_(?P<base>.+)_(?P<endpoint>web|app)$")
@@ -27,6 +34,11 @@ _BASE_PLATFORM_LABELS = {
     "baidu": "百度 AI",
     "douyin": "抖音 AI",
     "wenxin": "文心一言",
+    "qianwen": "通义千问",
+    "quark": "夸克 AI",
+    "baiduai": "百度 AI+",
+    "weibo_zhisou": "微博智搜",
+    "wenxinyiyan": "文心一言",
 }
 
 _ENDPOINT_TYPE_LABELS = {
@@ -264,3 +276,112 @@ def resolve_display_source_type(storage_value: str | None) -> tuple[str, str]:
         if normalized in _DISPLAY_LABELS:
             return normalized, _DISPLAY_LABELS[normalized]
     return "other", _DISPLAY_LABELS["other"]
+
+
+def clear_molizhishu_regions_cache() -> None:
+    """清空模力指数区域列表本地缓存（测试用）。"""
+    _regions_cache["expires_at"] = 0.0
+    _regions_cache["payload"] = None
+
+
+def list_molizhishu_regions() -> dict[str, Any]:
+    """代理模力指数免鉴权 city-info 接口，并做本地短缓存。"""
+    cached = _get_cached_molizhishu_regions()
+    if cached is not None:
+        return cached
+    upstream = _fetch_molizhishu_regions_upstream()
+    items = _normalize_molizhishu_regions(upstream)
+    payload = MolizhishuRegionsOut(items=items).model_dump(mode="json")
+    _store_molizhishu_regions_cache(payload)
+    return payload
+
+
+def _get_cached_molizhishu_regions() -> dict[str, Any] | None:
+    expires_at = float(_regions_cache.get("expires_at") or 0.0)
+    if expires_at > time.monotonic():
+        payload = _regions_cache.get("payload")
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _store_molizhishu_regions_cache(payload: dict[str, Any]) -> None:
+    ttl = max(int(settings.MOLIZHISHU_REGIONS_CACHE_SECONDS), 0)
+    _regions_cache["payload"] = payload
+    _regions_cache["expires_at"] = time.monotonic() + ttl if ttl else 0.0
+
+
+def _fetch_molizhishu_regions_upstream() -> dict[str, Any]:
+    url = settings.MOLIZHISHU_REGIONS_URL.strip()
+    if not url:
+        raise BusinessException(
+            code=50210,
+            message="模力指数区域列表暂不可用，请稍后重试",
+        )
+    timeout = max(float(settings.MOLIZHISHU_REQUEST_TIMEOUT_SECONDS), 1.0)
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            response = client.get(url)
+    except httpx.TimeoutException as exc:
+        raise BusinessException(
+            code=50210,
+            message="模力指数区域列表请求超时，请稍后重试",
+        ) from exc
+    except httpx.RequestError as exc:
+        raise BusinessException(
+            code=50210,
+            message="模力指数区域列表暂不可用，请稍后重试",
+        ) from exc
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise BusinessException(
+            code=50210,
+            message="模力指数区域列表返回无效响应",
+        ) from exc
+    if not isinstance(data, dict):
+        raise BusinessException(
+            code=50210,
+            message="模力指数区域列表返回无效响应",
+        )
+    if response.status_code >= 400 or data.get("success") is not True or data.get("code") != 200:
+        message = str(data.get("message") or data.get("msg") or "模力指数区域列表暂不可用")
+        raise BusinessException(code=50210, message=message)
+    return data
+
+
+def _normalize_molizhishu_regions(upstream: dict[str, Any]) -> list[dict[str, str]]:
+    raw_items = upstream.get("data")
+    if not isinstance(raw_items, list):
+        raise BusinessException(
+            code=50210,
+            message="模力指数区域列表返回无效数据",
+        )
+
+    items: list[dict[str, str]] = []
+    for entry in raw_items:
+        if not isinstance(entry, dict):
+            continue
+        province = entry.get("province")
+        region_codes = entry.get("regionCode")
+        if not isinstance(province, str) or not province.strip():
+            continue
+        if not isinstance(region_codes, list) or not region_codes:
+            continue
+        region_code = region_codes[0]
+        if not isinstance(region_code, str) or not region_code.strip():
+            continue
+        items.append(
+            {
+                "province": province.strip(),
+                "region_code": region_code.strip(),
+            }
+        )
+
+    if not items:
+        raise BusinessException(
+            code=50210,
+            message="模力指数区域列表为空",
+        )
+    return items

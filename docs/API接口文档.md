@@ -1,7 +1,7 @@
 # AI 应用监测 API 接口文档
 
 > 文档依据当前后端源码整理（`backend/app/api/router.py`、`backend/app/main.py`、`backend/app/geo_monitoring/api/`）。  
-> 更新日期：2026-06-29
+> 更新日期：2026-06-30
 > 在线 OpenAPI：`http://127.0.0.1:8000/docs`
 > 原型页面按钮与调用顺序见：`docs/原型功能_API映射整合精简版.md`
 
@@ -53,6 +53,7 @@
 | `Content-Type` | Body 为 JSON 时必填 | 建议 `application/json` |
 | `Accept` | 否 | 建议 `application/json` |
 | `X-Request-ID` | 否 | 自定义请求追踪 ID |
+| `Authorization` | `API_AUTH_ENABLED=true` 时必填 | `Bearer <api_token>`；token 与租户映射见 `API_AUTH_TOKEN_MAP_JSON` / `API_AUTH_BEARER_TOKENS` |
 
 响应头：
 
@@ -61,7 +62,15 @@
 | `X-Request-ID` | 本次请求 ID |
 | `X-Response-Time-Ms` | 服务端处理耗时（毫秒） |
 
-当前业务接口**未配置鉴权**，测试/联调无需 `Authorization`。
+**鉴权说明：**
+
+- 开发/测试默认 `API_AUTH_ENABLED=false`，业务接口可不携带 `Authorization`。
+- 生产环境（`APP_ENV=prod`）必须 `API_AUTH_ENABLED=true` 且配置至少一个 API token；未携带或 token 无效返回 HTTP `401`。
+- 启用鉴权后，项目、品牌、Prompt 集、Run、报告等数据按 token 绑定的 `tenant_id` 隔离；跨租户访问统一返回「不存在」类业务错误（`40400`），避免泄露资源归属。
+- 模力指数 provider 回调仍使用独立的 `X-Callback-Token`（或 query `token`），**不得**与普通业务 Bearer 混用；回调路由不校验 `Authorization`。
+- `GET /api/geo-monitoring/health`、`GET /api/geo-monitoring/ready` 以及全局 `/api/health`、`/api/ready` 探针无需鉴权。
+
+**当前实现状态：** 以上规则已在 O7 落地；内网开发可关闭鉴权，公网/生产必须开启。
 
 ### 1.3 统一 JSON 响应
 
@@ -116,6 +125,22 @@
 | --- | --- | --- | --- |
 | `page` | integer | `1` | 页码，≥ 1 |
 | `page_size` | integer | 各接口不同 | 每页条数，见各接口说明 |
+
+---
+
+### 1.5 线上版本整改状态说明
+
+本接口文档描述当前代码实现，同时标注线上整改目标。线上优化任务以 `docs/superpowers/plans/2026-06-30-production-readiness-remediation.md` 为准。
+
+| 领域 | 当前实现 | 线上整改目标 |
+| --- | --- | --- |
+| 业务鉴权 | `API_AUTH_ENABLED` 默认 false；启用后 Bearer token + 租户隔离 | 生产 `APP_ENV=prod` 必须开启鉴权并配置 token（O7 已实现） |
+| 模力指数真实采集 | Adapter、ProviderBatch、回调、轮询兜底与 Run 创建前 adapter/credential 校验已实现；是否可真实调用取决于 `.env` 的 `MOLIZHISHU_ENABLED`、token 和平台启用状态 | O4：保留 mock 回归，新增需人工确认费用风险的真实 smoke |
+| Agent LLM | 分析链路使用 `AGENT_LLM_*` 创建真实 LLM client；`APP_ENV=prod` 缺少 base_url / api_key / model 时配置加载 fail-fast | 生产不得回退测试 URL/key/model；非生产仍建议显式配置以避免分析失败 |
+| AI 生成辅助 | 优先调用 Agent LLM 结构化生成，失败或未配置时规则兜底；返回 `generation_method=llm|rule_fallback`，不直接落库 | 保留规则 fallback，但前端应展示生成来源并要求用户确认后保存 |
+| 高频评价标签 | 支持 `cluster_method=rule` / `llm` / `auto`，使用 Agent LLM 或规则聚类，并带 run 级缓存 | LLM 不可用时 `auto` 回退规则；接口仍返回确定结构 |
+| 测试与 mock | pytest 使用 SQLite、Stub broker、respx mock、Fake Agent LLM，不访问真实平台 | O4/O10：保留 mock 回归，新增需人工确认费用风险的真实 smoke |
+| 镜像与手工脚本 | Dockerfile 复制 `backend` 时遵循 `.dockerignore`，已排除 `backend/tests`、`backend/scripts`、`backend/app/test`、`docs`、`data` 与 `.env` | 继续保持生产镜像不包含测试、manual 脚本和任何硬编码凭证 |
 
 ---
 
@@ -274,8 +299,12 @@
 | `collection_status` | string | 采集阶段状态 |
 | `analysis_status` | string | 分析阶段状态 |
 | `report_status` | string | 报告阶段状态 |
-| `collection_source` | string | 采集来源：`official` / `aidso` |
-| `aidso_thinking_enabled_by_platform` | object | Aidso 数据源各平台端侧是否开启深度思考，键为平台编码，值为 boolean；未配置的平台默认开启 |
+| `collection_source` | string | 采集来源：`official` / `aidso` / `molizhishu` |
+| `aidso_thinking_enabled_by_platform` | object | 历史 Aidso 运行各平台深度思考开关（只读兼容） |
+| `provider_mode_by_platform` | object | 模力指数各平台采集模式，键为 `molizhishu_*` 平台编码，值为 `standard` / `reasoning` / `search` / `reasoning_search` |
+| `provider_screenshot` | integer | 模力指数截图策略：`0` 不截 / `1` 仅成功 / `2` 全部 |
+| `region_code` | string/null | 模力指数区域编码 |
+| `provider_callback_url` | string/null | 模力指数回调地址 |
 | `platform_codes` | string[] | 参与采集的平台 |
 | `expected_query_count` | integer | 预期查询数 |
 | `total_tasks` | integer | 总任务数 |
@@ -378,11 +407,11 @@
 | --- | --- | --- |
 | `prompt_text` | string | 关联问题文本 |
 | `prompt_type` | string | 问题类型 |
-| `reasoning_text` | string/null | 深度思考过程；从 `raw_response_json` 安全提取，无则为 `null` |
-| `search_keywords` | string[] | 搜索关键词列表；从 `raw_response_json` 安全提取，无则为 `[]` |
-| `raw_response_safe` | object/null | 白名单原始响应安全子集（仅含 `model`/`usage`/`choices.finish_reason`/`output.search_info`/Aidso 思考与搜索词等展示字段） |
-| `citations[]` | array | 引用列表（`citation_no`、`title`、`url`、`domain`、`source_type`、`quoted_text`） |
-| `brand_results[]` | array | 品牌识别（`brand_id`、`is_mentioned`、`mention_count`、`first_position`、`sentiment`、`context_json`） |
+| `reasoning_text` | string/null | 深度思考过程；从 `raw_response_json` 安全提取，无则为 `null`；模力指数采集读取 `result.data.reasoningProcess.content` |
+| `search_keywords` | string[] | 搜索关键词列表；从 `raw_response_json` 安全提取，无则为 `[]`；模力指数采集读取 `result.data.recommendedQuestions`（仅字符串或对象的 `question`/`title` 字段） |
+| `raw_response_safe` | object/null | 白名单原始响应安全子集。官方/Aidso：含 `model`/`usage`/`choices.finish_reason`/`output.search_info`/Aidso 思考与搜索词等。模力指数额外含 `status`、`answerContent`（截断）、`citationList[]`（title/url/site）、`referenceList[]`（title/url/site/summary）、`reasoningProcess.content`（截断）、`recommendedQuestions`（仅安全字符串）、`pageScreenshot`、`amount`。不含 token/proxy/debug 等内部字段 |
+| `citations[]` | array | 引用列表（`citation_no`、`title`、`url`、`domain`、`source_type`、`quoted_text`）；模力指数优先 `citationList`，为空时回退 `referenceList.summary` → `quoted_text` |
+| `brand_results[]` | array | 品牌识别（`brand_id`、`is_mentioned`、`mention_count`、`first_position`、`sentiment`、`context_json`）；本地规则匹配为准。模力指数 provider 品牌字段仅写入 `context_json.provider_*`（字符串截断、rankings 限条数与白名单字段），不覆盖本地指标 |
 
 `raw_response_safe` 对象字段（按白名单从上游原始响应提取；无可展示字段时为 `null`）：
 
@@ -548,6 +577,9 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/health"
 | `status` | string | `ready` 或 `not_ready` |
 | `database` | object | 数据库探测结果 |
 | `redis` | object | Redis 探测结果 |
+| `platform_runtime` | object | 各 AI 平台运行时脱敏诊断 |
+| `platform_runtime.collection_ready` | boolean | DB 中已启用平台是否均满足运行时 adapter / 凭证 |
+| `platform_runtime.platforms[]` | array | 每项含 `platform_code`、`db_enabled`、`runtime_configured`、`credential_count`、`adapter_registered`、`ready_for_collection` |
 | `nacos` | object | 仅 `NACOS_ENABLED=true` 时返回 |
 
 `database` / `redis` / `nacos` 对象字段：
@@ -1433,7 +1465,16 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/projects/1/monitor-setup" 
 
 ### 8.3 AI 生成辅助（候选，不落库）
 
-创建项目与编辑配置向导中的「AI 生成品牌词 / 竞品 / 监测问题」辅助接口。MVP 阶段使用确定性规则生成候选，**不写数据库**；用户确认后仍通过 [8.2 保存监测设置](#82-保存监测设置) 或 [8.4 一步创建完整项目](#84-一步创建完整项目) 落库。
+创建项目与编辑配置向导中的「AI 生成品牌词 / 竞品 / 监测问题」辅助接口。**优先调用 Agent LLM 结构化生成**；当 Agent LLM 未配置、超时或输出非法时，自动降级为确定性规则候选。**不写数据库**；用户确认后仍通过 [8.2 保存监测设置](#82-保存监测设置) 或 [8.4 一步创建完整项目](#84-一步创建完整项目) 落库。
+
+**生成策略：**
+
+| `generation_method` | 含义 |
+| --- | --- |
+| `llm` | Agent LLM 成功返回结构化候选 |
+| `rule_fallback` | LLM 不可用/失败时的规则兜底 |
+
+**配置（`.env`）：** `AI_GENERATION_LLM_ENABLED`（默认 `true`）、`AI_GENERATION_TIMEOUT_SECONDS`（默认 `30`）、`AI_GENERATION_MAX_INPUT_CHARS`（默认 `4000`）；复用 `AGENT_LLM_*` 凭证。LLM 失败不会向客户端暴露 API Key。
 
 **路径选择：**
 
@@ -1466,6 +1507,7 @@ v1 兼容前缀：`/api/v1/geo-monitoring/ai/*:generate` 与 `/api/v1/geo-monito
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `brand_words` | string[] | 去重后的品牌词候选，**必含** `brand_name` |
+| `generation_method` | string | `llm` 或 `rule_fallback` |
 
 **常见错误：** `brand_name` 为空 `422`
 
@@ -1505,6 +1547,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/ai/brand-words:generate" 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `competitors` | array | 竞品候选列表 |
+| `generation_method` | string | `llm` 或 `rule_fallback` |
 
 `competitors[]` 元素：
 
@@ -1555,6 +1598,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/ai/competitors:generate" 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `questions` | array | 问题候选列表 |
+| `generation_method` | string | `llm` 或 `rule_fallback` |
 
 `questions[]` 元素：
 
@@ -1643,6 +1687,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects/1/ai/brand-words
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `competitors` | array | 竞品候选列表 |
+| `generation_method` | string | `llm` 或 `rule_fallback` |
 
 `competitors[]` 元素：
 
@@ -1693,6 +1738,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects/1/ai/competitors
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `questions` | array | 问题候选列表 |
+| `generation_method` | string | `llm` 或 `rule_fallback` |
 
 `questions[]` 元素：
 
@@ -1888,7 +1934,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/prompt-sets/1/activate"
 
 官方平台编码：`doubao`、`qwen`、`yuanbao`、`deepseek`、`kimi`。
 
-Aidso 第三方数据源端侧平台编码：
+Aidso 第三方数据源端侧平台编码（**历史只读**：数据库中可能存在 `collection_source=aidso` 的历史 Run；新建 Run 禁止 `aidso`，平台种子不再新增 `aidso_*`）：
 
 | 平台编码 | 说明 |
 | --- | --- |
@@ -1904,6 +1950,55 @@ Aidso 第三方数据源端侧平台编码：
 | `aidso_baidu_web` | 百度 AI |
 | `aidso_douyin_web` | 抖音 AI |
 | `aidso_wenxin_web` | 文心一言 |
+
+模力指数第三方采集（`collection_source=molizhishu`）平台码唯一口径（`services/platforms.py` → `MOLIZHISHU_PLATFORM_MAPPINGS`）：
+
+| 本地 platform_code | 模力指数 platform | 平台名 | base_platform | endpoint_type | 默认 mode |
+| --- | --- | --- | --- | --- | --- |
+| `molizhishu_deepseek_web` | `deepseek` | DeepSeek 网页端 | `deepseek` | `web` | `reasoning_search` |
+| `molizhishu_deepseek_mobile` | `deepseek_mobile` | DeepSeek 手机端 | `deepseek` | `app` | `reasoning_search` |
+| `molizhishu_doubao_web` | `doubao` | 豆包网页端 | `doubao` | `web` | `search` |
+| `molizhishu_doubao_mobile` | `doubao_mobile` | 豆包手机端 | `doubao` | `app` | `search` |
+| `molizhishu_yuanbao_web` | `yuanbao` | 腾讯元宝 | `yuanbao` | `web` | `search` |
+| `molizhishu_kimi_web` | `kimi` | Kimi | `kimi` | `web` | `search` |
+| `molizhishu_qianwen_web` | `qianwen` | 通义千问 | `qianwen` | `web` | `search` |
+| `molizhishu_quark_web` | `quark` | 夸克 AI | `quark` | `web` | `search` |
+| `molizhishu_baiduai_web` | `baiduai` | 百度 AI+ | `baiduai` | `web` | `search` |
+| `molizhishu_weibo_zhisou_web` | `weibo_zhisou` | 微博智搜 | `weibo_zhisou` | `web` | `search` |
+| `molizhishu_wenxinyiyan_web` | `wenxinyiyan` | 文心一言 | `wenxinyiyan` | `web` | `search` |
+
+> 模力指数 provider 平台标识须逐字使用上表「模力指数 platform」列（如 `qianwen`、`baiduai`）。移动端为独立 provider 平台，展示仍通过 `base_platform + endpoint_type` 归组。`provider_mode_by_platform` 取值须为各平台 `supported_modes` 子集：`standard` / `reasoning` / `search` / `reasoning_search`。
+
+模力指数依赖以下环境变量，模板见仓库根目录 `.env.example`：
+
+| 环境变量 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `MOLIZHISHU_ENABLED` | bool | `false` | 是否启用模力指数采集适配器 |
+| `MOLIZHISHU_BASE_URL` | string | `https://business-api.molizhishu.com/api/business/monitor` | 模力指数 Business API 根地址 |
+| `MOLIZHISHU_API_TOKEN` | string | 空 | 模力指数 API 令牌；`MOLIZHISHU_ENABLED=true` 时必填 |
+| `MOLIZHISHU_REQUEST_TIMEOUT_SECONDS` | int | `30` | 单次 HTTP 请求超时（秒） |
+| `COLLECTION_MOLIZHISHU_MAX_POLLS` | int | `360` | 单 QueryTask 轮询子任务结果的最大次数 |
+| `COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS` | int | `8` | 轮询间隔（秒） |
+| `MOLIZHISHU_PROVIDER_BATCH_ENABLED` | bool | `true` | 是否启用 run 级 ProviderBatch 合并提交 |
+| `MOLIZHISHU_PROVIDER_BATCH_MAX_SUBTASKS` | int | `100` | 单 provider batch 最大 subTask 数 |
+| `MOLIZHISHU_DEFAULT_SCREENSHOT` | int | `0` | 模力指数 Run 未传 `provider_screenshot` 时的默认截图策略（`0` 不截 / `1` 仅成功 / `2` 全部） |
+| `MOLIZHISHU_CALLBACK_ENABLED` | bool | `false` | 是否启用 provider 回调（M10 实现） |
+| `MOLIZHISHU_CALLBACK_TOKEN` | string | 空 | 回调鉴权令牌（不得写入日志明文） |
+| `MOLIZHISHU_REGIONS_URL` | string | 见 `.env.example` | 模力指数区域列表上游地址（免鉴权 city-info） |
+| `MOLIZHISHU_REGIONS_CACHE_SECONDS` | int | `300` | 区域列表本地缓存 TTL（秒） |
+
+> 启动校验：`MOLIZHISHU_ENABLED=true` 且 `MOLIZHISHU_API_TOKEN` 为空时，应用启动失败并抛出明确错误。`Settings.runtime_summary()` 中 `platforms.molizhishu` 仅输出 `enabled` / `base_url` / `has_token`，不得输出 token 明文。历史 `AIDSO_*` 配置暂保留兼容，仅用于续跑历史 pending 任务；新建 Run 使用 `official` 或 `molizhishu`。
+>
+> 当前实现提醒：数据库中的 `molizhishu_*` 平台可为 `enabled=true`，但运行时 adapter 注册仍受 `.env` 的 `MOLIZHISHU_ENABLED`、`MOLIZHISHU_API_TOKEN` 和 base URL 影响。当前 `POST /runs` 已在创建 Run 前校验 DB 平台、adapter 注册与凭证状态；配置不一致会以 HTTP `409` + `40908` 返回，不再延迟到 worker 才暴露。
+
+#### 10.0.1 模力指数 pending 轮询与费用
+
+- 单 QueryTask 提交 1 prompt × 1 platform 后，adapter 保存 `taskId/subTaskId` 于 `request_json`；pending 时 Actor 按 `COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS` 延迟重入队，最多 `COLLECTION_MOLIZHISHU_MAX_POLLS` 次。
+- `pending/assigned/processing` 且 `answerContent` 为空时**不算失败 attempt**，仅增加 `molizhishu_poll_count`。
+- `answerContent` 非空即可落库为 `success`，即使 provider `status` 仍为 processing（原始 status 保留在 `provider_result_json`）。
+- 模力指数 HTTP **200** 仍可能 `success=false`：client 必须检查 body `success/code/message`；`Token失效` 归类为不可无限重试的鉴权失败；余额不足为不可重试错误。
+- 真实接口可能产生费用：自动化 pytest **不得**访问真实模力指数；仅可手动运行 `backend/scripts/molizhishu_smoke_test.py`（不写业务库）。
+- 线上可通过 `MOLIZHISHU_ENABLED=false` 关闭模力指数采集，不影响官方 `*_ENABLED` 平台。
 
 ### 10.1 分页查询 AI 平台
 
@@ -2110,7 +2205,59 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/source-types"
 
 ---
 
-### 10.7 获取行业基准参照指标
+### 10.7 获取模力指数区域列表（provider 代理）
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 获取模力指数区域列表 |
+| **请求方式** | `GET` |
+| **接口路径** | `/api/geo-monitoring/providers/molizhishu/regions` |
+
+**说明：** 本接口为模力指数 provider 能力的本地代理，调用免鉴权的 `city-info` 上游接口并做短缓存；不消耗本系统采集 token。创建 `collection_source=molizhishu` 的运行时，可将返回的 `region_code` 写入 `POST /runs` 的 `region_code` 字段（当前仅支持单个区域，提交体会转换为 `regionCode: [region_code]`）。
+
+**入参：** 无
+
+**出参 `data` 字段：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `items` | array | 省级行政区列表 |
+
+`items[]` 元素：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `province` | string | 省份/直辖市/自治区名称 |
+| `region_code` | string | 模力指数区域编码，如 `110000` |
+
+**解析规则：** 上游 `city-info` 按省级返回 `province` 与 `regionCode` 数组；本接口每个省仅暴露 `regionCode[0]` 作为 `region_code`，与创建 Run 时单值 `region_code` 口径一致。
+
+**常见错误：** `50210` 上游不可用、超时或返回无效数据
+
+**调用示例：**
+
+```bash
+curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/providers/molizhishu/regions"
+```
+
+**响应示例：**
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "items": [
+      {"province": "北京市", "region_code": "110000"},
+      {"province": "上海市", "region_code": "310000"}
+    ]
+  }
+}
+```
+
+---
+
+### 10.8 获取行业基准参照指标
 
 | 项目 | 说明 |
 | --- | --- |
@@ -2222,13 +2369,22 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/benchmarks" \
 | --- | --- | --- | --- |
 | `project_id` | integer | 是 | 项目 ID，≥ 1 |
 | `prompt_set_id` | integer/null | 否 | 指定提示词集；不传则用激活集 |
-| `collection_source` | string | 否 | 采集来源，默认 `official`；可选 `official` / `aidso` |
-| `aidso_thinking_enabled_by_platform` | object | 否 | Aidso 数据源各平台端侧是否开启深度思考，键为平台编码，值为 boolean；未配置的平台默认开启 |
+| `collection_source` | string | 否 | 采集来源，默认 `official`；新建运行可选 `official` / `molizhishu`（`aidso` 已废弃，返回 `422`） |
+| `provider_mode_by_platform` | object | 否 | 模力指数各平台采集模式；键须在 `MOLIZHISHU_PLATFORM_MAPPINGS` 且属于本次 `platform_codes`；值须为平台支持的 `standard` / `reasoning` / `search` / `reasoning_search` |
+| `provider_screenshot` | integer | 否 | 模力指数截图策略，默认 `0`；仅允许 `0` / `1` / `2` |
+| `region_code` | string/null | 否 | 模力指数区域编码；若提供则非空 |
+| `provider_callback_url` | string/null | 否 | 模力指数回调地址，最大 500 字符 |
 | `platform_codes` | string[]/null | 否 | 指定平台；不传则用项目默认或全部启用平台 |
+
+**校验规则：**
+
+- 官方 run 仅允许官方平台（`adapter_type` 非 `aidso`/`molizhishu`）；模力指数 run 仅允许 `molizhishu_*` 平台；二者不可混用。
+- 请求体禁止携带已废弃字段 `aidso_thinking_enabled_by_platform`（`extra=forbid`，返回 `422`）。
+- `provider_mode_by_platform`、`provider_screenshot`、`region_code`、`provider_callback_url` 仅在 `collection_source=molizhishu` 时有效。
 
 **出参 `data`：** [MonitorRunOut](#29-monitorrunout监测运行)
 
-**常见错误：** `40030` 无激活提示词集；`40901` 无可用提示词；`40031`/`40902` 无可用平台
+**常见错误：** `40030` 无激活提示词集；`40901` 无可用提示词；`40031`/`40902` 无可用平台；HTTP `409` + `40908` 表示平台在 DB 已启用但运行时 adapter / 凭证未配置（如 `MOLIZHISHU_ENABLED=false` 仍创建 `collection_source=molizhishu` 运行，或官方平台缺 `*_ENABLED`/模型/密钥）
 
 **调用示例：**
 
@@ -2238,13 +2394,15 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
   -d '{"project_id": 1, "platform_codes": ["qwen", "deepseek"]}'
 ```
 
-Aidso 数据源示例：
+模力指数数据源示例：
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
   -H "Content-Type: application/json" \
-  -d '{"project_id": 1, "collection_source": "aidso", "aidso_thinking_enabled_by_platform": {"aidso_doubao_web": false, "aidso_doubao_app": true}, "platform_codes": ["aidso_doubao_web", "aidso_doubao_app"]}'
+  -d '{"project_id": 1, "collection_source": "molizhishu", "provider_mode_by_platform": {"molizhishu_doubao_web": "search", "molizhishu_kimi_web": "standard"}, "provider_screenshot": 1, "region_code": "110000", "platform_codes": ["molizhishu_doubao_web", "molizhishu_kimi_web"]}'
 ```
+
+**常见校验错误（HTTP 200 + `code=422`）：** 非法 `provider_mode`、未知平台、mode 配置不属于本次平台、携带废弃 `aidso_thinking_enabled_by_platform`、`collection_source=aidso`。
 
 ---
 
@@ -2271,6 +2429,12 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
 **入参：** 无 Body
 
 **出参 `data`：** [MonitorRunOut](#29-monitorrunout监测运行)（`status=cancelled` 或保持终态）
+
+**行为说明：**
+
+- 将 `pending` / `queued` / `running` 的 QueryTask 标记为 `cancelled`；已成功（`success`）子任务保留结果与答案。
+- 当运行 `collection_source=molizhishu` 时，取消请求**先完成本地落库**，再在后台并发调用模力指数 `PUT /task/{taskId}/stop`（按唯一 `taskId` 去重，单次 stop 超时上限 10 秒）；日志记录 `run_id`、`task_id`、`subtask_id`。
+- 模力指数 stop 仅能停止尚未分配的 pending 子任务；已 `assigned` / `processing` 的子任务可能继续计费直至 provider 侧终态，本地仍标记为 `cancelled` 且不再轮询。
 
 ---
 
@@ -2318,6 +2482,80 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
 | **接口路径** | `/api/geo-monitoring/runs/{run_id}/tasks` |
 
 **说明：** 与 [11.6](#116-分页查询运行任务) 入参、出参完全一致，为兼容别名路由。
+
+---
+
+### 11.8 模力指数 Provider 回调
+
+| 项目 | 说明 |
+| --- | --- |
+| **接口名称** | 模力指数子任务完成回调 |
+| **请求方式** | `POST` |
+| **接口路径** | `/api/geo-monitoring/provider-callbacks/molizhishu` |
+| **兼容路径** | `/api/v1/geo-monitoring/provider-callbacks/molizhishu` |
+
+**鉴权：**
+
+- Header `X-Callback-Token` 或 Query `token`，值须与部署环境 `MOLIZHISHU_CALLBACK_TOKEN` 一致。
+- token 未配置时返回 HTTP `503`；token 错误返回 HTTP `401`。
+
+**请求体：** 模力指数子任务结果 JSON。至少包含：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `taskId` | string | 是 | 模力指数主任务 ID |
+| `subTaskId` | string | 是 | 模力指数子任务 ID |
+| `status` | string | 是 | 子任务状态；`completed` 时写入答案 |
+| `answerContent` | string | 条件 | `status=completed` 时必填 |
+| `citationList` | array | 否 | 引用列表，归一化规则与轮询一致 |
+| `referenceList` | array | 否 | `citationList` 为空时备用 |
+| `errorMessage` | string | 否 | 失败/停止时错误说明 |
+
+也支持外层信封 `{ success, code, data: { ... } }`，系统从 `data` 提取上述字段。
+
+**ProviderBatch 批量回调（Task M15）：** 当 payload 含 `taskId` + `subTaskList` 且不含顶层 `subTaskId` 时，按 batch 处理：根据 `taskId` 定位 `geo_provider_batch`，逐条 subTask 复用单任务入库逻辑，并刷新 batch/run 聚合。原始 callback 写入 `geo_provider_batch.raw_result_json`。
+
+**配置（ProviderBatch 正式版）：**
+
+| 环境变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `MOLIZHISHU_PROVIDER_BATCH_ENABLED` | `true` | molizhishu run 启用 run 级拆批提交 |
+| `MOLIZHISHU_PROVIDER_BATCH_MAX_SUBTASKS` | `100` | 单 provider batch 最大 subTask 数 |
+
+**出参 `data`：**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `outcome` | string | `processed` / `duplicate` / `ignored` / `failed_task` / `task_not_found` / `invalid_payload` |
+| `task_id` | integer/null | 匹配到的本地 QueryTask ID |
+| `message` | string/null | 补充说明 |
+
+**行为说明：**
+
+- 根据 `taskId` + `subTaskId` 查找本地 `QueryTask`（优先 `provider_task_id` / `provider_subtask_id`，回退 `request_json`）。
+- 回调 payload 与轮询结果共用归一化与 `_persist_platform_answer` 入库逻辑。
+- 幂等：已成功且存在 `Answer` 时重复回调仅返回 `duplicate`，不重复写入 `Answer` / `Citation`。
+- 回调与轮询并存时，任一先到均可完成入库；后到只更新必要状态或跳过。
+- 处理异常被捕获并记录日志，不导致服务崩溃。
+
+**常见错误：**
+
+| code | 说明 |
+| --- | --- |
+| HTTP `401` | callback token 无效 |
+| HTTP `503` | `MOLIZHISHU_CALLBACK_TOKEN` 未配置 |
+| `40401` | 未找到匹配 QueryTask |
+| `42201` | payload 缺少必填字段或答案为空 |
+| `50001` | 服务端处理异常 |
+
+**调用示例：**
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/provider-callbacks/molizhishu" \
+  -H "Content-Type: application/json" \
+  -H "X-Callback-Token: <your-callback-token>" \
+  -d '{"taskId":"task-mlz-1","subTaskId":"sub-1","status":"completed","answerContent":"推荐目标品牌。","citationList":[{"url":"https://example.com","title":"示例","snippet":"摘要"}]}'
+```
 
 ---
 
@@ -2473,6 +2711,23 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/answers/1"
 
 ## 14. 分析与 Agent 审计
 
+分析链路使用 LangGraph 编排：先计算确定性指标，再通过 Agent LLM 做语义分类、洞察和改进建议。数值指标仍由 SQL/Python 确定性计算，LLM 不得生成或覆盖统计口径。
+
+**Agent LLM 运行配置：**
+
+| 环境变量 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `AGENT_LLM_BASE_URL` | string | 空 | OpenAI-compatible 或 DashScope Agent LLM 地址 |
+| `AGENT_LLM_API_KEY` | string | 空 | Agent LLM API Key，日志/API 响应不得输出明文 |
+| `AGENT_LLM_MODEL` | string | 空 | Agent 使用模型 |
+| `AGENT_LLM_PROVIDER` | enum | `openai_compatible` | `openai_compatible` 或 `dashscope` |
+| `AGENT_LLM_TIMEOUT_SECONDS` | int | `90` | 单次 Agent LLM 调用超时 |
+| `AGENT_LLM_MAX_ATTEMPTS` | int | `2` | 超时、限流、网络错误等重试次数上限 |
+
+> 当前实现提醒：`build_agent_llm_config()` 不再回退测试默认 URL/key/model；缺少 `AGENT_LLM_BASE_URL`、`AGENT_LLM_API_KEY` 或 `AGENT_LLM_MODEL` 时，分析接口返回 `50301`。`APP_ENV=prod` 下这些配置还会在应用启动阶段 fail-fast。若使用 DashScope 原生 API，应显式设置 `AGENT_LLM_PROVIDER=dashscope` 并核对 base URL 口径。
+>
+> 触发方式提醒：当前 `POST /runs/{run_id}/analyze` 会校验 Agent LLM 配置后将分析任务投递到 `analysis` 队列，接口快速返回 `queued=true`。前端应轮询 `GET /runs/{run_id}` 或 `GET /runs/{run_id}/analysis`，等待 `analysis_status=completed` 后展示完整洞察。
+
 ### 14.1 手工触发或重跑分析
 
 | 项目 | 说明 |
@@ -2488,11 +2743,11 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/answers/1"
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `run_id` | integer | 运行 ID |
-| `analysis_status` | string | 本次分析结果状态 |
-| `skip_reason` | string/null | 跳过原因 |
+| `analysis_status` | string | 入队后的分析状态，通常为 `pending` |
+| `queued` | boolean | 是否已投递到 analysis 队列 |
 | `run_analysis_status` | string | 运行当前分析状态 |
 
-**常见错误：** 采集未完成 HTTP `409`，`code=40910`
+**常见错误：** 采集未完成 HTTP `409`，`code=40910`；分析正在进行中 HTTP `409`，`code=40911`；Agent LLM 配置缺失 HTTP `503`，`code=50301`
 
 **调用示例：**
 
@@ -2930,11 +3185,11 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questi
 
 ---
 
-### 16.3 高频评价标签规则聚类
+### 16.3 高频评价标签聚类
 
 | 项目 | 说明 |
 | --- | --- |
-| **接口名称** | 高频评价标签规则聚类 |
+| **接口名称** | 高频评价标签聚类 |
 | **请求方式** | `GET` |
 | **接口路径** | `/api/geo-monitoring/projects/{project_id}/conversation-questions/{prompt_id}/evaluation-tags` |
 
@@ -2946,8 +3201,19 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questi
 | `platform_codes` | string[] | 否 | 平台端编码 |
 | `start_at` / `end_at` | datetime | 否 | 过滤答案采集时间 |
 | `limit` | integer | 否 | 返回标签数上限，默认 10，1–50 |
+| `cluster_method` | string | 否 | 聚类策略，默认 `auto`：`rule` / `llm` / `auto` |
 
-**口径说明：** 当前采用规则聚类（`cluster_method=rule`），基于回答正文关键词匹配预置评价维度（如演出质量、性价比、交通便利等）；非 LLM 聚类，结果稳定、成本低。
+**聚类策略：**
+
+| `cluster_method` | 行为 |
+| --- | --- |
+| `rule` | 仅关键词规则聚类，成本低、结果稳定 |
+| `llm` | 优先 Agent LLM 结构化聚类；失败回退规则 |
+| `auto` | 先规则；有命中则直接返回；无命中且答案数 ≥ `EVALUATION_TAGS_LLM_MIN_ANSWERS`（默认 3）时走 LLM |
+
+**LLM 结果缓存：** 成功 LLM 聚类结果写入 `run.result_json.evaluation_tags_cache`，相同问题/筛选条件/答案指纹下复用，避免重复计费。
+
+**配置：** `EVALUATION_TAGS_LLM_ENABLED`、`EVALUATION_TAGS_LLM_MIN_ANSWERS`、`EVALUATION_TAGS_LLM_MAX_ANSWERS`、`EVALUATION_TAGS_LLM_TIMEOUT_SECONDS`；复用 `AGENT_LLM_*` 凭证。
 
 **出参 `data` 字段：**
 
@@ -2955,7 +3221,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/projects/1/conversation-questi
 | --- | --- | --- |
 | `run_id` | integer/null | 实际使用的运行 ID |
 | `prompt_id` | integer | 问题 ID |
-| `cluster_method` | string | 固定 `rule` |
+| `cluster_method` | string | 实际使用：`rule` 或 `llm` |
 | `answer_count` | integer | 参与聚类的答案数 |
 | `items` | array | 高频标签列表 |
 | `total` | integer | 返回标签数 |
@@ -3369,9 +3635,15 @@ curl -O -J "http://127.0.0.1:8000/api/geo-monitoring/reports/1/download"
 | `40905` | 409 | 品牌已被答案引用 |
 | `40906` | 409 | 提示词集已被运行引用 |
 | `40907` | 409 | 提示词已被任务引用 |
+| `40908` | 409 | 平台 DB 已启用但运行时 adapter / 凭证未配置 |
 | `40910` | 409 | 采集未完成，不可分析 |
+| `40911` | 409 | 分析正在进行中，不可重复触发 |
 | `40920` | 409 | 分析未完成，不可生成报告 |
 | `40921` | 409 | 报告未生成完成，不可下载 |
+| `40401` | 200 | Provider 回调找不到对应 QueryTask |
+| `42201` | 200 | Provider 回调 payload 非法 |
+| `50210` | 200 | 模力指数区域列表上游不可用 |
+| `50301` | 503 | Agent LLM 配置不完整 |
 | `500` | 500 | 服务器内部错误 |
 
 ---
@@ -3393,6 +3665,8 @@ curl -O -J "http://127.0.0.1:8000/api/geo-monitoring/reports/1/download"
 
 ## 相关文档
 
-- 接口测试说明与用例：[API测试文档.md](./API测试文档.md)
-- 全量自动化测试报告：[API全量接口测试报告.md](./API全量接口测试报告.md)
+- 原型页面调用顺序：[原型功能_API映射整合精简版.md](./原型功能_API映射整合精简版.md)
+- 采集任务生命周期：[采集任务生命周期说明.md](./采集任务生命周期说明.md)
+- 本地全量联调脚本：`backend/scripts/run_api_full_test.py`
+- 端到端流水线脚本：`backend/scripts/run_e2e_pipeline_test.py`
 - 在线 Swagger UI：`http://127.0.0.1:8000/docs`

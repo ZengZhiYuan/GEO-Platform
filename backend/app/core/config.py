@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class YuanbaoCredential(BaseModel):
     secret_id: str
     secret_key: str
+
+
+class ApiAuthTokenEntry(BaseModel):
+    token: str
+    tenant_id: int = Field(default=1, ge=1)
+    actor_id: int | None = None
 
 
 # 将 URL 脱敏为 scheme://host:port/path 摘要，用于日志与探针
@@ -134,6 +141,35 @@ def _optional_text(value: str | None) -> str | None:
     return stripped or None
 
 
+# 判断是否为生产环境画像（fail-fast 校验入口）
+def _is_production_env(app_env: str) -> bool:
+    return app_env.strip().lower() in {"prod", "production"}
+
+
+# 生产环境要求关键开关必须显式写入进程环境变量，避免误用代码默认值
+def _require_explicit_env_var(name: str) -> None:
+    if name not in os.environ:
+        raise ValueError(f"{name} must be explicitly set when APP_ENV=prod")
+
+
+_PRODUCTION_MOLIZHISHU_EXPLICIT_ENV_VARS = (
+    "MOLIZHISHU_ENABLED",
+    "MOLIZHISHU_API_TOKEN",
+    "MOLIZHISHU_PROVIDER_BATCH_ENABLED",
+)
+
+def _require_production_api_auth_env_vars() -> None:
+    _require_explicit_env_var("API_AUTH_ENABLED")
+    if (
+        "API_AUTH_TOKEN_MAP_JSON" not in os.environ
+        and "API_AUTH_BEARER_TOKENS" not in os.environ
+    ):
+        raise ValueError(
+            "API_AUTH_TOKEN_MAP_JSON or API_AUTH_BEARER_TOKENS must be "
+            "explicitly set when APP_ENV=prod"
+        )
+
+
 class Settings(BaseSettings):
     # 同时兼容从项目根目录或 backend/ 目录启动的两种情况
     model_config = SettingsConfigDict(
@@ -211,9 +247,27 @@ class Settings(BaseSettings):
     KIMI_MODEL: str = ""
     KIMI_API_KEYS: str = ""
 
-    AIDSO_ENABLED: bool = False
+    AIDSO_ENABLED: bool = False  # 历史兼容：续跑 pending Aidso 任务；新建 Run 不得使用 aidso
     AIDSO_BASE_URL: str = "https://odapi.aidso.com"
     AIDSO_API_TOKEN: str = ""
+
+    MOLIZHISHU_ENABLED: bool = False
+    MOLIZHISHU_BASE_URL: str = (
+        "https://business-api.molizhishu.com/api/business/monitor"
+    )
+    MOLIZHISHU_API_TOKEN: str = ""
+    MOLIZHISHU_REQUEST_TIMEOUT_SECONDS: int = 30
+    COLLECTION_MOLIZHISHU_MAX_POLLS: int = 360
+    COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS: int = 8
+    MOLIZHISHU_PROVIDER_BATCH_ENABLED: bool = True
+    MOLIZHISHU_PROVIDER_BATCH_MAX_SUBTASKS: int = 100
+    MOLIZHISHU_DEFAULT_SCREENSHOT: int = 0
+    MOLIZHISHU_CALLBACK_ENABLED: bool = False
+    MOLIZHISHU_CALLBACK_TOKEN: str = ""
+    MOLIZHISHU_REGIONS_URL: str = (
+        "https://business-api.molizhishu.com/api/business/eip-edge/ports/city-info"
+    )
+    MOLIZHISHU_REGIONS_CACHE_SECONDS: int = 300
 
     # Agent LLM
     AGENT_LLM_BASE_URL: str = ""
@@ -222,6 +276,18 @@ class Settings(BaseSettings):
     AGENT_LLM_PROVIDER: str = "openai_compatible"
     AGENT_LLM_TIMEOUT_SECONDS: int = 90
     AGENT_LLM_MAX_ATTEMPTS: int = 2
+
+    # AI 生成辅助（O5）
+    AI_GENERATION_LLM_ENABLED: bool = True
+    AI_GENERATION_TIMEOUT_SECONDS: int = 30
+    AI_GENERATION_MAX_INPUT_CHARS: int = 4000
+
+    # 评价标签聚类（O6）
+    EVALUATION_TAGS_LLM_ENABLED: bool = True
+    EVALUATION_TAGS_LLM_MIN_ANSWERS: int = 3
+    EVALUATION_TAGS_LLM_MAX_ANSWERS: int = 50
+    EVALUATION_TAGS_LLM_TIMEOUT_SECONDS: int = 30
+    EVALUATION_TAGS_LLM_MAX_INPUT_CHARS: int = 8000
 
     # 调度
     SCHEDULER_ENABLED: bool = False
@@ -232,6 +298,12 @@ class Settings(BaseSettings):
     REPORT_STORAGE_DIR: str = "./data/reports"
     REPORT_PUBLIC_BASE_URL: str = ""
     REPORT_RETENTION_DAYS: int = 90
+
+    # 业务 API 鉴权（O7）
+    API_AUTH_ENABLED: bool = False
+    API_AUTH_DEFAULT_TENANT_ID: int = 1
+    API_AUTH_BEARER_TOKENS: str = ""
+    API_AUTH_TOKEN_MAP_JSON: str = "[]"
 
     @property
     def APP_DEBUG(self) -> bool:
@@ -244,6 +316,58 @@ class Settings(BaseSettings):
     # 解析元宝平台 JSON 凭证配置
     def parsed_yuanbao_credentials(self) -> list[YuanbaoCredential]:
         return _parse_yuanbao_credentials(self.YUANBAO_CREDENTIALS_JSON)
+
+    # 解析 API 鉴权 token 映射（JSON 数组优先，否则回退逗号分隔 token 列表）
+    def parsed_api_auth_token_entries(self) -> list[ApiAuthTokenEntry]:
+        raw_json = self.API_AUTH_TOKEN_MAP_JSON.strip()
+        if raw_json and raw_json != "[]":
+            try:
+                parsed = json.loads(raw_json)
+            except json.JSONDecodeError as exc:
+                raise ValueError("API_AUTH_TOKEN_MAP_JSON must be a JSON array") from exc
+            if not isinstance(parsed, list):
+                raise ValueError("API_AUTH_TOKEN_MAP_JSON must be a JSON array")
+            entries: list[ApiAuthTokenEntry] = []
+            for index, item in enumerate(parsed):
+                if not isinstance(item, dict):
+                    raise ValueError(
+                        f"API_AUTH_TOKEN_MAP_JSON[{index}] must be an object"
+                    )
+                token = str(item.get("token", "")).strip()
+                if not token:
+                    raise ValueError(
+                        f"API_AUTH_TOKEN_MAP_JSON[{index}].token must be non-empty"
+                    )
+                tenant_id = int(item.get("tenant_id", self.API_AUTH_DEFAULT_TENANT_ID))
+                actor_raw = item.get("actor_id")
+                actor_id = int(actor_raw) if actor_raw is not None else None
+                entries.append(
+                    ApiAuthTokenEntry(
+                        token=token,
+                        tenant_id=tenant_id,
+                        actor_id=actor_id,
+                    )
+                )
+            return entries
+
+        tokens = _parse_comma_separated_keys(self.API_AUTH_BEARER_TOKENS)
+        return [
+            ApiAuthTokenEntry(
+                token=token,
+                tenant_id=self.API_AUTH_DEFAULT_TENANT_ID,
+                actor_id=self.API_AUTH_DEFAULT_TENANT_ID,
+            )
+            for token in tokens
+        ]
+
+    def api_auth_token_index(self) -> dict[str, ApiAuthTokenEntry]:
+        index: dict[str, ApiAuthTokenEntry] = {}
+        for entry in self.parsed_api_auth_token_entries():
+            index[entry.token] = entry
+        return index
+
+    def lookup_api_auth_token(self, token: str) -> ApiAuthTokenEntry | None:
+        return self.api_auth_token_index().get(token.strip())
 
     # 校验数据库 URL 必须为 postgresql 或 sqlite
     @field_validator("DATABASE_URL")
@@ -325,6 +449,11 @@ class Settings(BaseSettings):
         "COLLECTION_MAX_ATTEMPTS",
         "COLLECTION_RETRY_BASE_SECONDS",
         "COLLECTION_AIDSO_MAX_POLLS",
+        "COLLECTION_MOLIZHISHU_MAX_POLLS",
+        "COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS",
+        "MOLIZHISHU_PROVIDER_BATCH_MAX_SUBTASKS",
+        "MOLIZHISHU_REQUEST_TIMEOUT_SECONDS",
+        "MOLIZHISHU_REGIONS_CACHE_SECONDS",
         "COLLECTION_MAX_CONCURRENCY",
         "AGENT_LLM_TIMEOUT_SECONDS",
         "AGENT_LLM_MAX_ATTEMPTS",
@@ -344,6 +473,13 @@ class Settings(BaseSettings):
             ZoneInfo(value)
         except ZoneInfoNotFoundError as exc:
             raise ValueError(f"timezone is invalid: {value}") from exc
+        return value
+
+    @field_validator("MOLIZHISHU_DEFAULT_SCREENSHOT")
+    @classmethod
+    def validate_molizhishu_default_screenshot(cls, value: int) -> int:
+        if value not in (0, 1, 2):
+            raise ValueError("MOLIZHISHU_DEFAULT_SCREENSHOT must be 0, 1, or 2")
         return value
 
     @field_validator("AGENT_LLM_PROVIDER")
@@ -392,6 +528,32 @@ class Settings(BaseSettings):
         if self.AIDSO_ENABLED and not self.AIDSO_API_TOKEN.strip():
             raise ValueError("AIDSO_API_TOKEN is required when AIDSO_ENABLED=true")
 
+        if self.MOLIZHISHU_ENABLED and not self.MOLIZHISHU_API_TOKEN.strip():
+            raise ValueError(
+                "MOLIZHISHU_API_TOKEN is required when MOLIZHISHU_ENABLED=true"
+            )
+
+        if _is_production_env(self.APP_ENV):
+            if self.DRAMATIQ_BROKER.strip().lower() != "redis":
+                raise ValueError("DRAMATIQ_BROKER must be redis when APP_ENV=prod")
+            if not self.AGENT_LLM_BASE_URL.strip():
+                raise ValueError("AGENT_LLM_BASE_URL is required when APP_ENV=prod")
+            if not self.AGENT_LLM_API_KEY.strip():
+                raise ValueError("AGENT_LLM_API_KEY is required when APP_ENV=prod")
+            if not self.AGENT_LLM_MODEL.strip():
+                raise ValueError("AGENT_LLM_MODEL is required when APP_ENV=prod")
+            if not self.API_AUTH_ENABLED:
+                raise ValueError("API_AUTH_ENABLED must be true when APP_ENV=prod")
+            if not self.parsed_api_auth_token_entries():
+                raise ValueError(
+                    "API_AUTH_TOKEN_MAP_JSON or API_AUTH_BEARER_TOKENS is required "
+                    "when APP_ENV=prod"
+                )
+            _require_production_api_auth_env_vars()
+            if self.MOLIZHISHU_ENABLED:
+                for env_name in _PRODUCTION_MOLIZHISHU_EXPLICIT_ENV_VARS:
+                    _require_explicit_env_var(env_name)
+
         return self
 
     # 返回数据库、Redis、Nacos 连接目标摘要（脱敏）
@@ -420,6 +582,10 @@ class Settings(BaseSettings):
                 "max_attempts": self.COLLECTION_MAX_ATTEMPTS,
                 "retry_base_seconds": self.COLLECTION_RETRY_BASE_SECONDS,
                 "aidso_max_polls": self.COLLECTION_AIDSO_MAX_POLLS,
+                "molizhishu_max_polls": self.COLLECTION_MOLIZHISHU_MAX_POLLS,
+                "molizhishu_poll_delay_seconds": (
+                    self.COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS
+                ),
                 "max_concurrency": self.COLLECTION_MAX_CONCURRENCY,
                 "raw_response_enabled": self.COLLECTION_RAW_RESPONSE_ENABLED,
             },
@@ -459,6 +625,14 @@ class Settings(BaseSettings):
                     "base_url": self.AIDSO_BASE_URL,
                     "has_token": bool(self.AIDSO_API_TOKEN.strip()),
                 },
+                "molizhishu": {
+                    "enabled": self.MOLIZHISHU_ENABLED,
+                    "base_url": self.MOLIZHISHU_BASE_URL,
+                    "has_token": bool(self.MOLIZHISHU_API_TOKEN.strip()),
+                    "provider_batch_enabled": self.MOLIZHISHU_PROVIDER_BATCH_ENABLED,
+                    "callback_enabled": self.MOLIZHISHU_CALLBACK_ENABLED,
+                    "regions_cache_seconds": self.MOLIZHISHU_REGIONS_CACHE_SECONDS,
+                },
             },
             "agent_llm": {
                 "base_url": self.AGENT_LLM_BASE_URL or None,
@@ -476,6 +650,11 @@ class Settings(BaseSettings):
                 "storage_dir": self.REPORT_STORAGE_DIR,
                 "public_base_url": self.REPORT_PUBLIC_BASE_URL or None,
                 "retention_days": self.REPORT_RETENTION_DAYS,
+            },
+            "api_auth": {
+                "enabled": self.API_AUTH_ENABLED,
+                "token_count": len(self.parsed_api_auth_token_entries()),
+                "default_tenant_id": self.API_AUTH_DEFAULT_TENANT_ID,
             },
         }
 

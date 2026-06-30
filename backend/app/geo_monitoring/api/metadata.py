@@ -27,3 +27,12 @@ def list_prompt_types() -> dict:
 @router.get("/source-types", summary="获取信源类型展示字典")
 def list_source_types() -> dict:
     return success(metadata_service.list_source_types())
+
+
+@router.get(
+    "/providers/molizhishu/regions",
+    summary="获取模力指数区域列表（provider 代理）",
+)
+def list_molizhishu_regions() -> dict:
+    data = metadata_service.list_molizhishu_regions()
+    return success(data)

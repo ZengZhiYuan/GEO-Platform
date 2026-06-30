@@ -22,6 +22,7 @@ from app.geo_monitoring.models import (
     QueryTask,
 )
 from app.geo_monitoring.services.analysis import PlatformAnalysis
+from tests.geo_monitoring.analysis_support import patch_fake_llm_for_analyze
 from tests.geo_monitoring.agents.test_graph import FakeLLMClient, _seed_run
 
 
@@ -116,11 +117,7 @@ def _seed_run_without_analysis(db) -> dict[str, Any]:
 
 @pytest.fixture
 def analyzed_competitor_run(client, session_factory, monkeypatch):
-    llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
+    llm = patch_fake_llm_for_analyze(monkeypatch)
     with session_factory() as db:
         seeded = _seed_run(db, platforms=("qwen",))
     response = client.post(f"/api/geo-monitoring/runs/{seeded['run_id']}/analyze")
@@ -197,11 +194,7 @@ def test_competitor_analysis_target_in_kpi_and_boards_when_analyzed(
 def test_competitor_analysis_excludes_candidate_brand_from_boards(
     client, session_factory, monkeypatch
 ):
-    llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
+    llm = patch_fake_llm_for_analyze(monkeypatch)
     with session_factory() as db:
         seeded = _seed_run(db, platforms=("qwen",))
         candidate = Brand(
@@ -266,11 +259,7 @@ def test_competitor_analysis_excludes_candidate_brand_from_boards(
 def test_competitor_analysis_mixed_platform_snapshot_fallback(
     client, session_factory, monkeypatch
 ):
-    llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
+    llm = patch_fake_llm_for_analyze(monkeypatch)
     with session_factory() as db:
         seeded = _seed_run(db, platforms=("qwen", "deepseek"))
         competitor_id = db.execute(
@@ -340,11 +329,7 @@ def test_competitor_analysis_brand_scope_validation(client, analyzed_competitor_
 def test_competitor_analysis_top1_rate_follows_time_filter(
     client, session_factory, monkeypatch
 ):
-    llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
+    llm = patch_fake_llm_for_analyze(monkeypatch)
     with session_factory() as db:
         seeded = _seed_run(db, platforms=("qwen", "deepseek"))
         run_id = seeded["run_id"]
@@ -444,11 +429,7 @@ def test_competitor_analysis_top1_rate_follows_time_filter(
 def test_competitor_analysis_top1_rate_uses_relative_rank_not_char_position(
     client, session_factory, monkeypatch
 ):
-    llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
+    llm = patch_fake_llm_for_analyze(monkeypatch)
     with session_factory() as db:
         seeded = _seed_run(db, platforms=("qwen",))
         run_id = seeded["run_id"]
@@ -576,11 +557,7 @@ def test_competitor_analysis_run_id_belongs_to_other_project(client, session_fac
 def test_competitor_analysis_mention_count_from_brand_results(
     client, session_factory, monkeypatch
 ):
-    llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
+    llm = patch_fake_llm_for_analyze(monkeypatch)
     with session_factory() as db:
         seeded = _seed_run(db, platforms=("qwen",))
         target_id = seeded["target_brand_id"]

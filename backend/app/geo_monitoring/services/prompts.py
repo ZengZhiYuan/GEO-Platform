@@ -16,6 +16,7 @@ from app.geo_monitoring.schemas import (
     PromptUpdate,
 )
 from app.geo_monitoring.services.projects import require_active_project
+from app.geo_monitoring.services.tenant_access import ensure_project_tenant_access
 
 
 # 计算提示词文本的 SHA256 内容哈希
@@ -37,6 +38,7 @@ def get_prompt_set(db: Session, prompt_set_id: int) -> PromptSet:
     prompt_set = prompt_repo.get_prompt_set_by_id(db, prompt_set_id)
     if prompt_set is None:
         raise BusinessException(message="提示词集不存在", code=40400)
+    ensure_project_tenant_access(db, prompt_set.project_id)
     return prompt_set
 
 
@@ -115,6 +117,10 @@ def get_prompt(db: Session, prompt_id: int) -> Prompt:
     prompt = prompt_repo.get_prompt_by_id(db, prompt_id)
     if prompt is None:
         raise BusinessException(message="提示词不存在", code=40400)
+    prompt_set = prompt_repo.get_prompt_set_by_id(db, prompt.prompt_set_id)
+    if prompt_set is None:
+        raise BusinessException(message="提示词不存在", code=40400)
+    ensure_project_tenant_access(db, prompt_set.project_id)
     return prompt
 
 

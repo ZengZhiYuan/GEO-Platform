@@ -15,6 +15,7 @@ class ErrorCategory(StrEnum):
     PENDING = "pending"
     INVALID_REQUEST = "invalid_request"
     CONTENT_SAFETY = "content_safety"
+    CANCELLED = "cancelled"
     UNKNOWN = "unknown"
 
 
@@ -35,6 +36,42 @@ def classify_http_status(status_code: int, *, message: str = "") -> ErrorCategor
     if status_code >= 400:
         return ErrorCategory.INVALID_REQUEST
     return ErrorCategory.UNKNOWN
+
+
+# 将模力指数业务错误消息映射为统一错误分类
+def classify_molizhishu_message(message: str) -> ErrorCategory:
+    return classify_molizhishu_error(message=message)
+
+
+def _normalize_molizhishu_business_code(code: int | str | None) -> int | None:
+    if code is None:
+        return None
+    try:
+        return int(code)
+    except (TypeError, ValueError):
+        return None
+
+
+# 将模力指数业务 code 与 message 映射为统一错误分类
+def classify_molizhishu_error(
+    *,
+    message: str = "",
+    code: int | str | None = None,
+) -> ErrorCategory:
+    business_code = _normalize_molizhishu_business_code(code)
+    if business_code is not None:
+        if business_code in {401, 403} or 40100 <= business_code < 40200:
+            return ErrorCategory.UNAUTHORIZED
+        if business_code in {402} or 40200 <= business_code < 40300:
+            return ErrorCategory.INVALID_REQUEST
+
+    normalized = message.strip()
+    lowered = normalized.lower()
+    if "token失效" in lowered or "token expired" in lowered or "invalid token" in lowered:
+        return ErrorCategory.UNAUTHORIZED
+    if "余额不足" in normalized or "insufficient balance" in lowered:
+        return ErrorCategory.INVALID_REQUEST
+    return ErrorCategory.INVALID_REQUEST
 
 
 # 判断该错误类别是否适合自动重试
@@ -68,10 +105,12 @@ class AdapterError(Exception):
         status_code: int | None = None,
         retry_after_seconds: float | None = None,
         secrets: Iterable[str] = (),
+        provider_error_message: str | None = None,
     ) -> None:
         self.category = category
         self.status_code = status_code
         self.retry_after_seconds = retry_after_seconds
+        self.provider_error_message = provider_error_message
         self._secrets = tuple(secrets)
         super().__init__(sanitize_message(message, self._secrets))
 

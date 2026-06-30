@@ -11,6 +11,7 @@ from app.geo_monitoring.models import CoreKeyword
 from app.geo_monitoring.repositories import core_keywords as core_keyword_repo
 from app.geo_monitoring.schemas import CoreKeywordCreate, CoreKeywordUpdate
 from app.geo_monitoring.services.projects import require_active_project
+from app.geo_monitoring.services.tenant_access import ensure_project_tenant_access
 
 
 def _commit_unique(db: Session, *, code: int, message: str) -> None:
@@ -25,6 +26,7 @@ def get_core_keyword(db: Session, keyword_id: int) -> CoreKeyword:
     keyword = core_keyword_repo.get_by_id(db, keyword_id)
     if keyword is None:
         raise BusinessException(message="核心词不存在", code=40400)
+    ensure_project_tenant_access(db, keyword.project_id)
     return keyword
 
 

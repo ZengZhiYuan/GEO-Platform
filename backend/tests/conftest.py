@@ -15,6 +15,38 @@ os.environ["REDIS_URL"] = "redis://test-redis.invalid:6379/15"
 os.environ["DRAMATIQ_BROKER"] = "stub"
 os.environ["NACOS_ENABLED"] = "false"
 
+# 隔离开发机 .env 中的真实凭证，避免 client fixture 启动失败或泄露密钥形态。
+# 官方平台默认启用测试凭证，使 Run 创建前置校验可通过；模力指数默认关闭以覆盖 O3 拒绝路径。
+for _env_key, _env_value in {
+    "DOUBAO_ENABLED": "true",
+    "DOUBAO_API_KEYS": "test-doubao-key",
+    "DOUBAO_MODEL": "test-doubao-model",
+    "QWEN_ENABLED": "true",
+    "QWEN_API_KEYS": "test-qwen-key",
+    "QWEN_MODEL": "test-qwen-model",
+    "YUANBAO_ENABLED": "true",
+    "YUANBAO_MODEL": "test-yuanbao-model",
+    "YUANBAO_CREDENTIALS_JSON": '[{"secret_id":"test-sid","secret_key":"test-skey"}]',
+    "DEEPSEEK_ENABLED": "true",
+    "DEEPSEEK_API_KEYS": "test-deepseek-key",
+    "DEEPSEEK_MODEL": "test-deepseek-model",
+    "KIMI_ENABLED": "true",
+    "KIMI_API_KEYS": "test-kimi-key",
+    "KIMI_MODEL": "test-kimi-model",
+    "AIDSO_ENABLED": "false",
+    "AIDSO_API_TOKEN": "",
+    "MOLIZHISHU_ENABLED": "false",
+    "MOLIZHISHU_API_TOKEN": "",
+    "AGENT_LLM_BASE_URL": "https://agent.test/v1",
+    "AGENT_LLM_API_KEY": "test-agent-key",
+    "AGENT_LLM_MODEL": "test-agent-model",
+    "API_AUTH_ENABLED": "false",
+    "API_AUTH_TOKEN_MAP_JSON": "[]",
+    "NACOS_PASSWORD": "",
+    "NACOS_ACCESS_TOKEN": "",
+}.items():
+    os.environ[_env_key] = _env_value
+
 
 def pytest_configure(config):
     config.addinivalue_line(
@@ -72,12 +104,17 @@ def db(session_factory) -> Generator[Session, None, None]:
 
 @pytest.fixture
 def client(session_factory) -> Generator[TestClient, None, None]:
+    from app.core.config import get_settings
     from app.core.database import get_db
     from app.geo_monitoring.services import collection as collection_service
     from app.main import app
 
+    get_settings.cache_clear()
     collection_service.configure_runtime(
-        collection_service.build_default_runtime(session_factory=session_factory)
+        collection_service.build_default_runtime(
+            session_factory=session_factory,
+            runtime_settings=get_settings(),
+        )
     )
 
     def override_get_db():

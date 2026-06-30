@@ -33,6 +33,7 @@ from app.geo_monitoring.services.metadata import (
     serialize_platform_endpoint_summary,
 )
 from app.geo_monitoring.services.projects import get_project
+from app.geo_monitoring.services.tenant_access import list_tenant_filter
 
 _MAX_BRAND_WORDS = 10
 _MAX_COMPETITORS = 10
@@ -300,7 +301,7 @@ def _load_latest_runs(db: Session, project_ids: list[int]) -> dict[int, MonitorR
 
 
 def list_project_options(db: Session) -> list[ProjectOptionRead]:
-    items = project_repo.list_all_projects(db)
+    items = project_repo.list_all_projects(db, tenant_id=list_tenant_filter())
     return [
         ProjectOptionRead(
             id=project.id,
@@ -326,6 +327,7 @@ def list_project_overview(
         page_size=page_size,
         project_name=project_name,
         status=status,
+        tenant_id=list_tenant_filter(),
     )
     if not projects:
         return [], total

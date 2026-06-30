@@ -3,13 +3,22 @@
 
 def _seed_platforms(session_factory, *, enabled_codes: list[str] | None = None) -> None:
     from app.geo_monitoring.models import AIPlatform
-    from app.geo_monitoring.services.platforms import DEFAULT_PLATFORMS
+    from app.geo_monitoring.services.platforms import AIDSO_PLATFORMS, DEFAULT_PLATFORMS
 
     with session_factory() as db:
         db.add_all(AIPlatform(**platform) for platform in DEFAULT_PLATFORMS)
         if enabled_codes is not None:
+            enabled = set(enabled_codes)
+            extra_codes = enabled - {platform["platform_code"] for platform in DEFAULT_PLATFORMS}
+            if extra_codes:
+                aidso_by_code = {platform["platform_code"]: platform for platform in AIDSO_PLATFORMS}
+                db.add_all(
+                    AIPlatform(**aidso_by_code[code])
+                    for code in sorted(extra_codes)
+                    if code in aidso_by_code
+                )
             for row in db.query(AIPlatform).all():
-                row.enabled = row.platform_code in enabled_codes
+                row.enabled = row.platform_code in enabled
         db.commit()
 
 

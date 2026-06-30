@@ -79,3 +79,17 @@ def check_readiness() -> dict[str, Any]:
         "database": database,
         "redis": redis,
     }
+
+
+def check_platform_runtime_diagnostics(db: Any) -> dict[str, Any]:
+    """返回各 AI 平台 DB / 运行时 / 凭证 / adapter 脱敏诊断。"""
+    try:
+        from app.geo_monitoring.services.collection import platform_runtime_diagnostics
+
+        return platform_runtime_diagnostics(db)
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "collection_ready": False,
+            "platforms": [],
+            "error": str(exc),
+        }

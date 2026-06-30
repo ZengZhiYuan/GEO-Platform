@@ -72,10 +72,43 @@ def test_readme_documents_release_smoke_and_rollback_runbook():
         "docker compose build",
         "alembic -c backend/alembic.ini upgrade head",
         "启动 worker/scheduler，最后切换 API",
-        "health、ready、创建测试项目、mock 运行和报告下载",
+        "config preflight",
+        "run_production_smoke_test.py",
         "应用回滚优先回滚镜像，不自动 downgrade 数据库",
         "*_ENABLED=false",
         "NACOS_ENABLED=false",
         "备份数据库和报告目录",
     ):
         assert phrase in readme
+
+
+def test_dockerignore_excludes_manual_scripts_and_dev_artifacts():
+    dockerignore = read_root_file(".dockerignore")
+    entries = {
+        line.strip()
+        for line in dockerignore.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    }
+
+    for entry in (
+        "backend/app/test",
+        "backend/scripts",
+        "backend/tests",
+        ".pytest-tmp",
+        "data/",
+    ):
+        assert entry in entries, f"missing .dockerignore entry: {entry}"
+
+
+def test_legacy_workers_package_is_removed():
+    workers_dir = ROOT / "backend" / "app" / "workers"
+    assert not workers_dir.exists(), "app.workers 历史空入口应已移除，正式部署使用 app.worker.actors.*"
+
+
+def test_compose_release_smoke_documents_preflight_and_ready():
+    compose = read_root_file("docker-compose.yml")
+
+    assert "preflight:" in compose
+    assert "run_production_smoke_test.py" in compose
+    assert "mock run" not in compose.lower()
+    assert "/api/geo-monitoring/ready" in compose

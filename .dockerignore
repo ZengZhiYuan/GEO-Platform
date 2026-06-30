@@ -11,6 +11,9 @@ backend/.pytest_cache
 backend/**/__pycache__
 backend/**/*.pyc
 backend/tests/_tmp_reports
+backend/app/test
+backend/scripts
+backend/tests
 
 frontend/node_modules
 frontend/.next
@@ -20,6 +23,8 @@ frontend/build
 data/
 docs/
 scripts/
+.pytest-tmp
+pytest-tmp
 
 .env
 *.log

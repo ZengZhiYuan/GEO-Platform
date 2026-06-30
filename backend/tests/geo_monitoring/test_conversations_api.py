@@ -20,6 +20,7 @@ from app.geo_monitoring.models import (
     PromptSet,
     QueryTask,
 )
+from tests.geo_monitoring.analysis_support import patch_fake_llm_for_analyze
 from tests.geo_monitoring.agents.test_graph import FakeLLMClient
 
 
@@ -162,11 +163,7 @@ def _seed_multi_prompt_run(
 
 @pytest.fixture
 def conversation_run(client, session_factory, monkeypatch):
-    llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
+    llm = patch_fake_llm_for_analyze(monkeypatch)
     with session_factory() as db:
         seeded = _seed_multi_prompt_run(db)
     response = client.post(f"/api/geo-monitoring/runs/{seeded['run_id']}/analyze")
@@ -265,11 +262,7 @@ def test_conversation_question_answers_detail(client, conversation_run):
 def test_conversation_question_answers_empty_citations_and_brands(
     client, session_factory, monkeypatch
 ):
-    llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
+    llm = patch_fake_llm_for_analyze(monkeypatch)
 
     with session_factory() as db:
         project = MonitorProject(project_name="空结果测试", status="active")

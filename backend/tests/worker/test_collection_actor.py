@@ -13,6 +13,7 @@ from app.core.config import Settings
 from app.geo_monitoring.adapters.base import PlatformAnswer, PlatformCredential, PlatformQuery
 from app.geo_monitoring.adapters.aidso import AidsoPendingError
 from app.geo_monitoring.adapters.errors import AdapterError, ErrorCategory
+from app.geo_monitoring.adapters.molizhishu import MolizhishuPendingError
 from app.geo_monitoring.adapters.key_pool import ApiKeyCredential, CredentialKeyPool
 from app.geo_monitoring.adapters.registry import AdapterRegistry
 from app.geo_monitoring.models import (
@@ -135,6 +136,66 @@ class MockAidsoAdapter:
             latency_ms=80,
             provider_request_id=request.metadata["aidso_req_id"],
             raw_response={"aidso": True},
+        )
+
+
+class MockMolizhishuAdapter:
+    code = "molizhishu_deepseek_web"
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[PlatformQuery, PlatformCredential]] = []
+
+    async def query(
+        self,
+        request: PlatformQuery,
+        *,
+        credential: PlatformCredential,
+    ) -> PlatformAnswer:
+        self.calls.append((request, credential))
+        if "molizhishu_subtask_id" not in request.metadata:
+            raise MolizhishuPendingError(
+                pending_metadata={
+                    "molizhishu_task_id": "task-mz-1",
+                    "molizhishu_subtask_id": "subtask-mz-1",
+                    "molizhishu_platform": "deepseek",
+                    "molizhishu_mode": request.metadata.get("provider_mode"),
+                    "molizhishu_status": "processing",
+                }
+            )
+        return PlatformAnswer(
+            text="推荐目标品牌。",
+            citations=[],
+            model="molizhishu:deepseek",
+            usage={},
+            latency_ms=90,
+            provider_request_id=request.metadata["molizhishu_subtask_id"],
+            raw_response={"molizhishu": True},
+        )
+
+
+class AlwaysPendingMolizhishuAdapter:
+    code = "molizhishu_deepseek_web"
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[PlatformQuery, PlatformCredential]] = []
+
+    async def query(
+        self,
+        request: PlatformQuery,
+        *,
+        credential: PlatformCredential,
+    ) -> PlatformAnswer:
+        self.calls.append((request, credential))
+        raise MolizhishuPendingError(
+            pending_metadata={
+                "molizhishu_task_id": request.metadata.get("molizhishu_task_id")
+                or "task-mz-1",
+                "molizhishu_subtask_id": request.metadata.get("molizhishu_subtask_id")
+                or "subtask-mz-1",
+                "molizhishu_platform": "deepseek",
+                "molizhishu_mode": request.metadata.get("provider_mode"),
+                "molizhishu_status": "processing",
+            }
         )
 
 
@@ -460,6 +521,105 @@ def test_aidso_pending_persists_req_id_and_reuses_on_retry(
     assert aidso_adapter.calls[1][0].metadata["aidso_thinking_enabled"] is False
 
 
+def test_molizhishu_pending_persists_task_and_subtask_ids_and_reuses_on_retry(
+    collection_env, session_factory
+):
+    mz_adapter = MockMolizhishuAdapter()
+    runtime = collection_env["runtime"]
+    runtime.adapter_registry.register(mz_adapter)
+    runtime.key_pool.register_platform_credentials(
+        "molizhishu_deepseek_web",
+        [
+            ApiKeyCredential(
+                platform_code="molizhishu_deepseek_web",
+                api_key="molizhishu-token",
+            )
+        ],
+    )
+
+    with session_factory() as db:
+        seeded = _seed_collection_graph(db)
+        platform = db.query(AIPlatform).filter_by(platform_code="qwen").one()
+        platform.platform_code = "molizhishu_deepseek_web"
+        platform.platform_name = "DeepSeek 网页端"
+        platform.adapter_type = "molizhishu"
+        platform.model_name = "molizhishu:deepseek"
+        platform.extra_config = {"molizhishu_platform": "deepseek"}
+        run = db.get(MonitorRun, seeded["run_id"])
+        run.collection_source = "molizhishu"
+        run.provider_mode_by_platform = {"molizhishu_deepseek_web": "reasoning_search"}
+        run.provider_screenshot = 1
+        run.region_code = "110000"
+        run.platform_codes = ["molizhishu_deepseek_web"]
+        task = db.get(QueryTask, seeded["task_id"])
+        task.platform_code = "molizhishu_deepseek_web"
+        db.commit()
+
+    dispatch_task(seeded["task_id"])
+
+    with session_factory() as db:
+        task = db.get(QueryTask, seeded["task_id"])
+        assert task.status == "success"
+        assert task.attempt_count == 1
+        assert task.request_json["molizhishu_task_id"] == "task-mz-1"
+        assert task.request_json["molizhishu_subtask_id"] == "subtask-mz-1"
+        assert task.request_json["molizhishu_poll_count"] == 1
+        assert task.provider_request_id == "subtask-mz-1"
+
+    assert len(mz_adapter.calls) == 2
+    assert "molizhishu_subtask_id" not in mz_adapter.calls[0][0].metadata
+    assert mz_adapter.calls[0][0].metadata["provider_mode"] == "reasoning_search"
+    assert mz_adapter.calls[0][0].metadata["provider_screenshot"] == 1
+    assert mz_adapter.calls[0][0].metadata["region_code"] == "110000"
+    assert mz_adapter.calls[1][0].metadata["molizhishu_subtask_id"] == "subtask-mz-1"
+    assert mz_adapter.calls[1][0].metadata["provider_mode"] == "reasoning_search"
+
+
+def test_molizhishu_pending_respects_configured_max_poll_limit(
+    collection_env, session_factory
+):
+    mz_adapter = AlwaysPendingMolizhishuAdapter()
+    runtime = collection_env["runtime"]
+    runtime.settings.COLLECTION_MOLIZHISHU_MAX_POLLS = 1
+    runtime.adapter_registry.register(mz_adapter)
+    runtime.key_pool.register_platform_credentials(
+        "molizhishu_deepseek_web",
+        [
+            ApiKeyCredential(
+                platform_code="molizhishu_deepseek_web",
+                api_key="molizhishu-token",
+            )
+        ],
+    )
+
+    with session_factory() as db:
+        seeded = _seed_collection_graph(db)
+        platform = db.query(AIPlatform).filter_by(platform_code="qwen").one()
+        platform.platform_code = "molizhishu_deepseek_web"
+        platform.platform_name = "DeepSeek 网页端"
+        platform.adapter_type = "molizhishu"
+        platform.model_name = "molizhishu:deepseek"
+        platform.extra_config = {"molizhishu_platform": "deepseek"}
+        run = db.get(MonitorRun, seeded["run_id"])
+        run.collection_source = "molizhishu"
+        run.platform_codes = ["molizhishu_deepseek_web"]
+        task = db.get(QueryTask, seeded["task_id"])
+        task.platform_code = "molizhishu_deepseek_web"
+        db.commit()
+
+    dispatch_task(seeded["task_id"])
+
+    with session_factory() as db:
+        task = db.get(QueryTask, seeded["task_id"])
+        assert task.status == "failed"
+        assert task.error_code == ErrorCategory.PENDING.value
+        assert task.attempt_count == 1
+        assert task.retry_count == 0
+        assert task.request_json["molizhishu_poll_count"] == 1
+
+    assert len(mz_adapter.calls) == 1
+
+
 def test_aidso_pending_respects_configured_max_poll_limit(
     collection_env, session_factory
 ):
@@ -609,9 +769,9 @@ def test_dramatiq_message_carries_only_task_id():
 
 
 def test_retry_reenqueue_uses_configured_backoff(collection_env, monkeypatch):
-    async def fake_execute_query_task(task_id: int) -> bool:
+    async def fake_execute_query_task(task_id: int):
         assert task_id == 42
-        return True
+        return collection_service.QueryTaskExecutionResult(should_retry=True)
 
     delayed: list[tuple[tuple[int, ...], int | None]] = []
 
@@ -624,6 +784,29 @@ def test_retry_reenqueue_uses_configured_backoff(collection_env, monkeypatch):
     collect_query_task.fn(42)
 
     assert delayed == [((42,), 2000)]
+
+
+def test_molizhishu_pending_reenqueue_uses_configured_poll_delay(
+    collection_env, monkeypatch
+):
+    async def fake_execute_query_task(task_id: int):
+        assert task_id == 99
+        return collection_service.QueryTaskExecutionResult(
+            should_retry=True,
+            retry_delay_seconds=8,
+        )
+
+    delayed: list[tuple[tuple[int, ...], int | None]] = []
+
+    def fake_send_with_options(*, args=(), kwargs=None, delay=None, **options):
+        delayed.append((args, delay))
+
+    monkeypatch.setattr(collection_service, "execute_query_task", fake_execute_query_task)
+    monkeypatch.setattr(collect_query_task, "send_with_options", fake_send_with_options)
+
+    collect_query_task.fn(99)
+
+    assert delayed == [((99,), 8000)]
 
 
 def test_max_attempts_exhaustion_marks_failed(collection_env, session_factory):

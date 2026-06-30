@@ -331,11 +331,29 @@ def serialize_state(state: dict[str, Any]) -> dict[str, Any]:
 
 # 从应用配置构建 Agent LLM 客户端参数
 def build_agent_llm_config(settings: Settings | None = None) -> AgentLLMConfig:
-    cfg = settings or default_settings
+    if settings is None:
+        from app.core.config import get_settings
+
+        cfg = get_settings()
+    else:
+        cfg = settings
+    missing: list[str] = []
+    if not cfg.AGENT_LLM_BASE_URL.strip():
+        missing.append("AGENT_LLM_BASE_URL")
+    if not cfg.AGENT_LLM_API_KEY.strip():
+        missing.append("AGENT_LLM_API_KEY")
+    if not cfg.AGENT_LLM_MODEL.strip():
+        missing.append("AGENT_LLM_MODEL")
+    if missing:
+        raise BusinessException(
+            message="Agent LLM 配置不完整，请设置: " + ", ".join(missing),
+            code=50301,
+            status_code=503,
+        )
     return AgentLLMConfig(
-        base_url=cfg.AGENT_LLM_BASE_URL or "https://agent-llm.test/v1",
-        api_key=cfg.AGENT_LLM_API_KEY or "test-agent-key",
-        model=cfg.AGENT_LLM_MODEL or "agent-model",
+        base_url=cfg.AGENT_LLM_BASE_URL.strip(),
+        api_key=cfg.AGENT_LLM_API_KEY.strip(),
+        model=cfg.AGENT_LLM_MODEL.strip(),
         provider=cfg.AGENT_LLM_PROVIDER,
         timeout_seconds=float(cfg.AGENT_LLM_TIMEOUT_SECONDS),
         max_attempts=cfg.AGENT_LLM_MAX_ATTEMPTS,

@@ -35,6 +35,7 @@ OFFICIAL_PLATFORMS = (
     },
 )
 
+# 历史 Aidso 平台映射：不再写入 DEFAULT_PLATFORMS 种子；仅用于历史 Run 与 AIDSO_ENABLED 续跑
 AIDSO_PLATFORM_MAPPINGS = {
     "aidso_doubao_web": {"aidso_name": "DB", "platform_name": "豆包 Web 端"},
     "aidso_doubao_app": {"aidso_name": "DOUBA", "platform_name": "豆包 App 端"},
@@ -63,7 +64,120 @@ AIDSO_PLATFORMS = tuple(
     for code, item in AIDSO_PLATFORM_MAPPINGS.items()
 )
 
-DEFAULT_PLATFORMS = (*OFFICIAL_PLATFORMS, *AIDSO_PLATFORMS)
+_MOLIZHISHU_SEARCH_MODES = ("standard", "search")
+_MOLIZHISHU_REASONING_SEARCH_MODES = ("standard", "reasoning", "search", "reasoning_search")
+
+MOLIZHISHU_PLATFORM_MAPPINGS = {
+    "molizhishu_deepseek_web": {
+        "molizhishu_platform": "deepseek",
+        "platform_name": "DeepSeek 网页端",
+        "base_platform": "deepseek",
+        "endpoint_type": "web",
+        "default_mode": "reasoning_search",
+        "supported_modes": _MOLIZHISHU_REASONING_SEARCH_MODES,
+    },
+    "molizhishu_deepseek_mobile": {
+        "molizhishu_platform": "deepseek_mobile",
+        "platform_name": "DeepSeek 手机端",
+        "base_platform": "deepseek",
+        "endpoint_type": "app",
+        "default_mode": "reasoning_search",
+        "supported_modes": _MOLIZHISHU_REASONING_SEARCH_MODES,
+    },
+    "molizhishu_doubao_web": {
+        "molizhishu_platform": "doubao",
+        "platform_name": "豆包网页端",
+        "base_platform": "doubao",
+        "endpoint_type": "web",
+        "default_mode": "search",
+        "supported_modes": _MOLIZHISHU_SEARCH_MODES,
+    },
+    "molizhishu_doubao_mobile": {
+        "molizhishu_platform": "doubao_mobile",
+        "platform_name": "豆包手机端",
+        "base_platform": "doubao",
+        "endpoint_type": "app",
+        "default_mode": "search",
+        "supported_modes": _MOLIZHISHU_SEARCH_MODES,
+    },
+    "molizhishu_yuanbao_web": {
+        "molizhishu_platform": "yuanbao",
+        "platform_name": "腾讯元宝",
+        "base_platform": "yuanbao",
+        "endpoint_type": "web",
+        "default_mode": "search",
+        "supported_modes": _MOLIZHISHU_SEARCH_MODES,
+    },
+    "molizhishu_kimi_web": {
+        "molizhishu_platform": "kimi",
+        "platform_name": "Kimi",
+        "base_platform": "kimi",
+        "endpoint_type": "web",
+        "default_mode": "search",
+        "supported_modes": _MOLIZHISHU_SEARCH_MODES,
+    },
+    "molizhishu_qianwen_web": {
+        "molizhishu_platform": "qianwen",
+        "platform_name": "通义千问",
+        "base_platform": "qianwen",
+        "endpoint_type": "web",
+        "default_mode": "search",
+        "supported_modes": _MOLIZHISHU_SEARCH_MODES,
+    },
+    "molizhishu_quark_web": {
+        "molizhishu_platform": "quark",
+        "platform_name": "夸克 AI",
+        "base_platform": "quark",
+        "endpoint_type": "web",
+        "default_mode": "search",
+        "supported_modes": _MOLIZHISHU_SEARCH_MODES,
+    },
+    "molizhishu_baiduai_web": {
+        "molizhishu_platform": "baiduai",
+        "platform_name": "百度 AI+",
+        "base_platform": "baiduai",
+        "endpoint_type": "web",
+        "default_mode": "search",
+        "supported_modes": _MOLIZHISHU_SEARCH_MODES,
+    },
+    "molizhishu_weibo_zhisou_web": {
+        "molizhishu_platform": "weibo_zhisou",
+        "platform_name": "微博智搜",
+        "base_platform": "weibo_zhisou",
+        "endpoint_type": "web",
+        "default_mode": "search",
+        "supported_modes": _MOLIZHISHU_SEARCH_MODES,
+    },
+    "molizhishu_wenxinyiyan_web": {
+        "molizhishu_platform": "wenxinyiyan",
+        "platform_name": "文心一言",
+        "base_platform": "wenxinyiyan",
+        "endpoint_type": "web",
+        "default_mode": "search",
+        "supported_modes": _MOLIZHISHU_SEARCH_MODES,
+    },
+}
+
+MOLIZHISHU_PLATFORMS = tuple(
+    {
+        "platform_code": code,
+        "platform_name": item["platform_name"],
+        "adapter_type": "molizhishu",
+        "model_name": f"molizhishu:{item['molizhishu_platform']}",
+        "search_enabled": True,
+        "citation_supported": True,
+        "extra_config": {
+            "molizhishu_platform": item["molizhishu_platform"],
+            "base_platform": item["base_platform"],
+            "endpoint_type": item["endpoint_type"],
+            "default_mode": item["default_mode"],
+            "supported_modes": list(item["supported_modes"]),
+        },
+    }
+    for code, item in MOLIZHISHU_PLATFORM_MAPPINGS.items()
+)
+
+DEFAULT_PLATFORMS = (*OFFICIAL_PLATFORMS, *MOLIZHISHU_PLATFORMS)
 
 
 # 按平台编码查询 AI 平台，不存在则抛业务异常

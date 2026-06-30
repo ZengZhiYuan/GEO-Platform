@@ -5,7 +5,8 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 
 T = TypeVar("T")
 
@@ -78,6 +79,15 @@ class QueryTaskStatus(StrEnum):
 class CollectionSource(StrEnum):
     OFFICIAL = "official"
     AIDSO = "aidso"
+    MOLIZHISHU = "molizhishu"
+
+
+class RunCreateCollectionSource(StrEnum):
+    OFFICIAL = "official"
+    MOLIZHISHU = "molizhishu"
+
+
+PROVIDER_SCREENSHOT_VALUES = frozenset({0, 1, 2})
 
 
 class ProjectCreate(BaseModel):
@@ -527,6 +537,15 @@ class SourceTypesOut(BaseModel):
     storage_mappings: list[SourceTypeStorageMappingOut]
 
 
+class MolizhishuRegionOut(BaseModel):
+    province: str
+    region_code: str
+
+
+class MolizhishuRegionsOut(BaseModel):
+    items: list[MolizhishuRegionOut]
+
+
 class BenchmarkMetricsOut(BaseModel):
     mention_rate: str
     mention_count: int
@@ -565,6 +584,12 @@ class EvaluationTagItemOut(BaseModel):
     share_rate: str | None = None
 
 
+class EvaluationTagClusterMethod(StrEnum):
+    RULE = "rule"
+    LLM = "llm"
+    AUTO = "auto"
+
+
 class EvaluationTagsOut(BaseModel):
     run_id: int | None = None
     prompt_id: int
@@ -595,6 +620,9 @@ class AiBrandWordsGenerateIn(BaseModel):
 
 class AiBrandWordsGenerateOut(BaseModel):
     brand_words: list[str]
+    generation_method: str = Field(
+        description="llm 表示 Agent LLM 生成；rule_fallback 表示规则兜底"
+    )
 
 
 class AiCompetitorsGenerateIn(BaseModel):
@@ -624,6 +652,9 @@ class AiCompetitorCandidateOut(BaseModel):
 
 class AiCompetitorsGenerateOut(BaseModel):
     competitors: list[AiCompetitorCandidateOut]
+    generation_method: str = Field(
+        description="llm 表示 Agent LLM 生成；rule_fallback 表示规则兜底"
+    )
 
 
 class AiQuestionsGenerateIn(BaseModel):
@@ -668,14 +699,33 @@ class AiGeneratedQuestionOut(BaseModel):
 
 class AiQuestionsGenerateOut(BaseModel):
     questions: list[AiGeneratedQuestionOut]
+    generation_method: str = Field(
+        description="llm 表示 Agent LLM 生成；rule_fallback 表示规则兜底"
+    )
 
 
 class RunCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     project_id: int = Field(ge=1)
     prompt_set_id: int | None = Field(default=None, ge=1)
     platform_codes: list[str] | None = None
-    collection_source: CollectionSource = CollectionSource.OFFICIAL
-    aidso_thinking_enabled_by_platform: dict[str, bool] = Field(default_factory=dict)
+    collection_source: RunCreateCollectionSource = RunCreateCollectionSource.OFFICIAL
+    provider_mode_by_platform: dict[str, str] = Field(default_factory=dict)
+    provider_screenshot: StrictInt = 0
+    region_code: str | None = None
+    provider_callback_url: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def apply_molizhishu_default_screenshot(self) -> "RunCreate":
+        if (
+            self.collection_source == RunCreateCollectionSource.MOLIZHISHU
+            and "provider_screenshot" not in self.model_fields_set
+        ):
+            from app.core.config import settings
+
+            self.provider_screenshot = settings.MOLIZHISHU_DEFAULT_SCREENSHOT
+        return self
 
     @field_validator("platform_codes")
     @classmethod
@@ -688,33 +738,100 @@ class RunCreate(BaseModel):
             raise ValueError("platform_codes 不能为空")
         return normalized
 
-    @field_validator("aidso_thinking_enabled_by_platform")
+    @field_validator("provider_mode_by_platform")
     @classmethod
-    # 按平台码规范化 Aidso 深度思考开关，未配置的平台在采集时默认开启。
-    def normalize_aidso_thinking_enabled_by_platform(
-        cls, value: dict[str, bool]
-    ) -> dict[str, bool]:
-        return {code.strip(): enabled for code, enabled in value.items() if code.strip()}
+    def normalize_provider_mode_by_platform(
+        cls, value: dict[str, str]
+    ) -> dict[str, str]:
+        return {code.strip(): mode.strip() for code, mode in value.items() if code.strip()}
+
+    @field_validator("provider_screenshot")
+    @classmethod
+    def validate_provider_screenshot(cls, value: int) -> int:
+        if isinstance(value, bool):
+            raise ValueError("provider_screenshot 必须为整数 0、1 或 2")
+        if value not in PROVIDER_SCREENSHOT_VALUES:
+            raise ValueError("provider_screenshot 只允许 0、1 或 2")
+        return value
+
+    @field_validator("region_code")
+    @classmethod
+    def validate_region_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("region_code 不能为空")
+        return normalized
+
+    @field_validator("provider_callback_url")
+    @classmethod
+    def validate_provider_callback_url(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
 
     @model_validator(mode="after")
-    def validate_aidso_thinking_enabled_platforms(self) -> "RunCreate":
-        if not self.aidso_thinking_enabled_by_platform:
+    def validate_provider_mode_by_platform(self) -> "RunCreate":
+        if not self.provider_mode_by_platform:
             return self
 
-        from app.geo_monitoring.services.platforms import AIDSO_PLATFORM_MAPPINGS
+        from app.geo_monitoring.services.platforms import MOLIZHISHU_PLATFORM_MAPPINGS
 
-        configured = set(self.aidso_thinking_enabled_by_platform)
-        unknown = configured - set(AIDSO_PLATFORM_MAPPINGS)
+        configured = set(self.provider_mode_by_platform)
+        unknown = configured - set(MOLIZHISHU_PLATFORM_MAPPINGS)
         if unknown:
-            raise ValueError("aidso_thinking_enabled_by_platform 包含无效 Aidso 平台编码")
+            raise PydanticCustomError(
+                "invalid_provider_platform",
+                "provider_mode_by_platform 包含无效模力指数平台编码",
+            )
 
         if self.platform_codes is not None:
             outside_request = configured - set(self.platform_codes)
             if outside_request:
-                raise ValueError(
-                    "aidso_thinking_enabled_by_platform 只能配置本次 platform_codes 内的平台"
+                raise PydanticCustomError(
+                    "provider_platform_outside_request",
+                    "provider_mode_by_platform 只能配置本次 platform_codes 内的平台",
                 )
 
+        for platform_code, mode in self.provider_mode_by_platform.items():
+            supported_modes = MOLIZHISHU_PLATFORM_MAPPINGS[platform_code]["supported_modes"]
+            if mode not in supported_modes:
+                raise PydanticCustomError(
+                    "unsupported_provider_mode",
+                    "provider_mode_by_platform[{platform_code}] 不支持模式 {mode}",
+                    {"platform_code": platform_code, "mode": mode},
+                )
+
+        if self.collection_source != RunCreateCollectionSource.MOLIZHISHU:
+            raise PydanticCustomError(
+                "provider_mode_requires_molizhishu",
+                "provider_mode_by_platform 仅适用于 collection_source=molizhishu",
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_molizhishu_provider_options(self) -> "RunCreate":
+        if self.collection_source != RunCreateCollectionSource.MOLIZHISHU:
+            if self.provider_mode_by_platform:
+                raise PydanticCustomError(
+                    "provider_mode_requires_molizhishu",
+                    "provider_mode_by_platform 仅适用于 collection_source=molizhishu",
+                )
+            if self.provider_screenshot != 0:
+                raise PydanticCustomError(
+                    "provider_screenshot_requires_molizhishu",
+                    "provider_screenshot 仅适用于 collection_source=molizhishu",
+                )
+            if self.region_code is not None:
+                raise PydanticCustomError(
+                    "region_code_requires_molizhishu",
+                    "region_code 仅适用于 collection_source=molizhishu",
+                )
+            if self.provider_callback_url is not None:
+                raise PydanticCustomError(
+                    "provider_callback_requires_molizhishu",
+                    "provider_callback_url 仅适用于 collection_source=molizhishu",
+                )
         return self
 
 
@@ -734,6 +851,10 @@ class MonitorRunOut(BaseModel):
     report_status: str
     collection_source: str = "official"
     aidso_thinking_enabled_by_platform: dict[str, bool] = Field(default_factory=dict)
+    provider_mode_by_platform: dict[str, str] = Field(default_factory=dict)
+    provider_screenshot: int = 0
+    region_code: str | None = None
+    provider_callback_url: str | None = None
     platform_codes: list[str]
     expected_query_count: int
     total_tasks: int = 0

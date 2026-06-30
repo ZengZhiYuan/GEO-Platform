@@ -20,6 +20,7 @@ from app.geo_monitoring.models import (
     QueryTask,
 )
 from app.geo_monitoring.services.analysis import SourceStat
+from tests.geo_monitoring.analysis_support import patch_fake_llm_for_analyze
 from tests.geo_monitoring.agents.test_graph import FakeLLMClient
 
 
@@ -197,11 +198,7 @@ def source_analysis_run(client, session_factory):
 
 @pytest.fixture
 def analyzed_source_run(client, session_factory, monkeypatch):
-    llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
+    llm = patch_fake_llm_for_analyze(monkeypatch)
     with session_factory() as db:
         seeded = _seed_source_analysis_run(db, with_source_stats=False)
     response = client.post(f"/api/geo-monitoring/runs/{seeded['run_id']}/analyze")

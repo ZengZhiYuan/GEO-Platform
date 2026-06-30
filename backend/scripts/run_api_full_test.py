@@ -2,15 +2,27 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
+
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _BACKEND_ROOT.parent
+for path in (_BACKEND_ROOT, _SCRIPTS_DIR):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
+
+from app.core.config import settings
+from smoke_preflight import resolve_smoke_auth_headers
 
 BASE = "http://127.0.0.1:8000"
 API = f"{BASE}/api"
@@ -18,6 +30,13 @@ GEO = f"{API}/geo-monitoring"
 TIMEOUT = 60.0
 RUN_POLL_INTERVAL = 5
 RUN_POLL_MAX = 120  # seconds for collection to finish
+
+
+def configure_runtime(*, base_url: str) -> None:
+    global BASE, API, GEO
+    BASE = base_url.rstrip("/")
+    API = f"{BASE}/api"
+    GEO = f"{API}/geo-monitoring"
 
 
 @dataclass
@@ -102,6 +121,7 @@ def req(
         "Accept": "application/json",
         "X-Request-ID": str(uuid.uuid4()),
     }
+    headers.update(resolve_smoke_auth_headers(settings))
     start = time.perf_counter()
     r = client.request(method, url, json=json_body, params=params, headers=headers, timeout=TIMEOUT)
     elapsed = (time.perf_counter() - start) * 1000
@@ -1168,7 +1188,13 @@ def test_cleanup(client: httpx.Client, ctx: TestContext) -> None:
         req(client, "DELETE", f"{GEO}/projects/{ctx.disabled_project_id}")
 
 
-def generate_report(ctx: TestContext, started_at: datetime, finished_at: datetime) -> str:
+def generate_report(
+    ctx: TestContext,
+    started_at: datetime,
+    finished_at: datetime,
+    *,
+    release_checklist: dict[str, Any] | None = None,
+) -> str:
     passed = sum(1 for r in ctx.results if r.passed)
     failed = sum(1 for r in ctx.results if not r.passed)
     total = len(ctx.results)
@@ -1183,11 +1209,47 @@ def generate_report(ctx: TestContext, started_at: datetime, finished_at: datetim
         "",
         f"- **测试时间**：{started_at.astimezone().strftime('%Y-%m-%d %H:%M:%S')} ~ {finished_at.astimezone().strftime('%H:%M:%S')} (本地时区)",
         f"- **耗时**：{duration_sec:.1f} 秒",
-        f"- **测试环境**：本地开发 (`http://127.0.0.1:8000`)",
+        f"- **测试环境**：`{BASE}`",
         f"- **参考文档**：[`docs/API测试文档.md`](./API测试文档.md)",
         f"- **执行脚本**：`backend/scripts/run_api_full_test.py`",
         f"- **Dramatiq**：collection worker 已启动",
         "",
+    ]
+
+    if release_checklist:
+        lines.extend(
+            [
+                "## 上线验收观测（Task O10）",
+                "",
+                f"- checklist_ok: `{release_checklist.get('checklist_ok')}`",
+            ]
+        )
+        batch = release_checklist.get("provider_batch_metrics") or {}
+        agent = release_checklist.get("agent_llm_metrics") or {}
+        lines.append(
+            f"- ProviderBatch: submitted={batch.get('submitted', 0)}, "
+            f"processing={batch.get('processing', 0)}, completed={batch.get('completed', 0)}, "
+            f"failed={batch.get('failed', 0)}, poll_count_total={batch.get('poll_count_total', 0)}"
+        )
+        duration = agent.get("duration_ms") or {}
+        lines.append(
+            f"- Agent LLM: call_count={agent.get('call_count', 0)}, "
+            f"prompt_tokens={agent.get('prompt_tokens_total', 0)}, "
+            f"completion_tokens={agent.get('completion_tokens_total', 0)}, "
+            f"duration_p95_ms={duration.get('p95')}"
+        )
+        queues = release_checklist.get("worker_queues") or {}
+        if not queues.get("skipped"):
+            for name, depth in (queues.get("queues") or {}).items():
+                lines.append(
+                    f"- queue `{name}`: pending={depth.get('pending')}, delayed={depth.get('delayed')}"
+                )
+        if release_checklist.get("blockers"):
+            lines.append(f"- blockers: {release_checklist['blockers']}")
+        lines.append("")
+
+    lines.extend(
+        [
         "## 汇总",
         "",
         "| 指标 | 数值 |",
@@ -1208,7 +1270,8 @@ def generate_report(ctx: TestContext, started_at: datetime, finished_at: datetim
         "",
         "### 环境观察",
         "",
-    ]
+        ]
+    )
 
     run_wait = next((r for r in ctx.results if r.name == "8.2 等待采集终态"), None)
     if run_wait:
@@ -1289,7 +1352,66 @@ def generate_report(ctx: TestContext, started_at: datetime, finished_at: datetim
     return "\n".join(lines)
 
 
+def run_release_checklist_phase(base_url: str, *, strict_preflight: bool = False) -> dict[str, Any]:
+    from app.core.config import settings
+    from app.core.database import SessionLocal
+    from release_observability import (
+        build_release_checklist,
+        checklist_exit_code,
+        print_release_checklist,
+    )
+
+    report = build_release_checklist(
+        settings=settings,
+        base_url=base_url,
+        db_session_factory=SessionLocal,
+        strict_preflight=strict_preflight,
+    )
+    print_release_checklist(report)
+    report["_exit_code"] = checklist_exit_code(report)
+    return report
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="API 全量联调 + 上线验收观测（Task O10 preflight 默认开启）"
+    )
+    parser.add_argument(
+        "--base-url",
+        default="http://127.0.0.1:8000",
+        help="API 基地址，默认 http://127.0.0.1:8000",
+    )
+    parser.add_argument(
+        "--release-checklist-only",
+        action="store_true",
+        help="仅执行上线验收观测（config preflight + ready + 队列/指标）",
+    )
+    parser.add_argument(
+        "--skip-release-checklist",
+        action="store_true",
+        help="跳过发布前观测，仅跑 API 用例",
+    )
+    parser.add_argument(
+        "--report-path",
+        default=str(_REPO_ROOT / "docs" / "API全量接口测试报告.md"),
+        help="Markdown 报告输出路径",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
+    args = parse_args()
+    configure_runtime(base_url=args.base_url)
+
+    release_checklist: dict[str, Any] | None = None
+    if not args.skip_release_checklist:
+        release_checklist = run_release_checklist_phase(
+            args.base_url,
+            strict_preflight=args.release_checklist_only,
+        )
+        if args.release_checklist_only:
+            return int(release_checklist.get("_exit_code", 1))
+
     started = datetime.now(timezone.utc)
     ctx = TestContext()
     try:
@@ -1320,15 +1442,22 @@ def main() -> int:
         return 1
 
     finished = datetime.now(timezone.utc)
-    report = generate_report(ctx, started, finished)
-    out_path = r"d:\workspace\GEO-Platform\.worktrees\mvp-integration\docs\API全量接口测试报告.md"
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(report)
+    report = generate_report(
+        ctx,
+        started,
+        finished,
+        release_checklist=release_checklist,
+    )
+    out_path = Path(args.report_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(report, encoding="utf-8")
 
     passed = sum(1 for r in ctx.results if r.passed)
     total = len(ctx.results)
     print(f"Done: {passed}/{total} passed. Report: {out_path}")
-    return 0 if passed == total else 1
+    api_exit = 0 if passed == total else 1
+    checklist_exit = int((release_checklist or {}).get("_exit_code", 0))
+    return max(api_exit, checklist_exit)
 
 
 if __name__ == "__main__":

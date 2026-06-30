@@ -81,6 +81,10 @@ def _runtime_settings(**overrides: Any) -> SimpleNamespace:
         "AIDSO_ENABLED": False,
         "AIDSO_BASE_URL": "https://aidso.test",
         "AIDSO_API_TOKEN": "",
+        "MOLIZHISHU_ENABLED": False,
+        "MOLIZHISHU_BASE_URL": "https://molizhishu.test/api/business/monitor",
+        "MOLIZHISHU_API_TOKEN": "",
+        "MOLIZHISHU_REQUEST_TIMEOUT_SECONDS": 30,
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -180,3 +184,34 @@ def test_build_adapter_registry_registers_aidso_platforms_when_configured():
     codes = registry.registered_codes()
     assert "aidso_doubao_web" in codes
     assert "aidso_qwen_app" in codes
+
+
+def test_build_adapter_registry_skips_molizhishu_when_not_configured():
+    registry = build_adapter_registry(_runtime_settings())
+
+    assert not any(code.startswith("molizhishu_") for code in registry.registered_codes())
+
+
+def test_build_adapter_registry_registers_molizhishu_platforms_when_configured():
+    from app.geo_monitoring.adapters.base import PlatformAdapter
+    from app.geo_monitoring.adapters.molizhishu import MolizhishuAdapter
+    from app.geo_monitoring.services.platforms import MOLIZHISHU_PLATFORM_MAPPINGS
+
+    registry = build_adapter_registry(
+        _runtime_settings(
+            MOLIZHISHU_ENABLED=True,
+            MOLIZHISHU_BASE_URL="https://molizhishu.test/api/business/monitor",
+            MOLIZHISHU_API_TOKEN="molizhishu-token",
+        )
+    )
+
+    molizhishu_codes = tuple(
+        code for code in registry.registered_codes() if code.startswith("molizhishu_")
+    )
+    assert molizhishu_codes == tuple(sorted(MOLIZHISHU_PLATFORM_MAPPINGS))
+    assert len(molizhishu_codes) == 11
+
+    adapter = registry.get("molizhishu_doubao_web")
+    assert isinstance(adapter, MolizhishuAdapter)
+    assert isinstance(adapter, PlatformAdapter)
+    assert adapter.code == "molizhishu_doubao_web"

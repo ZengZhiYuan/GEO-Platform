@@ -19,8 +19,9 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, new_request_id, request_id_var
-from app.core.readiness import check_nacos_ready, check_readiness
+from app.core.readiness import check_nacos_ready, check_platform_runtime_diagnostics, check_readiness
 from app.core.response import success
+from app.core.security import bind_request, reset_request_binding
 
 
 # 从环境变量解析 CORS 允许的源列表（逗号分隔）
@@ -37,10 +38,12 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         # 复用客户端传入的 X-Request-ID，否则生成新 ID
         request_id = request.headers.get("X-Request-ID") or new_request_id()
         token = request_id_var.set(request_id)
+        bind_request(request)
         started = time.perf_counter()
         try:
             response = await call_next(request)
         finally:
+            reset_request_binding()
             request_id_var.reset(token)
         duration_ms = int((time.perf_counter() - started) * 1000)
         response.headers["X-Request-ID"] = request_id
@@ -93,7 +96,11 @@ def _register_geo_monitoring_probes(app: FastAPI) -> None:
     # 就绪检查：探测数据库、Redis，可选探测 Nacos
     @app.get(f"{prefix}/ready", summary="监测服务就绪检查", tags=["AI 应用监测"])
     async def geo_monitoring_ready() -> dict:
+        from app.core.database import SessionLocal
+
         payload = check_readiness()
+        with SessionLocal() as db:
+            payload["platform_runtime"] = check_platform_runtime_diagnostics(db)
         # Nacos 启用时追加配置中心连通性探测
         if settings.NACOS_ENABLED:
             try:

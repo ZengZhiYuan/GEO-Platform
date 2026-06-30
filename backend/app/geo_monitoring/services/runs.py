@@ -9,12 +9,17 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
-from app.geo_monitoring.models import Answer, MonitorRun, QueryTask
+from app.geo_monitoring.models import Answer, MonitorProject, MonitorRun, QueryTask
 from app.geo_monitoring.repositories import platforms as platform_repo
 from app.geo_monitoring.repositories import prompts as prompt_repo
 from app.geo_monitoring.repositories import runs as run_repo
 from app.geo_monitoring.schemas import RunCreate, RunDetailRead
 from app.geo_monitoring.services.projects import require_active_project, require_monitoring_not_paused
+from app.geo_monitoring.services.tenant_access import (
+    ensure_project_tenant_access,
+    list_tenant_filter,
+    stamp_tenant_fields,
+)
 
 RUN_TERMINAL_STATUSES = frozenset(
     {"completed", "partial_success", "failed", "cancelled"}
@@ -59,9 +64,12 @@ def _enabled_prompts(db: Session, prompt_set_id: int):
 
 # 判断平台是否属于当前采集源
 def _platform_matches_collection_source(platform, collection_source: str) -> bool:
+    adapter_type = platform.adapter_type
     if collection_source == "aidso":
-        return platform.adapter_type == "aidso"
-    return platform.adapter_type != "aidso"
+        return adapter_type == "aidso"
+    if collection_source == "molizhishu":
+        return adapter_type == "molizhishu"
+    return adapter_type not in {"aidso", "molizhishu"}
 
 
 # 解析并校验可用的 AI 平台列表
@@ -106,6 +114,19 @@ def _resolve_platforms(
     return platforms
 
 
+def _validate_provider_mode_for_resolved_platforms(
+    payload: RunCreate, resolved_platform_codes: list[str]
+) -> None:
+    if not payload.provider_mode_by_platform:
+        return
+    outside = set(payload.provider_mode_by_platform) - set(resolved_platform_codes)
+    if outside:
+        raise BusinessException(
+            message="provider_mode_by_platform 只能配置本次 platform_codes 内的平台",
+            code=422,
+        )
+
+
 def prepare_run_create(db: Session, payload: RunCreate):
     """校验并解析创建运行所需的项目、问题集、提示词与平台，不落库。"""
     project = require_active_project(db, payload.project_id)
@@ -121,6 +142,18 @@ def prepare_run_create(db: Session, payload: RunCreate):
         collection_source=payload.collection_source.value,
     )
     resolved_platform_codes = [platform.platform_code for platform in platforms]
+    _validate_provider_mode_for_resolved_platforms(payload, resolved_platform_codes)
+    from app.geo_monitoring.adapters.registry import validate_resolved_platforms_runtime
+    from app.geo_monitoring.services.collection import get_runtime
+
+    runtime = get_runtime()
+    validate_resolved_platforms_runtime(
+        platforms,
+        collection_source=payload.collection_source.value,
+        runtime_settings=runtime.settings,
+        adapter_registry=runtime.adapter_registry,
+        key_pool=runtime.key_pool,
+    )
     return project, prompt_set, prompts, platforms, resolved_platform_codes
 
 
@@ -313,11 +346,16 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
         analysis_status="skipped",
         report_status="skipped",
         collection_source=payload.collection_source.value,
-        aidso_thinking_enabled_by_platform=payload.aidso_thinking_enabled_by_platform,
+        aidso_thinking_enabled_by_platform={},
+        provider_mode_by_platform=payload.provider_mode_by_platform,
+        provider_screenshot=payload.provider_screenshot,
+        region_code=payload.region_code,
+        provider_callback_url=payload.provider_callback_url,
         platform_codes=platform_codes,
         expected_query_count=task_count,
         total_tasks=task_count,
     )
+    stamp_tenant_fields(run)
     try:
         run_repo.add_run(db, run)
         db.flush()
@@ -329,6 +367,13 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
             platforms,
             max_attempts=_collection_max_attempts(),
         )
+        from app.geo_monitoring.services.provider_batches import (
+            create_provider_batches_for_run,
+            provider_batch_enabled,
+        )
+
+        if provider_batch_enabled(run.collection_source):
+            create_provider_batches_for_run(db, run)
         db.commit()
     except Exception:
         db.rollback()
@@ -344,6 +389,7 @@ def get_run(db: Session, run_id: int) -> MonitorRun:
     run = run_repo.get_by_id(db, run_id)
     if run is None:
         raise BusinessException(message="监测运行不存在", code=40400)
+    ensure_project_tenant_access(db, run.project_id)
     return run
 
 
@@ -367,9 +413,18 @@ def list_runs(
     created_after: datetime | None = None,
     created_before: datetime | None = None,
 ) -> tuple[list[MonitorRun], int]:
+    if project_id is not None:
+        ensure_project_tenant_access(db, project_id)
     conditions = [MonitorRun.is_deleted.is_(False)]
     if project_id is not None:
         conditions.append(MonitorRun.project_id == project_id)
+    tenant_id = list_tenant_filter()
+    if tenant_id is not None:
+        tenant_project_ids = select(MonitorProject.id).where(
+            MonitorProject.is_deleted.is_(False),
+            MonitorProject.tenant_id == tenant_id,
+        )
+        conditions.append(MonitorRun.project_id.in_(tenant_project_ids))
     if status:
         conditions.append(MonitorRun.status == status)
     if created_after is not None:
@@ -423,6 +478,14 @@ def cancel_run(db: Session, run_id: int) -> MonitorRun:
         db.refresh(run)
         return run
 
+    stop_targets: dict[str, list[str | None]] = {}
+    if run.collection_source == "molizhishu":
+        from app.geo_monitoring.services import collection as collection_service
+
+        stop_targets = collection_service.collect_molizhishu_provider_stop_targets(
+            db, run_id
+        )
+
     now = datetime.now(timezone.utc)
     # 锁定并取消所有 pending/queued/running 任务
     tasks = list(
@@ -447,9 +510,16 @@ def cancel_run(db: Session, run_id: int) -> MonitorRun:
     run.collection_status = "cancelled"
     run.completed_at = now
     run.finished_at = now
+    db.flush()
     refresh_run_aggregation(db, run)
     db.commit()
     db.refresh(run)
+
+    if stop_targets:
+        from app.geo_monitoring.services import collection as collection_service
+
+        collection_service.schedule_molizhishu_provider_stop(run_id, stop_targets)
+
     return run
 
 
@@ -496,6 +566,7 @@ def retry_failed_tasks(db: Session, run_id: int) -> tuple[MonitorRun, int]:
     run.completed_at = None
     run.finished_at = None
     run.error_summary = None
+    db.flush()
     refresh_run_aggregation(db, run)
     db.commit()
 

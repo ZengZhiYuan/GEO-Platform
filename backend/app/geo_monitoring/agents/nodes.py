@@ -652,6 +652,7 @@ def _upsert_execution(db: Session, **fields: Any) -> None:
 
     if existing is None:
         db.add(AgentExecution(**fields))
+        db.flush()
         return
 
     history = list((existing.input_snapshot or {}).get("execution_history") or [])

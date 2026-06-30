@@ -35,8 +35,8 @@ def _seed_project_card(
 ) -> dict:
     platform_codes = platform_codes or [
         "doubao",
-        "aidso_doubao_web",
-        "aidso_doubao_app",
+        "molizhishu_doubao_web",
+        "molizhishu_doubao_mobile",
         "qwen",
     ]
     with session_factory() as db:
@@ -174,8 +174,8 @@ def test_project_overview_returns_card_summary(client, session_factory):
     endpoint_codes = {item["platform_code"] for item in card["platform_endpoints"]}
     assert endpoint_codes == {
         "doubao",
-        "aidso_doubao_web",
-        "aidso_doubao_app",
+        "molizhishu_doubao_web",
+        "molizhishu_doubao_mobile",
         "qwen",
     }
     sample_endpoint = next(
@@ -192,7 +192,7 @@ def test_project_overview_platform_endpoints_match_metadata(client, session_fact
     _seed_platforms(session_factory)
     seeded = _seed_project_card(
         session_factory,
-        platform_codes=["aidso_doubao_web", "aidso_doubao_app"],
+        platform_codes=["molizhishu_doubao_web", "molizhishu_doubao_mobile"],
     )
 
     metadata = client.get("/api/geo-monitoring/platform-endpoints").json()["data"]
@@ -380,7 +380,7 @@ def test_project_overview_platform_count_dedupes_base_platform(client, session_f
     _seed_platforms(session_factory)
     seeded = _seed_project_card(
         session_factory,
-        platform_codes=["doubao", "aidso_doubao_web", "aidso_doubao_app"],
+        platform_codes=["doubao", "molizhishu_doubao_web", "molizhishu_doubao_mobile"],
     )
 
     response = client.get("/api/geo-monitoring/projects/overview")

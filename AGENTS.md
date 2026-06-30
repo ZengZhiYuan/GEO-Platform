@@ -4,13 +4,17 @@
 
 GEO-Platform 是后端优先的 AI 应用监测平台：配置监测项目、品牌、Prompt 和 AI 平台后，系统按 `Prompt × Platform` 发起采集，沉淀回答、引用源、品牌识别、指标快照和 Agent 洞察，并导出 Markdown / HTML / PDF 诊断报告。
 
-当前阶段后端开发以接口缺口任务书为准，补齐原型六页所需的页面级聚合、字典、AI 生成、导出和指标口径等接口。
+当前阶段后端开发有三条主线：接口缺口补齐、第三方采集接口替换，以及线上版本代码优化整改。涉及原型页面聚合、字典、AI 生成、导出和指标口径时，以接口缺口任务书为准；涉及 Aidso 替换、模力指数 API、第三方采集链路、provider task/subTask、callback、轮询兜底、regionCode、screenshot 或 ProviderBatch 时，以模力指数替换任务书为准；涉及生产安全、真实 provider/Agent 配置、鉴权、镜像瘦身、线上 smoke、MVP/Mock 清理或生产 readiness 时，以线上整改任务书为准。
 
 - **主任务书：** `docs/Cursor接口缺口开发任务书.md`
+- **第三方接口替换主任务书：** `docs/Cursor模力指数API替换Aidso开发任务书.md`
+- **线上整改任务书：** `docs/superpowers/plans/2026-06-30-production-readiness-remediation.md`
 - **事实来源：** `docs/原型功能_API映射整合精简版.md`
-- **默认入口：** 凡涉及当前后端开发、原型页面对接、接口缺口、页面级聚合、字典、AI 生成、导出、指标口径等需求，默认以 `docs/Cursor接口缺口开发任务书.md` 为准；不要切回 MVP V2 任务书作为开发依据。
+- **接口缺口默认入口：** 凡涉及原型页面对接、接口缺口、页面级聚合、字典、AI 生成、导出、指标口径等需求，默认以 `docs/Cursor接口缺口开发任务书.md` 为准；不要切回 MVP V2 任务书作为开发依据。
+- **模力指数默认入口：** 凡涉及第三方采集接口替换、Aidso 下线、模力指数 API 接入、`collection_source=molizhishu`、`molizhishu_*` 平台、provider 状态/错误/回调/轮询/拆批等需求，默认以 `docs/Cursor模力指数API替换Aidso开发任务书.md` 为准；用户输入 `执行 Task M5：Molizhishu Client / Adapter` 这类简短 prompt 时，自动按该任务书定位执行。
+- **线上整改默认入口：** 凡涉及线上版本、生产可用性、MVP/Mock 清理、真实第三方采集开关、真实 Agent LLM、鉴权/租户、镜像安全、生产 smoke、O 系列任务等需求，默认以 `docs/superpowers/plans/2026-06-30-production-readiness-remediation.md` 为准；用户输入 `执行 Task O0：生产安全清理` 这类简短 prompt 时，自动按该任务书定位执行。
 - **默认授权：** 用户下达 Task 开发指令时，默认授权按任务书执行，无需每次重复「先读任务文档」。
-- **冲突处理：** 用户当次指令 > 本文件 / `.cursor/rules/*` / `CLAUDE.md` > `docs/Cursor接口缺口开发任务书.md` > `docs/原型功能_API映射整合精简版.md` > Superpowers skills。
+- **冲突处理：** 用户当次指令 > 本文件 / `.cursor/rules/*` / `CLAUDE.md` > 当前命中的主任务书（线上整改任务书、模力指数替换任务书或接口缺口任务书） > `docs/原型功能_API映射整合精简版.md` / 现有 API 文档与代码实现 > Superpowers skills。
 - **历史归档：** `docs/AI应用监测_MVP_Cursor实施任务V2.md` 中的任务已完成。当前开发任务中忽略该任务书，不再按 `V2 Task N` 开展新开发；仅当用户明确要求追溯历史实现、核对旧任务背景或审计已完成工作时，才局部查阅历史资料。
 
 ## 技术栈
@@ -33,7 +37,7 @@ GEO-Platform 是后端优先的 AI 应用监测平台：配置监测项目、品
 - `backend/app/geo_monitoring/models.py`：监测业务 ORM 模型。
 - `backend/app/geo_monitoring/agents/`：LangGraph Agent 分析链路。
 - `backend/app/geo_monitoring/reports/`：报告生成、存储与下载。
-- `backend/app/worker/`、`backend/app/workers/`：Dramatiq worker 入口与平台适配。
+- `backend/app/worker/`：Dramatiq worker 入口与平台适配（正式部署使用 `app.worker.actors.*`）。
 - `backend/app/scheduler/`：APScheduler 调度进程。
 - `backend/alembic/`：数据库迁移脚本；当前后端 Alembic head 以 README 和迁移目录为准。
 - `backend/tests/`：后端测试；接口缺口任务默认优先补 `backend/tests/geo_monitoring/`。
@@ -47,13 +51,14 @@ GEO-Platform 是后端优先的 AI 应用监测平台：配置监测项目、品
 
 ### 任务读取
 
-1. 先读 `docs/Cursor接口缺口开发任务书_Task索引.md`（执行规则摘要 + Task 行号目录 + 原型文档章节映射）。
-2. 再按索引行号局部读取任务书对应 Task 章节；禁止通读全文。
-3. 按 Task 局部读取 `docs/原型功能_API映射整合精简版.md` 对应章节。
-4. 新增/改造接口前读 `docs/API接口文档.md`；写测试前读 `docs/API测试文档.md`。
-5. 细则见 `.cursor/rules/cursor-api-gap-tasks.mdc`。
+1. 接口缺口 P 系列任务：先读 `docs/Cursor接口缺口开发任务书_Task索引.md`（执行规则摘要 + Task 行号目录 + 原型文档章节映射），再按索引行号局部读取任务书对应 Task 章节；禁止通读全文。
+2. 模力指数 M 系列任务：先读 `docs/Cursor模力指数API替换Aidso开发任务书_Task索引.md`（执行规则摘要 + Task 行号目录 + 必读章节映射），再按索引行号局部读取 `docs/Cursor模力指数API替换Aidso开发任务书.md` 对应 Task；禁止通读全文。
+3. 线上整改 O 系列任务：先读 `docs/superpowers/plans/2026-06-30-production-readiness-remediation.md` 的「审计结论摘要」「当前发现分类」「建议执行顺序」和当前 Task（O0–O10）对应章节；若 Task 涉及接口或配置，再局部读取 `docs/API接口文档.md`、`docs/API测试文档.md`、README、`.env.example` 或部署文档对应章节。
+4. 按 Task 局部读取相关事实文档：接口缺口任务读 `docs/原型功能_API映射整合精简版.md` 对应章节；模力指数任务按索引读取 API 文档、测试文档、采集生命周期说明、平台端/信源相关原型章节；线上整改任务按 O 系列任务书读取涉及模块的现有代码和文档。
+5. 新增/改造接口前读 `docs/API接口文档.md`；写测试前读 `docs/API测试文档.md`。
+6. 细则见 `.cursor/rules/cursor-api-gap-tasks.mdc`、`.cursor/rules/cursor-molizhishu-tasks.mdc` 与 `.cursor/rules/cursor-production-readiness-tasks.mdc`。
 
-用户推荐指令格式：`执行 Task P0-1：<简述>`（或 `执行 Task P1-2：…` 等）。
+用户推荐指令格式：`执行 Task P0-1：<简述>`（接口缺口）、`执行 Task M5：Molizhishu Client / Adapter`（模力指数替换）或 `执行 Task O0：生产安全清理与密钥止血`（线上整改）。
 
 ### Superpowers 开发技能
 
@@ -82,6 +87,12 @@ GEO-Platform 是后端优先的 AI 应用监测平台：配置监测项目、品
 - 外部 API 和 LLM 调用不得运行在数据库长事务内。
 - 数值指标必须由 SQL/Python 确定性计算；LLM 不得生成或修改确定性统计指标。
 - 平台失败相互隔离，运行可进入 `partial_success`。
+- 第三方采集替换默认新建 `collection_source=molizhishu`，历史 Aidso 数据与迁移只读兼容；新任务不得继续引导使用 Aidso。
+- 模力指数测试默认使用 mock，不访问真实接口；真实 token 不得写入仓库、日志、测试 fixture 或文档示例。
+- 线上整改任务默认优先处理安全、配置 fail-fast、真实 provider/Agent 闭环和鉴权；不得用测试默认值、Fake LLM、Stub broker 或 mock URL 作为生产兜底。
+- `APP_ENV=prod` 的目标口径：`DRAMATIQ_BROKER` 必须为 `redis`；Agent LLM 的 base_url、API key、model 必须显式配置；启用 `collection_source=molizhishu` 前必须显式 `MOLIZHISHU_ENABLED=true` 且 token 可用。
+- Run 创建前应校验数据库平台 enabled 与运行时 adapter/credential 配置一致；不要让“平台可选但 adapter 未注册/无凭证”的错误延迟到异步 worker 才暴露。
+- 生产镜像不得包含硬编码 JWT、API Key、网页端私有 token、逆向研究脚本或手工联调脚本；此类资产只能放在明确排除出镜像的 manual/scripts 路径，并从环境变量读取凭证。
 - 趋势比较必须限定同一 Prompt 集版本。
 - 聚合接口避免 N+1；优先复用现有表与分析 JSON，不优先新增大表。
 - 真实账号、密码、API Key 只写入 `.env`、Nacos 或服务器密钥管理系统，不写入仓库。
@@ -142,6 +153,8 @@ $env:PYTHONUTF8 = "1"
 - 接口入参/出参以 Pydantic schema 表达，错误响应和错误码同步写入 API 文档。
 - 新增或改造接口前局部读取 `docs/API接口文档.md` 相关章节；写测试前读取 `docs/API测试文档.md` 约定。
 - 每个接口缺口 Task 完成后，必须更新 `docs/API接口文档.md`、`docs/API测试文档.md`，并在 `docs/原型功能_API映射整合精简版.md` 标注已覆盖缺口。
+- 每个模力指数 M 系列 Task 完成后，按影响范围同步 `docs/API接口文档.md`、`docs/API测试文档.md`、`docs/采集任务生命周期说明.md`、`.env.example`、README 或 `docs/原型功能_API映射整合精简版.md`。
+- 每个线上整改 O 系列 Task 完成后，按影响范围同步 `docs/API接口文档.md`、`docs/API测试文档.md`、`docs/采集任务生命周期说明.md`、`.env.example`、README、Docker/部署说明或 `.cursor/rules/*`；如果整改改变了 MVP/Mock 口径，必须在对应文档中标明“当前实现”和“线上目标”的差异。
 
 ## 数据库规范
 
@@ -224,12 +237,16 @@ backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring --bas
 
 ## 禁止事项
 
-- 禁止把 MVP V2 任务书作为当前接口缺口开发依据；旧版原型映射文档与 MVP V2 任务书仅作历史参考。
+- 禁止把 MVP V2 任务书作为当前接口缺口或模力指数替换开发依据；旧版原型映射文档与 MVP V2 任务书仅作历史参考。
 - 禁止一次性通读大型任务书；必须按索引和行号局部读取。
 - 禁止使用未指定编码的 `type`、`cat`、`Get-Content` 读取中文文档或日志。
 - 禁止将乱码文本写回仓库。
 - 禁止使用系统 Python、其他项目虚拟环境或 Conda 环境执行后端命令。
 - 禁止在仓库、日志、普通数据库配置字段中保存明文平台密钥、数据库密码、API token。
+- 禁止提交硬编码 JWT、Bearer Token、网页端私有协议凭证、真实 API Key 或可还原的密钥材料；发现后先按泄露处理并在整改中要求轮换。
+- 禁止生产路径默认回退到 `*.test` URL、`test-*` key、FakeLLMClient、StubBroker 或 mock 平台；这些只能用于自动化测试或显式开发环境。
+- 禁止将 `backend/app/test`、手工厂商连通性脚本、逆向研究脚本或测试夹具打入生产镜像。
+- 禁止自动测试访问真实模力指数接口；真实联调必须走手动 smoke 脚本并明确费用风险。
 - 禁止恢复已移除的内容生产业务域。
 - 禁止在数据库事务中调用外部 AI 平台或 LLM。
 - 禁止让 LLM 生成或修改确定性统计指标。
@@ -241,14 +258,15 @@ backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring --bas
 
 每个开发 Task 完成前必须满足：
 
-1. 已按任务索引局部读取当前 Task、对应原型章节、API 文档和测试文档。
+1. 已按任务索引局部读取当前 Task、对应事实章节、API 文档和测试文档。
 2. 代码任务已按 Superpowers 工作流执行：`using-superpowers`、`test-driven-development`、`verification-before-completion`。
 3. 已先写失败测试，并确认失败原因对应本次需求；纯文档任务可跳过。
 4. 实现范围与任务书一致，不引入无关重构或额外行为。
 5. 已运行任务书指定验收命令和必要的回归测试，并在汇报中说明命令与结果。
 6. 新增/改造接口已同步 `docs/API接口文档.md`、`docs/API测试文档.md`，并在 `docs/原型功能_API映射整合精简版.md` 标注已覆盖缺口。
 7. 数据库结构变化已补 Alembic migration，并通过 `alembic heads`、`alembic upgrade head --sql` 等验证。
-8. 改动了 `backend/` 等源码且验收通过后，在仓库根目录执行：
+8. 线上整改 O 系列任务还必须逐项核对 `docs/superpowers/plans/2026-06-30-production-readiness-remediation.md` 当前 Task 的安全、配置、真实 smoke、文档同步和生产门禁要求；纯文档任务可跳过代码测试，但必须验证文件存在、结构和变更范围。
+9. 改动了 `backend/` 等源码且验收通过后，在仓库根目录执行：
 
 ```powershell
 codegraph status
@@ -260,11 +278,14 @@ codegraph status
 
 上线前最小验收还应覆盖：
 
-1. `GET /api/geo-monitoring/health` 返回成功。
-2. `GET /api/geo-monitoring/ready` 确认数据库和 Redis ready。
-3. 创建项目、品牌、Prompt 集、平台配置。
-4. `POST /api/geo-monitoring/runs` 创建运行。
-5. Worker 日志能看到 `collection`、`analysis`、`report` 队列消费。
-6. `POST /api/geo-monitoring/runs/{run_id}/reports` 生成 `pdf`。
-7. `GET /api/geo-monitoring/reports/{report_id}/download` 能下载 PDF。
+1. 仓库与生产镜像不包含硬编码 JWT、API Key、网页端私有 token、手工联调脚本或测试夹具。
+2. `APP_ENV=prod` 下缺失真实 Agent LLM 配置、错误使用 `DRAMATIQ_BROKER=stub` 或启用模力指数但缺 token 时应 fail-fast。
+3. `GET /api/geo-monitoring/health` 返回成功。
+4. `GET /api/geo-monitoring/ready` 确认数据库和 Redis ready，并能脱敏展示关键运行配置状态。
+5. 创建项目、品牌、Prompt 集、平台配置；Run 创建前能识别平台 DB enabled 与运行时 adapter/credential 不一致。
+6. `POST /api/geo-monitoring/runs` 创建运行；模力指数真实采集需显式 `MOLIZHISHU_ENABLED=true` 并通过手动付费风险确认的 smoke。
+7. Worker 日志能看到 `collection`、`analysis`、`report` 队列消费。
+8. Agent 分析使用真实 `AGENT_LLM_*`，不回退测试默认值。
+9. `POST /api/geo-monitoring/runs/{run_id}/reports` 生成 `pdf`。
+10. `GET /api/geo-monitoring/reports/{report_id}/download` 能下载 PDF。
 

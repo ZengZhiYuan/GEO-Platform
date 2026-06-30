@@ -18,6 +18,15 @@ PROJECT_MONITORING_PAUSED_NAME = (
     "20260626_0009-geo_monitoring_0009_project_monitoring_paused.py"
 )
 PROJECT_DRAFT_NAME = "20260626_0010-geo_monitoring_0010_project_draft.py"
+MOLIZHISHU_COLLECTION_SOURCE_NAME = (
+    "20260629_0011-geo_monitoring_0011_molizhishu_collection_source.py"
+)
+PROVIDER_BATCH_NAME = (
+    "20260630_0012-geo_monitoring_0012_provider_batch.py"
+)
+TENANT_INDEXES_NAME = (
+    "20260630_0013-geo_monitoring_0013_tenant_indexes.py"
+)
 EXPECTED_MIGRATIONS = [
     BASELINE_NAME,
     COLLECTION_NAME,
@@ -29,6 +38,9 @@ EXPECTED_MIGRATIONS = [
     METRIC_SNAPSHOT_BRAND_NAME,
     PROJECT_MONITORING_PAUSED_NAME,
     PROJECT_DRAFT_NAME,
+    MOLIZHISHU_COLLECTION_SOURCE_NAME,
+    PROVIDER_BATCH_NAME,
+    TENANT_INDEXES_NAME,
 ]
 
 
