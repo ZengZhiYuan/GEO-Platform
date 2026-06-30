@@ -2,11 +2,11 @@
 
 GEO-Platform 是一个后端优先的 AI 应用监测平台。系统围绕监测项目、品牌、竞品、Prompt 集和 AI 平台配置工作，按 `Prompt x Platform` 发起采集，沉淀 AI 回答、引用源、品牌识别、指标快照、Agent 洞察，并输出 Markdown / HTML / PDF 诊断报告。
 
-当前仓库处于“接口缺口补齐”阶段，开发重心在 `backend/`。`frontend/` 保留 React + Vite + Ant Design 管理端壳层，除非明确要求，一般不作为当前后端接口任务的改动范围。
+当前仓库后端开发主线包括接口缺口补齐、第三方采集接口替换（Aidso → 模力指数）和生产 readiness 整改。开发重心在 `backend/`；`frontend/` 保留 React + Vite + Ant Design 管理端壳层，除非明确要求，一般不作为当前后端任务的改动范围。
 
 - 当前业务 API 前缀：`/api/geo-monitoring`
 - 兼容业务 API 前缀：`/api/v1/geo-monitoring`
-- 当前 Alembic head：`geo_monitoring_0010`
+- 当前 Alembic head：`geo_monitoring_0013`
 - 默认配置文件：仓库根目录 `.env`
 - 报告默认目录：本地 `./data/reports`，容器内 `/app/backend/data/reports`
 
@@ -14,9 +14,9 @@ GEO-Platform 是一个后端优先的 AI 应用监测平台。系统围绕监测
 
 - 项目管理：项目列表、项目卡片概览、项目切换器、一步创建项目、创建向导草稿、暂停/恢复监测、删除前关联检查。
 - 监测配置：目标品牌、竞品、品牌别名、核心词、Prompt 词库、Prompt 集版本、监测设置、平台端元数据与展示字典。
-- AI 生成辅助：按项目生成品牌词候选、竞品候选、监测问题候选；候选结果不自动落库。
-- 平台采集：支持豆包、通义千问、腾讯元宝、DeepSeek、Kimi 官方 Adapter，以及 `collection_source=molizhishu` 的模力指数第三方采集（11 个 `molizhishu_*` 平台端）。历史 Aidso 数据只读兼容，新建 Run 不再接受 `collection_source=aidso`。
-- 异步运行：创建监测运行后生成 QueryTask，由 Dramatiq worker 消费 `collection`、`analysis`、`report` 队列。
+- AI 生成辅助：优先 Agent LLM 结构化生成品牌词、竞品和监测问题候选，失败或未配置时规则兜底；候选结果不自动落库。
+- 平台采集：支持豆包、通义千问、腾讯元宝、DeepSeek、Kimi 官方 Adapter，以及 `collection_source=molizhishu` 的模力指数第三方采集（11 个 `molizhishu_*` 平台端、ProviderBatch、回调与轮询兜底）。历史 Aidso 数据只读兼容，新建 Run 不再接受 `collection_source=aidso`。
+- 异步运行：创建监测运行后生成 QueryTask，由 Dramatiq worker 消费 `collection`、`analysis`、`report` 队列；手工触发分析会入队并返回 `queued=true`。
 - 分析指标：品牌可见度、提及率、首位率、平均排名、平台表现、Prompt 竞争力、引用来源、竞品表现、趋势快照等确定性指标。
 - Agent 洞察：采集/分析完成后可通过 LangGraph + OpenAI-compatible LLM 生成诊断和建议，并保留 Agent 执行审计。
 - 页面级聚合：数据大盘、AI 对话记录、竞品分析、信源引用分析等原型页面所需聚合接口。
@@ -83,7 +83,7 @@ GEO-Platform 是一个后端优先的 AI 应用监测平台。系统围绕监测
 | 品牌与核心词 | `/projects/{project_id}/brands`、`/brands/{brand_id}/aliases`、`/projects/{project_id}/core-keywords` |
 | Prompt | `/prompt-library`、`/projects/{project_id}/prompt-sets`、`/prompt-sets/{id}/prompts`、`/prompt-sets/{id}/activate` |
 | 平台与字典 | `/platforms`、`/platform-endpoints`、`/prompt-types`、`/source-types`、`/benchmarks` |
-| AI 生成 | `/projects/{project_id}/ai/brand-words:generate`、`/competitors:generate`、`/questions:generate` |
+| AI 生成 | `/ai/brand-words:generate`、`/ai/competitors:generate`、`/ai/questions:generate`、`/projects/{project_id}/ai/*:generate` |
 | 运行与任务 | `/runs`、`/runs/{run_id}`、`/runs/{run_id}/cancel`、`/runs/{run_id}/retry-failed`、`/runs/{run_id}/query-tasks` |
 | 分析与看板 | `/runs/{run_id}/analyze`、`/runs/{run_id}/analysis`、`/projects/{project_id}/dashboard`、`/projects/{project_id}/dashboard/overview`、`/projects/{project_id}/trends` |
 | 页面级聚合 | `/projects/{project_id}/conversation-questions`、`/competitor-analysis`、`/source-analysis` |
@@ -152,9 +152,12 @@ geo_monitoring_0001
   -> geo_monitoring_0008
   -> geo_monitoring_0009
   -> geo_monitoring_0010
+  -> geo_monitoring_0011
+  -> geo_monitoring_0012
+  -> geo_monitoring_0013
 ```
 
-空库可以通过 Alembic 初始化到最新版本。`docs/geo-platform_schema.sql` 仅用于空库人工建表参考，已有数据的库不要重复执行全量建表 SQL。
+空库可以通过 Alembic 初始化到最新版本。`docs/geo-platform_schema.sql` 已按 `geo_monitoring_0013` 生成，仅用于空库人工建表参考；已有数据的库不要重复执行全量建表 SQL。
 
 ### 3. 启动 API
 
@@ -235,6 +238,14 @@ Content-Type: application/json
 POST /api/geo-monitoring/runs/{run_id}/cancel
 POST /api/geo-monitoring/runs/{run_id}/retry-failed
 ```
+
+触发 Agent 分析：
+
+```http
+POST /api/geo-monitoring/runs/{run_id}/analyze
+```
+
+该接口会校验 `AGENT_LLM_*` 后投递到 `analysis` 队列，返回 `queued=true`；调用方应轮询 `GET /api/geo-monitoring/runs/{run_id}` 或 `GET /api/geo-monitoring/runs/{run_id}/analysis`，等待 `analysis_status=completed` 后再展示洞察或生成报告。
 
 ## 报告生成与下载
 
@@ -346,8 +357,9 @@ docker compose down
 
 - `DRAMATIQ_BROKER` 必须为 `redis`，不得为 `stub`。
 - `AGENT_LLM_BASE_URL`、`AGENT_LLM_API_KEY`、`AGENT_LLM_MODEL` 不能为空。
+- `API_AUTH_ENABLED` 必须为 `true`，且必须显式配置 `API_AUTH_TOKEN_MAP_JSON` 或 `API_AUTH_BEARER_TOKENS`。
 - 启用模力指数（`MOLIZHISHU_ENABLED=true`）时，`.env` 必须显式提供 `MOLIZHISHU_ENABLED`、`MOLIZHISHU_API_TOKEN`、`MOLIZHISHU_PROVIDER_BATCH_ENABLED`，不能仅依赖代码默认值。
-- `GET /api/geo-monitoring/ready` 的 `runtime_summary()` 会输出 `provider_batch_enabled`、`callback_enabled`、`regions_cache_seconds` 等运行画像，但不会输出 token 明文。
+- `GET /api/geo-monitoring/ready` 会返回数据库、Redis、`platform_runtime` 和可选 Nacos 诊断；`platform_runtime` 用于脱敏展示 DB 启用平台、adapter 注册、凭证数量与 `ready_for_collection` 状态，不输出 token 明文。
 
 真实账号、密码、API Key 只写入 `.env`、Nacos 或服务器密钥管理系统，不写入仓库。
 
@@ -419,7 +431,7 @@ backend\.venv\Scripts\python.exe backend\scripts\run_api_full_test.py --base-url
 backend\.venv\Scripts\python.exe backend\scripts\run_api_full_test.py --release-checklist-only --base-url http://127.0.0.1:8000
 ```
 
-报告默认写入 `docs/API全量接口测试报告.md`。
+全量联调脚本会在控制台输出 release checklist；如需保存报告，可按脚本参数或重定向另存到本地文件。
 
 需先在 `.env` 配置 `MOLIZHISHU_ENABLED=true`、`MOLIZHISHU_API_TOKEN`；business-loop 另需 API/worker 已启动、Agent LLM 已配置。脚本输出已脱敏，不包含 token 或完整 prompt 回答正文。
 
@@ -443,21 +455,21 @@ npm run build
 
 ## 开发依据与文档入口
 
-当前后端开发以接口缺口任务书与模力指数替换任务书为准：
+当前后端开发以接口缺口任务书、模力指数替换任务书和线上整改任务书为准；当前工作区可直接查阅的主要入口如下。若历史任务书文件不在本工作区，以当前代码、API 文档、操作手册和 AGENTS.md 的任务口径为准。
 
 - 模力指数替换 Task 索引：[docs/Cursor模力指数API替换Aidso开发任务书_Task索引.md](./docs/Cursor模力指数API替换Aidso开发任务书_Task索引.md)
-- 模力指数设计决策：[docs/molizhishu-collection-source-design.md](./docs/molizhishu-collection-source-design.md)
+- 模力指数替换主任务书：[docs/Cursor模力指数API替换Aidso开发任务书.md](./docs/Cursor模力指数API替换Aidso开发任务书.md)
+- 线上整改计划：[docs/superpowers/plans/2026-06-30-production-readiness-remediation.md](./docs/superpowers/plans/2026-06-30-production-readiness-remediation.md)
 - 采集生命周期：[docs/采集任务生命周期说明.md](./docs/采集任务生命周期说明.md)
-- 接口缺口 Task 索引：[docs/Cursor接口缺口开发任务书_Task索引.md](./docs/Cursor接口缺口开发任务书_Task索引.md)
-- 主任务书：[docs/Cursor接口缺口开发任务书.md](./docs/Cursor接口缺口开发任务书.md)
 - 原型/API 映射：[docs/原型功能_API映射整合精简版.md](./docs/原型功能_API映射整合精简版.md)
 - API 接口文档：[docs/API接口文档.md](./docs/API接口文档.md)
-- API 测试文档：[docs/API测试文档.md](./docs/API测试文档.md)
 - 操作手册：[docs/AI应用监测平台操作手册.md](./docs/AI应用监测平台操作手册.md)
+- 远程空库建表指南：[docs/PostgreSQL远程建表操作文档_无需部署代码.md](./docs/PostgreSQL远程建表操作文档_无需部署代码.md)
 - 数据库 SQL 参考：[docs/geo-platform_schema.sql](./docs/geo-platform_schema.sql)
+- ER 图：[docs/ER图.md](./docs/ER图.md)
 - 代码审核要求：[docs/代码审核要求.md](./docs/代码审核要求.md)
 
-`docs/AI应用监测_MVP_Cursor实施任务V2.md` 属于已完成历史归档，不作为当前接口缺口开发依据。
+MVP V2 相关任务属于已完成历史归档，不作为当前接口缺口、模力指数替换或生产整改开发依据。
 
 ## 开发注意事项
 
@@ -466,6 +478,6 @@ npm run build
 - 平台采集失败要相互隔离，运行允许进入 `partial_success`。
 - 趋势比较必须限定同一 Prompt 集版本。
 - 新增 API 文件必须在 `backend/app/geo_monitoring/api/__init__.py` 注册 router。
-- 新增或改造接口需同步更新 API 文档、API 测试文档和原型映射文档。
+- 新增或改造接口需同步更新 API 文档、原型映射文档、操作手册和必要的测试/联调脚本说明。
 - 新增表、字段、索引、约束必须补 Alembic migration。
 - 中文文档、源码、配置和命令输出统一按 UTF-8 处理，避免在 Windows 下写入乱码。
