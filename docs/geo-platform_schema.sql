@@ -1,4 +1,4 @@
-﻿BEGIN;
+BEGIN;
 
 CREATE TABLE alembic_version (
     version_num VARCHAR(32) NOT NULL, 
@@ -240,11 +240,11 @@ CREATE INDEX ix_geo_query_task_run_status ON geo_query_task (run_id, status);
 
 CREATE INDEX ix_geo_query_task_platform_status ON geo_query_task (platform_code, status);
 
-INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type) VALUES ('doubao', '璞嗗寘', 'openai_compatible');
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type) VALUES ('doubao', '豆包', 'openai_compatible');
 
-INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type) VALUES ('qwen', '閫氫箟鍗冮棶', 'openai_compatible');
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type) VALUES ('qwen', '通义千问', 'openai_compatible');
 
-INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type) VALUES ('yuanbao', '鑵捐鍏冨疂', 'tencent');
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type) VALUES ('yuanbao', '腾讯元宝', 'tencent');
 
 INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type) VALUES ('deepseek', 'DeepSeek', 'openai_compatible');
 
@@ -568,7 +568,7 @@ CREATE TABLE geo_report (
     completed_at TIMESTAMP WITH TIME ZONE, 
     PRIMARY KEY (id), 
     CONSTRAINT ck_geo_report_status CHECK (status IN ('pending', 'generating', 'completed', 'failed')), 
-    CONSTRAINT ck_geo_report_format CHECK (format IN ('md', 'html', 'pdf')), 
+    CONSTRAINT ck_geo_report_format CHECK (format IN ('md', 'html')), 
     CONSTRAINT ck_geo_report_relative_storage_path CHECK (relative_storage_path NOT LIKE '/%' AND relative_storage_path !~ '^[A-Za-z]:' AND relative_storage_path NOT LIKE '\\%'), 
     FOREIGN KEY(project_id) REFERENCES geo_monitor_project (id) ON DELETE CASCADE, 
     FOREIGN KEY(run_id) REFERENCES geo_monitor_run (id) ON DELETE CASCADE
@@ -582,46 +582,46 @@ UPDATE alembic_version SET version_num='geo_monitoring_0004' WHERE alembic_versi
 
 -- Running upgrade geo_monitoring_0004 -> geo_monitoring_0005
 
-ALTER TABLE geo_monitor_project ADD COLUMN default_platform_codes JSONB DEFAULT '[]'::jsonb NOT NULL;
+ALTER TABLE geo_monitor_project ADD COLUMN default_platform_codes JSON DEFAULT '[]' NOT NULL;
 
 CREATE TABLE geo_core_keyword (
-    id BIGSERIAL NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    is_deleted BOOLEAN DEFAULT false NOT NULL,
-    tenant_id BIGINT,
-    created_by BIGINT,
-    updated_by BIGINT,
-    project_id BIGINT NOT NULL,
-    keyword VARCHAR(100) NOT NULL,
-    description TEXT,
-    sort_order INTEGER DEFAULT '0' NOT NULL,
-    enabled BOOLEAN DEFAULT true NOT NULL,
-    PRIMARY KEY (id),
-    CONSTRAINT uq_geo_core_keyword_project_keyword UNIQUE (project_id, keyword),
+    id BIGSERIAL NOT NULL, 
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP WITH TIME ZONE, 
+    is_deleted BOOLEAN DEFAULT false NOT NULL, 
+    tenant_id BIGINT, 
+    created_by BIGINT, 
+    updated_by BIGINT, 
+    project_id BIGINT NOT NULL, 
+    keyword VARCHAR(100) NOT NULL, 
+    description TEXT, 
+    sort_order INTEGER DEFAULT '0' NOT NULL, 
+    enabled BOOLEAN DEFAULT true NOT NULL, 
+    PRIMARY KEY (id), 
+    CONSTRAINT uq_geo_core_keyword_project_keyword UNIQUE (project_id, keyword), 
     FOREIGN KEY(project_id) REFERENCES geo_monitor_project (id) ON DELETE CASCADE
 );
 
 CREATE INDEX ix_geo_core_keyword_project_sort ON geo_core_keyword (project_id, sort_order);
 
 CREATE TABLE geo_prompt_library (
-    id BIGSERIAL NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    is_deleted BOOLEAN DEFAULT false NOT NULL,
-    tenant_id BIGINT,
-    created_by BIGINT,
-    updated_by BIGINT,
-    prompt_code VARCHAR(64) NOT NULL,
-    prompt_text TEXT NOT NULL,
-    prompt_type VARCHAR(50) DEFAULT 'generic' NOT NULL,
-    industry VARCHAR(100),
-    scene_tag VARCHAR(100),
-    default_core_keyword VARCHAR(100),
-    enabled BOOLEAN DEFAULT true NOT NULL,
-    PRIMARY KEY (id),
+    id BIGSERIAL NOT NULL, 
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP WITH TIME ZONE, 
+    is_deleted BOOLEAN DEFAULT false NOT NULL, 
+    tenant_id BIGINT, 
+    created_by BIGINT, 
+    updated_by BIGINT, 
+    prompt_code VARCHAR(64) NOT NULL, 
+    prompt_text TEXT NOT NULL, 
+    prompt_type VARCHAR(50) DEFAULT 'generic' NOT NULL, 
+    industry VARCHAR(100), 
+    scene_tag VARCHAR(100), 
+    default_core_keyword VARCHAR(100), 
+    enabled BOOLEAN DEFAULT true NOT NULL, 
+    PRIMARY KEY (id), 
     CONSTRAINT uq_geo_prompt_library_code UNIQUE (prompt_code)
 );
 
@@ -631,14 +631,206 @@ ALTER TABLE geo_prompt ADD COLUMN core_keyword_id BIGINT;
 
 ALTER TABLE geo_prompt ADD CONSTRAINT fk_geo_prompt_core_keyword_id FOREIGN KEY(core_keyword_id) REFERENCES geo_core_keyword (id) ON DELETE SET NULL;
 
-INSERT INTO geo_prompt_library (
-    prompt_code, prompt_text, prompt_type, industry, scene_tag, default_core_keyword, enabled, is_deleted
-) VALUES
-    ('LIB_RECOMMEND_001', '推荐国内有哪些值得看的文旅演艺项目？', 'recommendation', '文旅演艺', '推荐', '文旅演艺', true, false),
-    ('LIB_COMPARE_001', '宋城演艺和只有河南·戏剧幻城哪个更值得看？', 'comparison', '文旅演艺', '对比', '文旅演艺', true, false),
-    ('LIB_VISIBILITY_001', '介绍一下只有河南·戏剧幻城这个品牌。', 'brand_visibility', '文旅演艺', '品牌认知', '只有河南', true, false);
+INSERT INTO geo_prompt_library (prompt_code, prompt_text, prompt_type, industry, scene_tag, default_core_keyword, enabled, is_deleted) VALUES ('LIB_RECOMMEND_001', '推荐国内有哪些值得看的文旅演艺项目？', 'recommendation', '文旅演艺', '推荐', '文旅演艺', true, false);
+
+INSERT INTO geo_prompt_library (prompt_code, prompt_text, prompt_type, industry, scene_tag, default_core_keyword, enabled, is_deleted) VALUES ('LIB_COMPARE_001', '宋城演艺和只有河南·戏剧幻城哪个更值得看？', 'comparison', '文旅演艺', '对比', '文旅演艺', true, false);
+
+INSERT INTO geo_prompt_library (prompt_code, prompt_text, prompt_type, industry, scene_tag, default_core_keyword, enabled, is_deleted) VALUES ('LIB_VISIBILITY_001', '介绍一下只有河南·戏剧幻城这个品牌。', 'brand_visibility', '文旅演艺', '品牌认知', '只有河南', true, false);
 
 UPDATE alembic_version SET version_num='geo_monitoring_0005' WHERE alembic_version.version_num = 'geo_monitoring_0004';
+
+-- Running upgrade geo_monitoring_0005 -> geo_monitoring_0006
+
+ALTER TABLE geo_report DROP CONSTRAINT ck_geo_report_format;
+
+ALTER TABLE geo_report ADD CONSTRAINT ck_geo_report_format CHECK (format IN ('md', 'html', 'pdf'));
+
+UPDATE alembic_version SET version_num='geo_monitoring_0006' WHERE alembic_version.version_num = 'geo_monitoring_0005';
+
+-- Running upgrade geo_monitoring_0006 -> geo_monitoring_0007
+
+ALTER TABLE geo_monitor_run ADD COLUMN collection_source VARCHAR(20) DEFAULT 'official' NOT NULL;
+
+ALTER TABLE geo_monitor_run ADD COLUMN aidso_thinking_enabled_by_platform JSON DEFAULT '{}' NOT NULL;
+
+ALTER TABLE geo_monitor_run ADD CONSTRAINT ck_geo_monitor_run_collection_source CHECK (collection_source IN ('official', 'aidso'));
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('aidso_doubao_web', '豆包 Web 端', 'aidso', NULL, 'aidso:DB', true, true, 2, 120, true, '{"aidso_name": "DB"}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('aidso_doubao_app', '豆包 App 端', 'aidso', NULL, 'aidso:DOUBA', true, true, 2, 120, true, '{"aidso_name": "DOUBA"}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('aidso_deepseek_web', 'DeepSeek Web 端', 'aidso', NULL, 'aidso:DP', true, true, 2, 120, true, '{"aidso_name": "DP"}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('aidso_deepseek_app', 'DeepSeek App 端', 'aidso', NULL, 'aidso:DPA', true, true, 2, 120, true, '{"aidso_name": "DPA"}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('aidso_kimi_web', 'Kimi Web 端', 'aidso', NULL, 'aidso:KIMI', true, true, 2, 120, true, '{"aidso_name": "KIMI"}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('aidso_yuanbao_web', '元宝 Web 端', 'aidso', NULL, 'aidso:TXYB', true, true, 2, 120, true, '{"aidso_name": "TXYB"}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('aidso_yuanbao_app', '元宝 App 端', 'aidso', NULL, 'aidso:TXYBA', true, true, 2, 120, true, '{"aidso_name": "TXYBA"}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('aidso_qwen_web', '千问 Web 端', 'aidso', NULL, 'aidso:TYQW', true, true, 2, 120, true, '{"aidso_name": "TYQW"}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('aidso_qwen_app', '千问 App 端', 'aidso', NULL, 'aidso:TYQWA', true, true, 2, 120, true, '{"aidso_name": "TYQWA"}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('aidso_baidu_web', '百度 AI', 'aidso', NULL, 'aidso:BDAI', true, true, 2, 120, true, '{"aidso_name": "BDAI"}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('aidso_douyin_web', '抖音 AI', 'aidso', NULL, 'aidso:DYAI', true, true, 2, 120, true, '{"aidso_name": "DYAI"}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('aidso_wenxin_web', '文心一言', 'aidso', NULL, 'aidso:WXYY', true, true, 2, 120, true, '{"aidso_name": "WXYY"}'::jsonb);
+
+UPDATE alembic_version SET version_num='geo_monitoring_0007' WHERE alembic_version.version_num = 'geo_monitoring_0006';
+
+-- Running upgrade geo_monitoring_0007 -> geo_monitoring_0008
+
+ALTER TABLE geo_metric_snapshot ADD COLUMN brand_id BIGINT;
+
+ALTER TABLE geo_metric_snapshot ADD FOREIGN KEY(brand_id) REFERENCES geo_brand (id) ON DELETE SET NULL;
+
+DROP INDEX uq_geo_metric_snapshot_dimension;
+
+CREATE UNIQUE INDEX uq_geo_metric_snapshot_dimension ON geo_metric_snapshot (project_id, run_id, metric_code, coalesce(platform_code, ''), coalesce(prompt_id, -1), coalesce(brand_id, -1));
+
+CREATE INDEX ix_geo_metric_snapshot_brand_trend ON geo_metric_snapshot (project_id, brand_id, metric_code, platform_code, snapshot_at);
+
+UPDATE alembic_version SET version_num='geo_monitoring_0008' WHERE alembic_version.version_num = 'geo_monitoring_0007';
+
+-- Running upgrade geo_monitoring_0008 -> geo_monitoring_0009
+
+ALTER TABLE geo_monitor_project ADD COLUMN monitoring_paused BOOLEAN DEFAULT false NOT NULL;
+
+UPDATE alembic_version SET version_num='geo_monitoring_0009' WHERE alembic_version.version_num = 'geo_monitoring_0008';
+
+-- Running upgrade geo_monitoring_0009 -> geo_monitoring_0010
+
+CREATE TABLE geo_project_draft (
+    id BIGSERIAL NOT NULL, 
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP WITHOUT TIME ZONE, 
+    is_deleted BOOLEAN DEFAULT false NOT NULL, 
+    tenant_id BIGINT, 
+    created_by BIGINT, 
+    updated_by BIGINT, 
+    draft_key VARCHAR(128), 
+    current_step INTEGER DEFAULT '1' NOT NULL, 
+    project_data JSONB DEFAULT '{}' NOT NULL, 
+    monitor_setup_data JSONB DEFAULT '{}' NOT NULL, 
+    PRIMARY KEY (id), 
+    CONSTRAINT ck_geo_project_draft_current_step CHECK (current_step >= 1 AND current_step <= 3)
+);
+
+CREATE INDEX ix_geo_project_draft_key_updated ON geo_project_draft (draft_key, updated_at);
+
+UPDATE alembic_version SET version_num='geo_monitoring_0010' WHERE alembic_version.version_num = 'geo_monitoring_0009';
+
+-- Running upgrade geo_monitoring_0010 -> geo_monitoring_0011
+
+ALTER TABLE geo_monitor_run DROP CONSTRAINT ck_geo_monitor_run_collection_source;
+
+ALTER TABLE geo_monitor_run ADD CONSTRAINT ck_geo_monitor_run_collection_source CHECK (collection_source IN ('official', 'aidso', 'molizhishu'));
+
+ALTER TABLE geo_monitor_run ADD COLUMN provider_mode_by_platform JSONB DEFAULT '{}' NOT NULL;
+
+ALTER TABLE geo_monitor_run ADD COLUMN provider_screenshot INTEGER DEFAULT '0' NOT NULL;
+
+ALTER TABLE geo_monitor_run ADD COLUMN provider_callback_url VARCHAR(500);
+
+ALTER TABLE geo_monitor_run ADD COLUMN region_code VARCHAR(32);
+
+ALTER TABLE geo_query_task ADD COLUMN provider_name VARCHAR(64);
+
+ALTER TABLE geo_query_task ADD COLUMN provider_task_id VARCHAR(128);
+
+ALTER TABLE geo_query_task ADD COLUMN provider_subtask_id VARCHAR(128);
+
+ALTER TABLE geo_query_task ADD COLUMN provider_platform_code VARCHAR(64);
+
+ALTER TABLE geo_query_task ADD COLUMN provider_mode VARCHAR(64);
+
+ALTER TABLE geo_query_task ADD COLUMN provider_status VARCHAR(64);
+
+ALTER TABLE geo_query_task ADD COLUMN provider_result_json JSONB;
+
+ALTER TABLE geo_query_task ADD COLUMN provider_error_message TEXT;
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('molizhishu_deepseek_web', 'DeepSeek 网页端', 'molizhishu', NULL, 'molizhishu:deepseek', true, true, 2, 120, true, '{"molizhishu_platform": "deepseek", "base_platform": "deepseek", "endpoint_type": "web", "default_mode": "reasoning_search", "supported_modes": ["standard", "reasoning", "search", "reasoning_search"]}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('molizhishu_deepseek_mobile', 'DeepSeek 手机端', 'molizhishu', NULL, 'molizhishu:deepseek_mobile', true, true, 2, 120, true, '{"molizhishu_platform": "deepseek_mobile", "base_platform": "deepseek", "endpoint_type": "app", "default_mode": "reasoning_search", "supported_modes": ["standard", "reasoning", "search", "reasoning_search"]}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('molizhishu_doubao_web', '豆包网页端', 'molizhishu', NULL, 'molizhishu:doubao', true, true, 2, 120, true, '{"molizhishu_platform": "doubao", "base_platform": "doubao", "endpoint_type": "web", "default_mode": "search", "supported_modes": ["standard", "search"]}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('molizhishu_doubao_mobile', '豆包手机端', 'molizhishu', NULL, 'molizhishu:doubao_mobile', true, true, 2, 120, true, '{"molizhishu_platform": "doubao_mobile", "base_platform": "doubao", "endpoint_type": "app", "default_mode": "search", "supported_modes": ["standard", "search"]}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('molizhishu_yuanbao_web', '腾讯元宝', 'molizhishu', NULL, 'molizhishu:yuanbao', true, true, 2, 120, true, '{"molizhishu_platform": "yuanbao", "base_platform": "yuanbao", "endpoint_type": "web", "default_mode": "search", "supported_modes": ["standard", "search"]}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('molizhishu_kimi_web', 'Kimi', 'molizhishu', NULL, 'molizhishu:kimi', true, true, 2, 120, true, '{"molizhishu_platform": "kimi", "base_platform": "kimi", "endpoint_type": "web", "default_mode": "search", "supported_modes": ["standard", "search"]}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('molizhishu_qianwen_web', '通义千问', 'molizhishu', NULL, 'molizhishu:qianwen', true, true, 2, 120, true, '{"molizhishu_platform": "qianwen", "base_platform": "qianwen", "endpoint_type": "web", "default_mode": "search", "supported_modes": ["standard", "search"]}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('molizhishu_quark_web', '夸克 AI', 'molizhishu', NULL, 'molizhishu:quark', true, true, 2, 120, true, '{"molizhishu_platform": "quark", "base_platform": "quark", "endpoint_type": "web", "default_mode": "search", "supported_modes": ["standard", "search"]}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('molizhishu_baiduai_web', '百度 AI+', 'molizhishu', NULL, 'molizhishu:baiduai', true, true, 2, 120, true, '{"molizhishu_platform": "baiduai", "base_platform": "baiduai", "endpoint_type": "web", "default_mode": "search", "supported_modes": ["standard", "search"]}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('molizhishu_weibo_zhisou_web', '微博智搜', 'molizhishu', NULL, 'molizhishu:weibo_zhisou', true, true, 2, 120, true, '{"molizhishu_platform": "weibo_zhisou", "base_platform": "weibo_zhisou", "endpoint_type": "web", "default_mode": "search", "supported_modes": ["standard", "search"]}'::jsonb);
+
+INSERT INTO geo_ai_platform (platform_code, platform_name, adapter_type, base_url, model_name, search_enabled, citation_supported, max_concurrency, timeout_seconds, enabled, extra_config) VALUES ('molizhishu_wenxinyiyan_web', '文心一言', 'molizhishu', NULL, 'molizhishu:wenxinyiyan', true, true, 2, 120, true, '{"molizhishu_platform": "wenxinyiyan", "base_platform": "wenxinyiyan", "endpoint_type": "web", "default_mode": "search", "supported_modes": ["standard", "search"]}'::jsonb);
+
+UPDATE alembic_version SET version_num='geo_monitoring_0011' WHERE alembic_version.version_num = 'geo_monitoring_0010';
+
+-- Running upgrade geo_monitoring_0011 -> geo_monitoring_0012
+
+CREATE TABLE geo_provider_batch (
+    id BIGSERIAL NOT NULL, 
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP WITHOUT TIME ZONE, 
+    is_deleted BOOLEAN DEFAULT false NOT NULL, 
+    tenant_id BIGINT, 
+    created_by BIGINT, 
+    updated_by BIGINT, 
+    run_id BIGINT NOT NULL, 
+    provider_name VARCHAR(64) NOT NULL, 
+    provider_task_id VARCHAR(128), 
+    batch_no INTEGER NOT NULL, 
+    status VARCHAR(32) DEFAULT 'pending' NOT NULL, 
+    total_items INTEGER DEFAULT '0' NOT NULL, 
+    completed_items INTEGER DEFAULT '0' NOT NULL, 
+    failed_items INTEGER DEFAULT '0' NOT NULL, 
+    submitted_at TIMESTAMP WITH TIME ZONE, 
+    completed_at TIMESTAMP WITH TIME ZONE, 
+    raw_submit_json JSONB, 
+    raw_status_json JSONB, 
+    raw_result_json JSONB, 
+    error_message TEXT, 
+    PRIMARY KEY (id), 
+    CONSTRAINT ck_geo_provider_batch_status CHECK (status IN ('pending', 'submitted', 'processing', 'completed', 'partial_completed', 'failed', 'cancelled')), 
+    CONSTRAINT ck_geo_provider_batch_total_items CHECK (total_items >= 0), 
+    CONSTRAINT ck_geo_provider_batch_completed_items CHECK (completed_items >= 0), 
+    CONSTRAINT ck_geo_provider_batch_failed_items CHECK (failed_items >= 0), 
+    FOREIGN KEY(run_id) REFERENCES geo_monitor_run (id) ON DELETE CASCADE, 
+    CONSTRAINT uq_geo_provider_batch_run_no UNIQUE (run_id, batch_no)
+);
+
+CREATE INDEX ix_geo_provider_batch_run_status ON geo_provider_batch (run_id, status);
+
+CREATE INDEX ix_geo_provider_batch_provider_task ON geo_provider_batch (provider_name, provider_task_id);
+
+ALTER TABLE geo_query_task ADD COLUMN provider_batch_id BIGINT;
+
+ALTER TABLE geo_query_task ADD CONSTRAINT fk_geo_query_task_provider_batch_id FOREIGN KEY(provider_batch_id) REFERENCES geo_provider_batch (id) ON DELETE SET NULL;
+
+UPDATE alembic_version SET version_num='geo_monitoring_0012' WHERE alembic_version.version_num = 'geo_monitoring_0011';
+
+-- Running upgrade geo_monitoring_0012 -> geo_monitoring_0013
+
+CREATE INDEX ix_geo_monitor_project_tenant ON geo_monitor_project (tenant_id);
+
+CREATE INDEX ix_geo_monitor_run_tenant ON geo_monitor_run (tenant_id);
+
+CREATE INDEX ix_geo_report_tenant ON geo_report (tenant_id);
+
+UPDATE alembic_version SET version_num='geo_monitoring_0013' WHERE alembic_version.version_num = 'geo_monitoring_0012';
 
 COMMIT;
 

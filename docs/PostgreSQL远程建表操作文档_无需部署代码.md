@@ -1,6 +1,6 @@
 # PostgreSQL 远程建表操作文档（无需部署代码）
 
-适用范围：GEO-Platform 后端当前 Alembic 迁移链，目标版本 `geo_monitoring_0004`。
+适用范围：GEO-Platform 后端当前 Alembic 迁移链，目标版本 `geo_monitoring_0013`。
 
 本文档面向**尚未将项目代码部署到服务器、但已通过 Navicat 等工具连上远程 PostgreSQL** 的场景。你只需：
 
@@ -10,7 +10,7 @@
 
 服务器上**不需要**安装本仓库、Python 或 Alembic。
 
-与 [`PostgreSQL建表操作文档.md`](./PostgreSQL建表操作文档.md) 的区别：原文档假设代码已部署到服务器并执行 `alembic upgrade head`；本文档以 **Navicat + 本地 SQL 文件** 完成建表。
+与直接在服务器执行 Alembic 的方式不同：后者假设代码已部署到服务器并运行 `alembic upgrade head`；本文档以 **Navicat + 本地 SQL 文件** 完成建表。
 
 ---
 
@@ -56,7 +56,7 @@
 ──────────                              ────────────────────────────
 （可选）重新生成 geo-platform_schema.sql
   ↓
-Navicat 打开该 SQL 并执行        ──→    空库 geo-platform 创建 19 张表
+Navicat 打开该 SQL 并执行        ──→    空库 geo-platform 创建 23 张表
   ↓                                     写入 alembic_version
 （可选）修正中文种子数据
   ↓
@@ -138,9 +138,9 @@ backend\.venv\Scripts\python.exe -m alembic -c backend\alembic.ini upgrade head 
 
 预期：
 
-- `heads` 输出 `geo_monitoring_0004 (head)`；
-- SQL 文件约 500 行，以 `BEGIN;` 开头、`COMMIT;` 结尾；
-- 含 `INSERT INTO geo_ai_platform` 与 `geo_monitoring_0004` 版本更新。
+- `heads` 输出 `geo_monitoring_0013 (head)`；
+- SQL 文件约 830 行，以 `BEGIN;` 开头、`COMMIT;` 结尾；
+- 含 `INSERT INTO geo_ai_platform` 与 `geo_monitoring_0013` 版本更新。
 
 ---
 
@@ -165,6 +165,29 @@ UPDATE geo_ai_platform SET platform_name = '通义千问' WHERE platform_code = 
 UPDATE geo_ai_platform SET platform_name = '腾讯元宝' WHERE platform_code = 'yuanbao';
 UPDATE geo_ai_platform SET platform_name = 'DeepSeek' WHERE platform_code = 'deepseek';
 UPDATE geo_ai_platform SET platform_name = 'Kimi'     WHERE platform_code = 'kimi';
+UPDATE geo_ai_platform SET platform_name = '豆包 Web 端'        WHERE platform_code = 'aidso_doubao_web';
+UPDATE geo_ai_platform SET platform_name = '豆包 App 端'        WHERE platform_code = 'aidso_doubao_app';
+UPDATE geo_ai_platform SET platform_name = 'DeepSeek Web 端'    WHERE platform_code = 'aidso_deepseek_web';
+UPDATE geo_ai_platform SET platform_name = 'DeepSeek App 端'    WHERE platform_code = 'aidso_deepseek_app';
+UPDATE geo_ai_platform SET platform_name = 'Kimi Web 端'        WHERE platform_code = 'aidso_kimi_web';
+UPDATE geo_ai_platform SET platform_name = '元宝 Web 端'        WHERE platform_code = 'aidso_yuanbao_web';
+UPDATE geo_ai_platform SET platform_name = '元宝 App 端'        WHERE platform_code = 'aidso_yuanbao_app';
+UPDATE geo_ai_platform SET platform_name = '千问 Web 端'        WHERE platform_code = 'aidso_qwen_web';
+UPDATE geo_ai_platform SET platform_name = '千问 App 端'        WHERE platform_code = 'aidso_qwen_app';
+UPDATE geo_ai_platform SET platform_name = '百度 AI'             WHERE platform_code = 'aidso_baidu_web';
+UPDATE geo_ai_platform SET platform_name = '抖音 AI'             WHERE platform_code = 'aidso_douyin_web';
+UPDATE geo_ai_platform SET platform_name = '文心一言'            WHERE platform_code = 'aidso_wenxin_web';
+UPDATE geo_ai_platform SET platform_name = 'DeepSeek 网页端'     WHERE platform_code = 'molizhishu_deepseek_web';
+UPDATE geo_ai_platform SET platform_name = 'DeepSeek 手机端'     WHERE platform_code = 'molizhishu_deepseek_mobile';
+UPDATE geo_ai_platform SET platform_name = '豆包网页端'          WHERE platform_code = 'molizhishu_doubao_web';
+UPDATE geo_ai_platform SET platform_name = '豆包手机端'          WHERE platform_code = 'molizhishu_doubao_mobile';
+UPDATE geo_ai_platform SET platform_name = '腾讯元宝'            WHERE platform_code = 'molizhishu_yuanbao_web';
+UPDATE geo_ai_platform SET platform_name = 'Kimi'                WHERE platform_code = 'molizhishu_kimi_web';
+UPDATE geo_ai_platform SET platform_name = '通义千问'            WHERE platform_code = 'molizhishu_qianwen_web';
+UPDATE geo_ai_platform SET platform_name = '夸克 AI'             WHERE platform_code = 'molizhishu_quark_web';
+UPDATE geo_ai_platform SET platform_name = '百度 AI+'            WHERE platform_code = 'molizhishu_baiduai_web';
+UPDATE geo_ai_platform SET platform_name = '微博智搜'            WHERE platform_code = 'molizhishu_weibo_zhisou_web';
+UPDATE geo_ai_platform SET platform_name = '文心一言'            WHERE platform_code = 'molizhishu_wenxinyiyan_web';
 ```
 
 ### 5.3 执行注意
@@ -185,7 +208,7 @@ UPDATE geo_ai_platform SET platform_name = 'Kimi'     WHERE platform_code = 'kim
 SELECT version_num FROM alembic_version;
 ```
 
-预期：`geo_monitoring_0004`
+预期：`geo_monitoring_0013`
 
 ### 6.2 表数量
 
@@ -195,7 +218,7 @@ FROM information_schema.tables
 WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
 ```
 
-预期：`19`（18 张业务表 + `alembic_version`）
+预期：`23`（22 张业务表 + `alembic_version`）
 
 ### 6.3 业务表清单
 
@@ -217,6 +240,7 @@ geo_answer_brand_result
 geo_answer_citation
 geo_brand
 geo_brand_alias
+geo_core_keyword
 geo_metric_snapshot
 geo_monitor_project
 geo_monitor_run
@@ -224,7 +248,10 @@ geo_monitor_schedule
 geo_platform_analysis
 geo_prompt
 geo_prompt_competitiveness
+geo_prompt_library
 geo_prompt_set
+geo_project_draft
+geo_provider_batch
 geo_query_task
 geo_report
 geo_source_stat
@@ -240,7 +267,7 @@ FROM geo_ai_platform
 ORDER BY platform_code;
 ```
 
-预期 5 条：`deepseek`、`doubao`、`kimi`、`qwen`、`yuanbao`，且 `platform_name` 中文正常。
+预期 28 条：官方平台 5 条（`deepseek`、`doubao`、`kimi`、`qwen`、`yuanbao`）、历史 Aidso 只读兼容平台 12 条、模力指数平台 11 条，且 `platform_name` 中文正常。
 
 ---
 
@@ -305,7 +332,7 @@ REDIS_URL=redis://:<redis-password>@<redis-host>:6379/0
 
 ## 11. 后续代码部署到服务器
 
-正式部署后，服务器上也可使用 `alembic upgrade head` 做增量迁移。若远程库已通过本文档建好且 `alembic_version = geo_monitoring_0004`，首次部署不会重复建表。详见 [`PostgreSQL建表操作文档.md`](./PostgreSQL建表操作文档.md)。
+正式部署后，服务器上也可使用 `alembic upgrade head` 做增量迁移。若远程库已通过本文档建好且 `alembic_version = geo_monitoring_0013`，首次部署不会重复建表；后续新增迁移只会从当前版本向后执行。
 
 ---
 
@@ -334,7 +361,7 @@ REDIS_URL=redis://:<redis-password>@<redis-host>:6379/0
 
 | 字段 | 说明 |
 |------|------|
-| version_num | 当前 Alembic 迁移版本号，预期 `geo_monitoring_0004` |
+| version_num | 当前 Alembic 迁移版本号，预期 `geo_monitoring_0013` |
 
 #### geo_monitor_project — 监测项目
 
@@ -348,6 +375,8 @@ REDIS_URL=redis://:<redis-password>@<redis-host>:6379/0
 | official_domain | 官方域名 |
 | report_title | 报告标题 |
 | report_subtitle | 报告副标题 |
+| default_platform_codes | 项目默认平台列表（JSONB，监测设置保存） |
+| monitoring_paused | 是否暂停监测，暂停后禁止创建新 Run |
 
 #### geo_brand — 品牌
 
@@ -393,6 +422,7 @@ REDIS_URL=redis://:<redis-password>@<redis-host>:6379/0
 | prompt_type | 问题类型，默认 generic |
 | scene_tag | 场景标签 |
 | contains_brand | 问题是否包含品牌词 |
+| core_keyword_id | 关联核心词，可为空 |
 | enabled | 是否启用 |
 | sort_order | 排序 |
 | content_hash | 内容哈希 |
@@ -413,7 +443,7 @@ REDIS_URL=redis://:<redis-password>@<redis-host>:6379/0
 | enabled | 是否启用 |
 | extra_config | 扩展配置（JSONB） |
 
-种子数据：`doubao`、`qwen`、`yuanbao`、`deepseek`、`kimi` 共 5 条。
+种子数据：官方平台 5 条、历史 Aidso 平台 12 条、模力指数平台 11 条，共 28 条。新建第三方采集使用 `collection_source=molizhishu` 与 `molizhishu_*` 平台码；`aidso_*` 仅用于历史数据只读兼容。
 
 #### geo_monitor_run — 监测运行
 
@@ -429,6 +459,12 @@ REDIS_URL=redis://:<redis-password>@<redis-host>:6379/0
 | collection_status | 采集阶段状态 |
 | analysis_status | 分析阶段状态 |
 | report_status | 报告阶段状态 |
+| collection_source | 采集来源：`official` / `aidso` / `molizhishu`；新建 Run 禁止 `aidso` |
+| aidso_thinking_enabled_by_platform | 历史 Aidso 兼容字段（JSONB） |
+| provider_mode_by_platform | 模力指数各平台 mode 配置（JSONB） |
+| provider_screenshot | 模力指数截图策略：0 / 1 / 2 |
+| provider_callback_url | 模力指数回调地址 |
+| region_code | 模力指数区域编码 |
 | platform_codes | 参与平台列表（JSONB） |
 | expected_query_count | 预期查询数 |
 | success_query_count | 成功查询数 |
@@ -458,6 +494,10 @@ REDIS_URL=redis://:<redis-password>@<redis-host>:6379/0
 | queued_at / started_at / completed_at / finished_at | 时间戳 |
 | last_error_code / last_error_message | 最后一次错误 |
 | provider_request_id | 平台侧请求 ID |
+| provider_name / provider_task_id / provider_subtask_id | 第三方 provider 任务标识 |
+| provider_platform_code / provider_mode / provider_status | 第三方平台、模式与状态 |
+| provider_result_json / provider_error_message | 第三方原始结果与错误 |
+| provider_batch_id | 关联 `geo_provider_batch`，ProviderBatch 启用时有值 |
 
 ---
 
@@ -614,14 +654,77 @@ REDIS_URL=redis://:<redis-password>@<redis-host>:6379/0
 
 ---
 
-### A.6 表关系概览
+### A.6 监测设置与创建向导（迁移 geo_monitoring_0005 / 0010）
+
+#### geo_core_keyword — 项目核心词
+
+| 字段 | 说明 |
+|------|------|
+| project_id | 所属项目 ID |
+| keyword | 核心词，项目内唯一 |
+| description | 描述 |
+| sort_order | 排序 |
+| enabled | 是否启用 |
+
+#### geo_prompt_library — Prompt 词库模板
+
+| 字段 | 说明 |
+|------|------|
+| prompt_code | 词库编码，全局唯一 |
+| prompt_text | 模板问题正文 |
+| prompt_type | 问题类型 |
+| industry | 适用行业 |
+| scene_tag | 场景标签 |
+| default_core_keyword | 推荐核心词 |
+| enabled | 是否启用 |
+
+#### geo_project_draft — 创建向导草稿
+
+| 字段 | 说明 |
+|------|------|
+| draft_key | 前端草稿键，可用于无项目 ID 的向导续填 |
+| current_step | 当前步骤，1–3 |
+| project_data | 项目基础信息草稿（JSONB） |
+| monitor_setup_data | 品牌、竞品、核心词、问题、平台选择草稿（JSONB） |
+
+---
+
+### A.7 第三方 ProviderBatch（迁移 geo_monitoring_0012）
+
+#### geo_provider_batch — 模力指数批量任务
+
+| 字段 | 说明 |
+|------|------|
+| run_id | 所属监测运行 |
+| provider_name | provider 名称，当前为 `molizhishu` |
+| provider_task_id | provider 主任务 ID |
+| batch_no | Run 内批次号，`run_id + batch_no` 唯一 |
+| status | `pending` / `submitted` / `processing` / `completed` / `partial_completed` / `failed` / `cancelled` |
+| total_items / completed_items / failed_items | 批次内子任务计数 |
+| submitted_at / completed_at | 提交与完成时间 |
+| raw_submit_json / raw_status_json / raw_result_json | 提交、轮询、回调或结果原文（JSONB） |
+| error_message | 批次级错误信息 |
+
+`geo_query_task.provider_batch_id` 指向该表；ProviderBatch 启用时，worker 可按批次提交、轮询和刷新 run/task 聚合。
+
+---
+
+### A.8 租户索引（迁移 geo_monitoring_0013）
+
+`geo_monitor_project.tenant_id`、`geo_monitor_run.tenant_id`、`geo_report.tenant_id` 已分别建立索引，配合业务 Bearer token 的租户隔离查询。`tenant_id` 仍来自公共字段，不需要额外建表。
+
+---
+
+### A.9 表关系概览
 
 ```text
 geo_monitor_project
   ├── geo_brand → geo_brand_alias
+  ├── geo_core_keyword
   ├── geo_prompt_set → geo_prompt
   ├── geo_monitor_schedule
   └── geo_monitor_run
+        ├── geo_provider_batch
         ├── geo_query_task → geo_answer → geo_answer_citation
         │                              └── geo_answer_brand_result
         ├── geo_agent_execution
@@ -632,6 +735,8 @@ geo_monitor_project
         └── geo_report
 
 geo_ai_platform ← 被 geo_query_task / geo_answer / geo_platform_analysis 等引用
+geo_prompt_library ← 监测设置保存时可作为问题模板来源
+geo_project_draft ← 创建向导草稿，按 draft_key 读取/更新，不直接外键关联项目
 ```
 
 更完整的领域规则见仓库根目录 `AI应用监测_技术开发文档.md` 与 `backend/app/geo_monitoring/models.py`。

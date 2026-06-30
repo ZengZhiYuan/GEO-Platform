@@ -2,7 +2,7 @@
 
 > 更新日期：2026-06-30
 > 本文定位：说明原型 6 个页面中每个入口、按钮、筛选和弹窗应该调用哪些后端接口，以及推荐调用顺序。
-> 互补文档：接口字段、入参、出参、错误码以 `docs/API接口文档.md` 为准；验收口径和自动化命令以 `docs/API测试文档.md` 为准。
+> 互补文档：接口字段、入参、出参、错误码以 `docs/API接口文档.md` 为准；采集生命周期以 `docs/采集任务生命周期说明.md` 为准；自动化联调入口见 `backend/scripts/run_api_full_test.py` 与 `backend/scripts/run_e2e_pipeline_test.py`。
 
 ## 1. 当前结论
 
@@ -18,7 +18,9 @@
 需要前端注意的现实差异：
 
 - 对话记录和信源导出当前是 CSV 文件流，不是原型文案里的 Excel。
+- 业务接口在 `API_AUTH_ENABLED=true` 时必须带 `Authorization: Bearer <token>`；生产环境必须开启鉴权。Provider 回调使用独立 `X-Callback-Token`，不要复用普通 Bearer。
 - 第三方采集：新建 Run 使用 `collection_source=molizhishu` 与 `molizhishu_*` 平台码（见 `GET /platform-endpoints`）；**不得**再传 `collection_source=aidso` 或 `aidso_thinking_enabled_by_platform`（返回 422）。历史 Aidso Run 详情仍可只读展示。
+- `POST /runs` 已前置校验平台 DB 启用状态、adapter 注册与凭证；若返回 HTTP `409` + `40908`，前端应提示运维检查 `/api/geo-monitoring/ready` 的 `platform_runtime` 或关闭不可采集平台。
 - `/projects/{project_id}/competitor-analysis` 的 `trends` 字段仍是空数组占位；竞品趋势图应直接调用 `/projects/{project_id}/trends`，并传 `brand_id`。
 - `GET /projects/{project_id}/trends` 只支持单个 `platform_code`；多平台趋势图需要前端按平台分别请求，或不传平台取平台级汇总快照。
 - AI 生成提供无 `project_id` 的全局路径 `/ai/*:generate`，**创建向导中途 AI 生成应优先使用该路径**，无需先 `POST /projects`；项目域路径 `/projects/{project_id}/ai/*:generate` 保留供已创建项目的编辑配置场景。
@@ -565,7 +567,7 @@ KPI 直接来自 `GET /dashboard/overview` 的 `kpis`：
 3. `GET /runs/{run_id}` 轮询进度。
 4. `GET /runs/{run_id}/query-tasks` 查看任务明细。
 5. `GET /runs/{run_id}/answers` 查看答案粒度数据。
-6. 如果运行终态后需要手工重跑分析：`POST /runs/{run_id}/analyze`。
+6. 如果运行终态后需要手工重跑分析：`POST /runs/{run_id}/analyze`，接口返回 `queued=true` 后轮询 `GET /runs/{run_id}`，等待 `analysis_status=completed`。
 7. `GET /projects/{project_id}/dashboard/overview?run_id={run_id}` 刷新数据页。
 
 ### 10.2 取消与重试
