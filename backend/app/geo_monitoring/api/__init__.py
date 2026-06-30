@@ -1,6 +1,8 @@
 """AI 应用监测 API 路由聚合。"""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from app.core.security import require_api_auth
 
 from app.geo_monitoring.api.ai_generation import router as ai_generation_router
 from app.geo_monitoring.api.benchmarks import router as benchmarks_router
@@ -38,7 +40,6 @@ _SUB_ROUTERS = (
     metadata_router,
     benchmarks_router,
     platforms_router,
-    provider_callbacks_router,
     runs_router,
     schedules_router,
     answers_router,
@@ -50,11 +51,15 @@ _SUB_ROUTERS = (
     reports_router,
 )
 
+_PUBLIC_SUB_ROUTERS = (provider_callbacks_router,)
+
 
 # 组装监测域子路由并挂载到指定前缀
 def build_router(*, prefix: str, tags: list[str]) -> APIRouter:
     router = APIRouter(prefix=prefix, tags=tags)
     for sub_router in _SUB_ROUTERS:
+        router.include_router(sub_router, dependencies=[Depends(require_api_auth)])
+    for sub_router in _PUBLIC_SUB_ROUTERS:
         router.include_router(sub_router)
     return router
 

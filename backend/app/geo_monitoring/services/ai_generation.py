@@ -1,11 +1,29 @@
-"""AI 生成辅助服务（MVP 确定性规则，后续可替换为 LLM）。"""
+"""AI 生成辅助服务：优先 Agent LLM，失败或未配置时规则兜底。"""
 
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+import logging
+import uuid
+from typing import Any, Literal
 
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings
+from app.core.sync_async import run_coroutine_sync
+from app.geo_monitoring.agents.llm import (
+    AgentLLMClient,
+    AgentLLMConfig,
+    AgentLLMFailure,
+    AgentLLMRequest,
+    AgentLLMResult,
+    create_agent_llm_client,
+)
+from app.geo_monitoring.agents.schemas import (
+    AiBrandWordsLLMOutput,
+    AiCompetitorsLLMOutput,
+    AiQuestionsLLMOutput,
+)
 from app.geo_monitoring.schemas import (
     AiBrandWordsGenerateIn,
     AiCompetitorsGenerateIn,
@@ -13,6 +31,11 @@ from app.geo_monitoring.schemas import (
     AiQuestionsGenerateIn,
 )
 from app.geo_monitoring.services import projects as project_service
+from app.geo_monitoring.services.analysis import build_agent_llm_config
+
+logger = logging.getLogger(__name__)
+
+GenerationMethod = Literal["llm", "rule_fallback"]
 
 _BRAND_WORD_PRESETS: dict[str, list[str]] = {
     "杭州宋城": ["宋城千古情", "千古情", "宋城", "宋城演艺", "SEP"],
@@ -89,6 +112,84 @@ _QUESTION_TEMPLATES: tuple[tuple[str, str], ...] = (
 )
 
 
+def _get_ai_generation_settings(settings: Settings | None = None) -> Settings:
+    if settings is not None:
+        return settings
+    from app.core.config import get_settings
+
+    return get_settings()
+
+
+def _build_ai_generation_llm_client(
+    settings: Settings | None = None,
+    *,
+    llm_client: AgentLLMClient | None = None,
+) -> AgentLLMClient | None:
+    if llm_client is not None:
+        return llm_client
+    cfg = _get_ai_generation_settings(settings)
+    if not cfg.AI_GENERATION_LLM_ENABLED:
+        return None
+    try:
+        base_config = build_agent_llm_config(cfg)
+    except Exception:
+        return None
+    generation_config = AgentLLMConfig(
+        base_url=base_config.base_url,
+        api_key=base_config.api_key,
+        model=base_config.model,
+        provider=base_config.provider,
+        timeout_seconds=float(cfg.AI_GENERATION_TIMEOUT_SECONDS),
+        max_attempts=base_config.max_attempts,
+        max_input_chars=cfg.AI_GENERATION_MAX_INPUT_CHARS,
+        temperature=base_config.temperature,
+    )
+    return create_agent_llm_client(generation_config)
+
+
+def _with_generation_method(
+    data: dict[str, Any], method: GenerationMethod
+) -> dict[str, Any]:
+    return {**data, "generation_method": method}
+
+
+def _run_async(coro):
+    return run_coroutine_sync(coro)
+
+
+def _format_keyword_list(values: list[str]) -> str:
+    if not values:
+        return "无"
+    return "、".join(values)
+
+
+async def _generate_structured(
+    *,
+    client: AgentLLMClient,
+    template_key: str,
+    variables: dict[str, Any],
+    output_schema: type,
+    agent_code: str,
+) -> AgentLLMResult | AgentLLMFailure:
+    request = AgentLLMRequest(
+        template_key=template_key,
+        variables=variables,
+        output_schema=output_schema,
+        agent_code=agent_code,
+        request_id=f"ai-gen-{uuid.uuid4().hex[:12]}",
+    )
+    return await client.generate_structured(request)
+
+
+def _log_llm_failure(template_key: str, failure: AgentLLMFailure) -> None:
+    logger.warning(
+        "ai generation llm failed template=%s error_code=%s message=%s",
+        template_key,
+        failure.error_code,
+        failure.error_message,
+    )
+
+
 def _normalize_key(value: str | None) -> str | None:
     if value is None:
         return None
@@ -126,7 +227,7 @@ def _extract_brand_fragments(brand_name: str) -> list[str]:
     return fragments
 
 
-def generate_brand_words(payload: AiBrandWordsGenerateIn) -> dict[str, Any]:
+def _generate_brand_words_by_rules(payload: AiBrandWordsGenerateIn) -> dict[str, Any]:
     brand_name = payload.brand_name.strip()
     candidates = [brand_name]
     candidates.extend(_BRAND_WORD_PRESETS.get(brand_name, []))
@@ -137,6 +238,60 @@ def generate_brand_words(payload: AiBrandWordsGenerateIn) -> dict[str, Any]:
     return {
         "brand_words": _dedupe_words(candidates, limit=payload.limit, ensure=brand_name),
     }
+
+
+def _normalize_llm_brand_words(
+    payload: AiBrandWordsGenerateIn, parsed: AiBrandWordsLLMOutput
+) -> dict[str, Any] | None:
+    brand_name = payload.brand_name.strip()
+    words = _dedupe_words(parsed.brand_words, limit=payload.limit, ensure=brand_name)
+    if not words:
+        return None
+    return {"brand_words": words}
+
+
+def generate_brand_words(
+    payload: AiBrandWordsGenerateIn,
+    *,
+    settings: Settings | None = None,
+    llm_client: AgentLLMClient | None = None,
+) -> dict[str, Any]:
+    client = _build_ai_generation_llm_client(settings, llm_client=llm_client)
+    if client is not None:
+        try:
+            result = _run_async(
+                _generate_structured(
+                    client=client,
+                    template_key="generate_brand_words",
+                    variables={
+                        "brand_name": payload.brand_name.strip(),
+                        "category": payload.category or "未知",
+                        "official_domain": payload.official_domain or "未知",
+                        "limit": str(payload.limit),
+                    },
+                    output_schema=AiBrandWordsLLMOutput,
+                    agent_code="generate_brand_words",
+                )
+            )
+        except Exception as exc:
+            logger.warning(
+                "ai generation llm transport failed template=generate_brand_words: %s",
+                exc,
+            )
+        else:
+            if isinstance(result, AgentLLMResult):
+                normalized = _normalize_llm_brand_words(
+                    payload, result.parsed  # type: ignore[arg-type]
+                )
+                if normalized is not None:
+                    return _with_generation_method(normalized, "llm")
+            elif isinstance(result, AgentLLMFailure):
+                _log_llm_failure("generate_brand_words", result)
+
+    return _with_generation_method(
+        _generate_brand_words_by_rules(payload),
+        "rule_fallback",
+    )
 
 
 def _brand_identity_tokens(brand_name: str) -> set[str]:
@@ -168,7 +323,7 @@ def _normalize_competitor(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def generate_competitors(payload: AiCompetitorsGenerateIn) -> dict[str, Any]:
+def _generate_competitors_by_rules(payload: AiCompetitorsGenerateIn) -> dict[str, Any]:
     brand_name = payload.brand_name.strip()
     category = _normalize_key(payload.category)
     region = _normalize_key(payload.region)
@@ -193,6 +348,70 @@ def generate_competitors(payload: AiCompetitorsGenerateIn) -> dict[str, Any]:
         if len(competitors) >= payload.limit:
             break
     return {"competitors": competitors}
+
+
+def _normalize_llm_competitors(
+    payload: AiCompetitorsGenerateIn, parsed: AiCompetitorsLLMOutput
+) -> dict[str, Any] | None:
+    brand_name = payload.brand_name.strip()
+    competitors: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+    for item in parsed.competitors:
+        normalized = _normalize_competitor(item.model_dump(mode="python"))
+        name = normalized["brand_name"]
+        if name in seen_names or _is_same_brand(name, brand_name):
+            continue
+        seen_names.add(name)
+        competitors.append(normalized)
+        if len(competitors) >= payload.limit:
+            break
+    if not competitors:
+        return None
+    return {"competitors": competitors}
+
+
+def generate_competitors(
+    payload: AiCompetitorsGenerateIn,
+    *,
+    settings: Settings | None = None,
+    llm_client: AgentLLMClient | None = None,
+) -> dict[str, Any]:
+    client = _build_ai_generation_llm_client(settings, llm_client=llm_client)
+    if client is not None:
+        try:
+            result = _run_async(
+                _generate_structured(
+                    client=client,
+                    template_key="generate_competitors",
+                    variables={
+                        "brand_name": payload.brand_name.strip(),
+                        "category": payload.category or "未知",
+                        "region": payload.region or "未知",
+                        "limit": str(payload.limit),
+                    },
+                    output_schema=AiCompetitorsLLMOutput,
+                    agent_code="generate_competitors",
+                )
+            )
+        except Exception as exc:
+            logger.warning(
+                "ai generation llm transport failed template=generate_competitors: %s",
+                exc,
+            )
+        else:
+            if isinstance(result, AgentLLMResult):
+                normalized = _normalize_llm_competitors(
+                    payload, result.parsed  # type: ignore[arg-type]
+                )
+                if normalized is not None:
+                    return _with_generation_method(normalized, "llm")
+            elif isinstance(result, AgentLLMFailure):
+                _log_llm_failure("generate_competitors", result)
+
+    return _with_generation_method(
+        _generate_competitors_by_rules(payload),
+        "rule_fallback",
+    )
 
 
 def _resolve_topic(payload: AiQuestionsGenerateIn) -> str:
@@ -227,7 +446,7 @@ def _resolve_core_keyword(payload: AiQuestionsGenerateIn, prompt_type: str) -> s
     return None
 
 
-def generate_questions(payload: AiQuestionsGenerateIn) -> dict[str, Any]:
+def _generate_questions_by_rules(payload: AiQuestionsGenerateIn) -> dict[str, Any]:
     brand_name = payload.brand_name.strip()
     topic = _resolve_topic(payload)
     category = _resolve_category(payload)
@@ -252,22 +471,100 @@ def generate_questions(payload: AiQuestionsGenerateIn) -> dict[str, Any]:
     return {"questions": questions}
 
 
+def _normalize_llm_questions(
+    payload: AiQuestionsGenerateIn, parsed: AiQuestionsLLMOutput
+) -> dict[str, Any] | None:
+    questions: list[dict[str, Any]] = []
+    for item in parsed.questions[: payload.limit]:
+        questions.append(
+            AiGeneratedQuestionOut(
+                prompt_text=item.prompt_text.strip(),
+                prompt_type=item.prompt_type,
+                core_keyword=item.core_keyword,
+            ).model_dump(mode="json")
+        )
+    if not questions:
+        return None
+    return {"questions": questions}
+
+
+def generate_questions(
+    payload: AiQuestionsGenerateIn,
+    *,
+    settings: Settings | None = None,
+    llm_client: AgentLLMClient | None = None,
+) -> dict[str, Any]:
+    client = _build_ai_generation_llm_client(settings, llm_client=llm_client)
+    if client is not None:
+        try:
+            result = _run_async(
+                _generate_structured(
+                    client=client,
+                    template_key="generate_questions",
+                    variables={
+                        "brand_name": payload.brand_name.strip(),
+                        "category": payload.category or "未知",
+                        "region": payload.region or "未知",
+                        "core_keywords": _format_keyword_list(payload.core_keywords),
+                        "competitors": _format_keyword_list(payload.competitors),
+                        "limit": str(payload.limit),
+                    },
+                    output_schema=AiQuestionsLLMOutput,
+                    agent_code="generate_questions",
+                )
+            )
+        except Exception as exc:
+            logger.warning(
+                "ai generation llm transport failed template=generate_questions: %s",
+                exc,
+            )
+        else:
+            if isinstance(result, AgentLLMResult):
+                normalized = _normalize_llm_questions(
+                    payload, result.parsed  # type: ignore[arg-type]
+                )
+                if normalized is not None:
+                    return _with_generation_method(normalized, "llm")
+            elif isinstance(result, AgentLLMFailure):
+                _log_llm_failure("generate_questions", result)
+
+    return _with_generation_method(
+        _generate_questions_by_rules(payload),
+        "rule_fallback",
+    )
+
+
 def generate_brand_words_for_project(
-    db: Session, project_id: int, payload: AiBrandWordsGenerateIn
+    db: Session,
+    project_id: int,
+    payload: AiBrandWordsGenerateIn,
+    *,
+    settings: Settings | None = None,
+    llm_client: AgentLLMClient | None = None,
 ) -> dict[str, Any]:
     project_service.get_project(db, project_id)
-    return generate_brand_words(payload)
+    return generate_brand_words(payload, settings=settings, llm_client=llm_client)
 
 
 def generate_competitors_for_project(
-    db: Session, project_id: int, payload: AiCompetitorsGenerateIn
+    db: Session,
+    project_id: int,
+    payload: AiCompetitorsGenerateIn,
+    *,
+    settings: Settings | None = None,
+    llm_client: AgentLLMClient | None = None,
 ) -> dict[str, Any]:
     project_service.get_project(db, project_id)
-    return generate_competitors(payload)
+    return generate_competitors(payload, settings=settings, llm_client=llm_client)
 
 
 def generate_questions_for_project(
-    db: Session, project_id: int, payload: AiQuestionsGenerateIn
+    db: Session,
+    project_id: int,
+    payload: AiQuestionsGenerateIn,
+    *,
+    settings: Settings | None = None,
+    llm_client: AgentLLMClient | None = None,
 ) -> dict[str, Any]:
     project_service.get_project(db, project_id)
-    return generate_questions(payload)
+    return generate_questions(payload, settings=settings, llm_client=llm_client)

@@ -584,6 +584,12 @@ class EvaluationTagItemOut(BaseModel):
     share_rate: str | None = None
 
 
+class EvaluationTagClusterMethod(StrEnum):
+    RULE = "rule"
+    LLM = "llm"
+    AUTO = "auto"
+
+
 class EvaluationTagsOut(BaseModel):
     run_id: int | None = None
     prompt_id: int
@@ -614,6 +620,9 @@ class AiBrandWordsGenerateIn(BaseModel):
 
 class AiBrandWordsGenerateOut(BaseModel):
     brand_words: list[str]
+    generation_method: str = Field(
+        description="llm 表示 Agent LLM 生成；rule_fallback 表示规则兜底"
+    )
 
 
 class AiCompetitorsGenerateIn(BaseModel):
@@ -643,6 +652,9 @@ class AiCompetitorCandidateOut(BaseModel):
 
 class AiCompetitorsGenerateOut(BaseModel):
     competitors: list[AiCompetitorCandidateOut]
+    generation_method: str = Field(
+        description="llm 表示 Agent LLM 生成；rule_fallback 表示规则兜底"
+    )
 
 
 class AiQuestionsGenerateIn(BaseModel):
@@ -687,6 +699,9 @@ class AiGeneratedQuestionOut(BaseModel):
 
 class AiQuestionsGenerateOut(BaseModel):
     questions: list[AiGeneratedQuestionOut]
+    generation_method: str = Field(
+        description="llm 表示 Agent LLM 生成；rule_fallback 表示规则兜底"
+    )
 
 
 class RunCreate(BaseModel):

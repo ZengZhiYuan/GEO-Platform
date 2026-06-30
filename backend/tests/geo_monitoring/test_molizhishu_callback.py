@@ -38,8 +38,12 @@ CALLBACK_TOKEN = "test-callback-token"
 
 @pytest.fixture(autouse=True)
 def isolate_callback_test_env(monkeypatch):
+    monkeypatch.setenv("YUANBAO_ENABLED", "false")
     monkeypatch.setenv("YUANBAO_CREDENTIALS_JSON", "[]")
     monkeypatch.setenv("MOLIZHISHU_CALLBACK_TOKEN", CALLBACK_TOKEN)
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
 
 
 @pytest.fixture
@@ -59,6 +63,7 @@ def client(session_factory):
         DRAMATIQ_BROKER="stub",
         NACOS_ENABLED=False,
         REPORT_STORAGE_DIR="./data/reports",
+        YUANBAO_ENABLED=False,
         YUANBAO_CREDENTIALS_JSON="[]",
         MOLIZHISHU_CALLBACK_TOKEN=CALLBACK_TOKEN,
     )

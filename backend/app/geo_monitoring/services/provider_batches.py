@@ -228,6 +228,24 @@ def create_provider_batches_for_run(
     if not provider_batch_enabled(run.collection_source, runtime_settings=runtime_settings):
         return []
 
+    from app.core.exceptions import BusinessException
+    from app.geo_monitoring.adapters.registry import (
+        RUNTIME_ADAPTER_MISMATCH_CODE,
+        _molizhishu_configured,
+    )
+    from app.geo_monitoring.services.collection import get_runtime
+
+    resolved_settings = runtime_settings or get_runtime().settings
+    if not _molizhishu_configured(resolved_settings):
+        raise BusinessException(
+            message=(
+                "模力指数采集运行时未就绪：请设置 MOLIZHISHU_ENABLED=true 并配置 "
+                "MOLIZHISHU_API_TOKEN"
+            ),
+            code=RUNTIME_ADAPTER_MISMATCH_CODE,
+            status_code=409,
+        )
+
     items = build_batch_items_for_run(db, run)
     chunks = plan_provider_batch_chunks(
         items,

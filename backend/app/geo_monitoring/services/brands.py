@@ -16,6 +16,7 @@ from app.geo_monitoring.schemas import (
     BrandUpdate,
 )
 from app.geo_monitoring.services.projects import require_active_project
+from app.geo_monitoring.services.tenant_access import ensure_project_tenant_access
 
 
 # 提交数据库变更，唯一约束冲突时转为业务异常
@@ -32,6 +33,7 @@ def get_brand(db: Session, brand_id: int) -> Brand:
     brand = brand_repo.get_by_id(db, brand_id)
     if brand is None:
         raise BusinessException(message="品牌不存在", code=40400)
+    ensure_project_tenant_access(db, brand.project_id)
     return brand
 
 
@@ -129,6 +131,10 @@ def get_alias(db: Session, alias_id: int) -> BrandAlias:
     alias = brand_repo.get_alias_by_id(db, alias_id)
     if alias is None:
         raise BusinessException(message="品牌别名不存在", code=40400)
+    brand = brand_repo.get_by_id(db, alias.brand_id)
+    if brand is None:
+        raise BusinessException(message="品牌别名不存在", code=40400)
+    ensure_project_tenant_access(db, brand.project_id)
     return alias
 
 

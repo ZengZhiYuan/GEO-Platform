@@ -26,6 +26,7 @@ from app.geo_monitoring.reports.pdf_renderer import render_pdf
 from app.geo_monitoring.reports.renderer import build_report_context, render_html, render_markdown
 from app.geo_monitoring.services.analysis import PlatformAnalysis, SourceStat
 from app.geo_monitoring.services.platforms import MOLIZHISHU_PLATFORM_MAPPINGS
+from tests.geo_monitoring.analysis_support import patch_fake_llm_for_analyze
 from tests.geo_monitoring.agents.test_graph import FakeLLMClient, _seed_run
 
 _MOLIZHISHU_PLATFORM_CODE = "molizhishu_deepseek_web"
@@ -222,16 +223,16 @@ def _seed_molizhishu_run(
 
 @pytest.fixture
 def molizhishu_analyzed_run(client, session_factory, monkeypatch):
-    llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
+    llm = patch_fake_llm_for_analyze(monkeypatch)
     with session_factory() as db:
         seeded = _seed_molizhishu_run(db)
     response = client.post(f"/api/geo-monitoring/runs/{seeded['run_id']}/analyze")
-    assert response.json()["code"] == 0
-    assert response.json()["data"]["analysis_status"] == "completed"
+    body = response.json()
+    assert body["code"] == 0
+    data = body["data"]
+    assert data["queued"] is True
+    assert data["analysis_status"] == "pending"
+    assert data["run_analysis_status"] == "completed"
     return seeded
 
 
@@ -378,11 +379,7 @@ def test_molizhishu_report_renders_without_token_leak(
 def test_molizhishu_and_official_run_report_field_structure_match(
     client, session_factory, monkeypatch
 ):
-    llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
+    llm = patch_fake_llm_for_analyze(monkeypatch)
 
     with session_factory() as db:
         official = _seed_run(db, platforms=("qwen",))
@@ -390,7 +387,10 @@ def test_molizhishu_and_official_run_report_field_structure_match(
 
     for run_id in (official["run_id"], molizhishu["run_id"]):
         response = client.post(f"/api/geo-monitoring/runs/{run_id}/analyze")
-        assert response.json()["data"]["analysis_status"] == "completed"
+        data = response.json()["data"]
+        assert data["queued"] is True
+        assert data["analysis_status"] == "pending"
+        assert data["run_analysis_status"] == "completed"
 
     official_analysis = client.get(
         f"/api/geo-monitoring/runs/{official['run_id']}/analysis"

@@ -24,8 +24,11 @@ def list_projects(
     page_size: int,
     project_name: str | None = None,
     status: str | None = None,
+    tenant_id: int | None = None,
 ) -> tuple[list[MonitorProject], int]:
     conditions = [MonitorProject.is_deleted.is_(False)]
+    if tenant_id is not None:
+        conditions.append(MonitorProject.tenant_id == tenant_id)
     if project_name:
         conditions.append(MonitorProject.project_name.ilike(f"%{project_name.strip()}%"))
     if status:
@@ -48,11 +51,18 @@ def list_projects(
 
 
 # 查询全部未删除项目，按 ID 倒序（供轻量切换器等全量列表使用）
-def list_all_projects(db: Session) -> list[MonitorProject]:
+def list_all_projects(
+    db: Session,
+    *,
+    tenant_id: int | None = None,
+) -> list[MonitorProject]:
+    conditions = [MonitorProject.is_deleted.is_(False)]
+    if tenant_id is not None:
+        conditions.append(MonitorProject.tenant_id == tenant_id)
     return list(
         db.execute(
             select(MonitorProject)
-            .where(MonitorProject.is_deleted.is_(False))
+            .where(*conditions)
             .order_by(MonitorProject.id.desc())
         )
         .scalars()

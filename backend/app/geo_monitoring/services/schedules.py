@@ -19,6 +19,7 @@ from app.geo_monitoring.services.projects import (
     require_active_project,
     require_monitoring_not_paused,
 )
+from app.geo_monitoring.services.tenant_access import ensure_project_tenant_access
 
 
 # 解析时区名称，无效则抛业务异常
@@ -196,6 +197,7 @@ def get_schedule(db: Session, schedule_id: int) -> MonitorSchedule:
     ).scalar_one_or_none()
     if schedule is None:
         raise BusinessException(message="监测调度不存在", code=40400)
+    ensure_project_tenant_access(db, schedule.project_id)
     return schedule
 
 

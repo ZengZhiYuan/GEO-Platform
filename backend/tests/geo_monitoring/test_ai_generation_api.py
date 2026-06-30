@@ -1,6 +1,49 @@
-"""Task P0-2：AI 生成辅助接口测试。"""
+"""Task P0-2 / O5：AI 生成辅助接口测试。"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
 
 import pytest
+
+from app.geo_monitoring.agents.llm import AgentLLMConfig, create_agent_llm_client
+from app.geo_monitoring.schemas import (
+    AiBrandWordsGenerateIn,
+    AiCompetitorsGenerateIn,
+    AiQuestionsGenerateIn,
+)
+from app.geo_monitoring.services import ai_generation as ai_generation_service
+from tests.geo_monitoring.agents.test_llm import FakeTransport, _completion
+from tests.test_config import make_settings
+
+_LLM_API_KEY = "sk-agent-test-secret"
+_LLM_BASE_URL = "https://agent-llm.test/v1"
+_LLM_MODEL = "agent-model"
+
+
+def _llm_settings(**overrides: Any):
+    return make_settings(
+        AGENT_LLM_BASE_URL=_LLM_BASE_URL,
+        AGENT_LLM_API_KEY=_LLM_API_KEY,
+        AGENT_LLM_MODEL=_LLM_MODEL,
+        AI_GENERATION_LLM_ENABLED=True,
+        AI_GENERATION_TIMEOUT_SECONDS=5,
+        AI_GENERATION_MAX_INPUT_CHARS=500,
+        **overrides,
+    )
+
+
+def _llm_client(responses: list[Any]):
+    config = AgentLLMConfig(
+        base_url=_LLM_BASE_URL,
+        api_key=_LLM_API_KEY,
+        model=_LLM_MODEL,
+        timeout_seconds=5.0,
+        max_attempts=1,
+        max_input_chars=500,
+    )
+    return create_agent_llm_client(config, transport=FakeTransport(responses))
 
 
 _SONGCHENG_BASE = {
@@ -25,6 +68,7 @@ def test_brand_words_generate_songcheng_example(client, project_id):
         json={**_SONGCHENG_BASE, "limit": 10},
     ).json()
     assert response["code"] == 0
+    assert response["data"]["generation_method"] == "rule_fallback"
     words = response["data"]["brand_words"]
     assert words[0] == "杭州宋城"
     assert "杭州宋城" in words
@@ -237,3 +281,180 @@ def test_global_ai_generation_does_not_create_or_modify_projects(client):
 
     after_total = client.get("/api/geo-monitoring/projects").json()["data"]["total"]
     assert after_total == before_total
+
+
+def test_brand_words_llm_success_uses_structured_output():
+    payload = AiBrandWordsGenerateIn(
+        brand_name="杭州宋城",
+        category="文旅演艺",
+        limit=5,
+    )
+    llm_payload = {
+        "brand_words": ["杭州宋城", "宋城千古情", "宋城演艺", "千古情", "宋城"],
+    }
+    client = _llm_client(
+        [_completion(json.dumps(llm_payload, ensure_ascii=False))]
+    )
+
+    result = ai_generation_service.generate_brand_words(
+        payload,
+        settings=_llm_settings(),
+        llm_client=client,
+    )
+
+    assert result["generation_method"] == "llm"
+    assert result["brand_words"] == llm_payload["brand_words"]
+
+
+def test_brand_words_llm_failure_falls_back_to_rules():
+    payload = AiBrandWordsGenerateIn(
+        brand_name="杭州宋城",
+        category="文旅演艺",
+        limit=10,
+    )
+    from openai import APITimeoutError
+    import httpx
+
+    request = httpx.Request("POST", f"{_LLM_BASE_URL}/chat/completions")
+    client = _llm_client([APITimeoutError(request)])
+
+    result = ai_generation_service.generate_brand_words(
+        payload,
+        settings=_llm_settings(),
+        llm_client=client,
+    )
+
+    assert result["generation_method"] == "rule_fallback"
+    assert result["brand_words"][0] == "杭州宋城"
+    assert "宋城千古情" in result["brand_words"]
+
+
+def test_brand_words_llm_invalid_output_falls_back_to_rules():
+    payload = AiBrandWordsGenerateIn(
+        brand_name="杭州宋城",
+        category="文旅演艺",
+        limit=10,
+    )
+    client = _llm_client(
+        [
+            _completion('{"brand_words": "not-a-list"}'),
+            _completion('{"brand_words": "still-not-a-list"}'),
+        ]
+    )
+
+    result = ai_generation_service.generate_brand_words(
+        payload,
+        settings=_llm_settings(),
+        llm_client=client,
+    )
+
+    assert result["generation_method"] == "rule_fallback"
+    assert "宋城千古情" in result["brand_words"]
+
+
+def test_ai_generation_llm_error_does_not_leak_api_key(caplog):
+    payload = AiBrandWordsGenerateIn(
+        brand_name="杭州宋城",
+        category="文旅演艺",
+        limit=5,
+    )
+    from openai import APITimeoutError
+    import httpx
+
+    request = httpx.Request("POST", f"{_LLM_BASE_URL}/chat/completions")
+    client = _llm_client([APITimeoutError(request)])
+
+    with caplog.at_level("WARNING"):
+        result = ai_generation_service.generate_brand_words(
+            payload,
+            settings=_llm_settings(),
+            llm_client=client,
+        )
+
+    assert result["generation_method"] == "rule_fallback"
+    joined = " ".join(record.message for record in caplog.records)
+    assert _LLM_API_KEY not in joined
+    assert "sk-" not in joined
+
+
+def test_competitors_llm_success(client, project_id, monkeypatch):
+    llm_payload = {
+        "competitors": [
+            {
+                "brand_name": "印象西湖",
+                "competitor_words": ["印象西湖", "印象西湖演出"],
+                "official_domain": None,
+            },
+            {
+                "brand_name": "只有河南·戏剧幻城",
+                "competitor_words": ["只有河南", "戏剧幻城"],
+                "official_domain": "https://www.onlyhenan.com",
+            },
+        ]
+    }
+    monkeypatch.setattr(
+        ai_generation_service,
+        "_build_ai_generation_llm_client",
+        lambda *args, **kwargs: _llm_client(
+            [_completion(json.dumps(llm_payload, ensure_ascii=False))]
+        ),
+    )
+    monkeypatch.setattr(
+        ai_generation_service,
+        "_get_ai_generation_settings",
+        lambda: _llm_settings(),
+    )
+
+    response = client.post(
+        f"/api/geo-monitoring/projects/{project_id}/ai/competitors:generate",
+        json={**_SONGCHENG_BASE, "limit": 5},
+    ).json()
+
+    assert response["code"] == 0
+    assert response["data"]["generation_method"] == "llm"
+    names = {item["brand_name"] for item in response["data"]["competitors"]}
+    assert names == {"印象西湖", "只有河南·戏剧幻城"}
+
+
+def test_questions_llm_success(client, project_id, monkeypatch):
+    llm_payload = {
+        "questions": [
+            {
+                "prompt_text": "杭州宋城怎么样？",
+                "prompt_type": "brand_sentiment",
+                "core_keyword": "杭州旅游",
+            },
+            {
+                "prompt_text": "介绍一下杭州宋城。",
+                "prompt_type": "brand_info",
+                "core_keyword": None,
+            },
+        ]
+    }
+    monkeypatch.setattr(
+        ai_generation_service,
+        "_build_ai_generation_llm_client",
+        lambda *args, **kwargs: _llm_client(
+            [_completion(json.dumps(llm_payload, ensure_ascii=False))]
+        ),
+    )
+    monkeypatch.setattr(
+        ai_generation_service,
+        "_get_ai_generation_settings",
+        lambda: _llm_settings(),
+    )
+
+    response = client.post(
+        f"/api/geo-monitoring/projects/{project_id}/ai/questions:generate",
+        json={
+            **_SONGCHENG_BASE,
+            "core_keywords": ["杭州旅游"],
+            "competitors": ["印象西湖"],
+            "limit": 2,
+        },
+    ).json()
+
+    assert response["code"] == 0
+    assert response["data"]["generation_method"] == "llm"
+    assert len(response["data"]["questions"]) == 2
+    assert response["data"]["questions"][0]["prompt_type"] == "brand_sentiment"

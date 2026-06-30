@@ -8,6 +8,11 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BusinessException
 from app.geo_monitoring.models import MonitorProject
 from app.geo_monitoring.repositories import projects as project_repo
+from app.geo_monitoring.services.tenant_access import (
+    ensure_tenant_access,
+    list_tenant_filter,
+    stamp_tenant_fields,
+)
 from app.geo_monitoring.schemas import (
     MonitorSetupSave,
     ProjectCreate,
@@ -24,6 +29,7 @@ def get_project(db: Session, project_id: int) -> MonitorProject:
     project = project_repo.get_by_id(db, project_id)
     if project is None:
         raise BusinessException(message="监测项目不存在", code=40400)
+    ensure_tenant_access(project.tenant_id, resource_label="监测项目")
     return project
 
 
@@ -56,12 +62,14 @@ def list_projects(
         page_size=page_size,
         project_name=project_name,
         status=status,
+        tenant_id=list_tenant_filter(),
     )
 
 
 # 创建新的监测项目并设为 active
 def create_project(db: Session, payload: ProjectCreate) -> MonitorProject:
     project = MonitorProject(**payload.model_dump(), status="active")
+    stamp_tenant_fields(project)
     project_repo.add(db, project)
     db.commit()
     db.refresh(project)
@@ -90,6 +98,7 @@ def setup_project(db: Session, payload: ProjectSetupCreate) -> ProjectSetupOut:
     from app.geo_monitoring.schemas import MonitorRunOut
 
     project = MonitorProject(**payload.project.model_dump(), status="active")
+    stamp_tenant_fields(project)
     try:
         project_repo.add(db, project)
         db.flush()

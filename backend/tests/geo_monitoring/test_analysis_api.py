@@ -4,16 +4,12 @@ from __future__ import annotations
 
 import app.geo_monitoring.services.analysis as analysis_module  # noqa: F401
 from app.geo_monitoring.models import MonitorRun
+from tests.geo_monitoring.analysis_support import patch_fake_llm_for_analyze
 from tests.geo_monitoring.agents.test_graph import FakeLLMClient, _seed_run
 
 
 def _patch_llm(monkeypatch) -> FakeLLMClient:
-    llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
-    return llm
+    return patch_fake_llm_for_analyze(monkeypatch)
 
 
 def test_trigger_analysis_rejects_when_already_running(
@@ -45,13 +41,18 @@ def test_trigger_analysis_allows_rerun_after_completed(
 
     first = client.post(f"/api/geo-monitoring/runs/{run_id}/analyze")
     assert first.status_code == 200
+    first_data = first.json()["data"]
     assert first.json()["code"] == 0
-    assert first.json()["data"]["analysis_status"] == "completed"
+    assert first_data["queued"] is True
+    assert first_data["analysis_status"] == "pending"
+    assert first_data["run_analysis_status"] == "completed"
 
     second = client.post(f"/api/geo-monitoring/runs/{run_id}/analyze")
     assert second.status_code == 200
+    second_data = second.json()["data"]
     assert second.json()["code"] == 0
-    assert second.json()["data"]["analysis_status"] == "completed"
+    assert second_data["queued"] is True
+    assert second_data["run_analysis_status"] == "completed"
 
 
 def test_trigger_analysis_rejects_when_collection_not_terminal(

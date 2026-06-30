@@ -22,11 +22,6 @@ def test_legacy_backend_modules_are_absent():
     assert not (app_dir / "services").exists()
 
 
-def test_worker_bootstrap_has_no_legacy_actor_imports():
+def test_legacy_workers_package_is_absent():
     app_dir = Path(__file__).parents[1] / "app"
-    worker_source = (app_dir / "workers" / "worker.py").read_text(encoding="utf-8")
-    broker_source = (app_dir / "workers" / "broker.py").read_text(encoding="utf-8")
-
-    assert "app.tasks" not in worker_source
-    assert "generate_article" not in worker_source
-    assert "CurrentMessage" not in broker_source
+    assert not (app_dir / "workers").exists()

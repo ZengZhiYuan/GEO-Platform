@@ -601,6 +601,57 @@ def test_provider_batch_disabled_for_official_runs():
     assert provider_batch_enabled("molizhishu") is True
 
 
+def test_create_provider_batches_rejected_when_molizhishu_not_configured(db):
+    from app.core.config import Settings
+    from app.core.exceptions import BusinessException
+    from app.geo_monitoring.adapters.registry import RUNTIME_ADAPTER_MISMATCH_CODE
+
+    project = MonitorProject(project_name="PB guard", status="active")
+    db.add(project)
+    db.flush()
+    prompt_set = PromptSet(
+        project_id=project.id,
+        set_name="集",
+        version_no="v1",
+        status="active",
+    )
+    db.add(prompt_set)
+    db.flush()
+    run = MonitorRun(
+        run_no="RUN-PB-GUARD",
+        project_id=project.id,
+        prompt_set_id=prompt_set.id,
+        prompt_set_version=prompt_set.version_no,
+        collection_source="molizhishu",
+        platform_codes=["molizhishu_doubao_web"],
+        status="pending",
+        collection_status="pending",
+        total_tasks=0,
+        expected_query_count=0,
+    )
+    db.add(run)
+    db.commit()
+
+    with pytest.raises(BusinessException) as exc_info:
+        create_provider_batches_for_run(
+            db,
+            run,
+            runtime_settings=Settings(
+                _env_file=None,
+                APP_ENV="test",
+                DATABASE_URL="sqlite+pysqlite:///:memory:",
+                REDIS_URL="redis://test-redis.invalid:6379/15",
+                DRAMATIQ_BROKER="stub",
+                NACOS_ENABLED=False,
+                REPORT_STORAGE_DIR="data/reports",
+                MOLIZHISHU_ENABLED=False,
+                MOLIZHISHU_API_TOKEN="",
+            ),
+        )
+
+    assert exc_info.value.code == RUNTIME_ADAPTER_MISMATCH_CODE
+
+
 def test_batch_callback_processes_subtask_list(db, provider_batch_env):
     run = _seed_large_molizhishu_run(db, prompt_count=1, platform_codes=PLATFORM_CODES[:1])
     batch = batch_repo.list_by_run_id(db, run.id)[0]

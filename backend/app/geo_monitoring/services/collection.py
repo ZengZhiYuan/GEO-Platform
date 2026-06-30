@@ -157,7 +157,9 @@ def build_default_runtime(
     adapter_registry: AdapterRegistry | None = None,
     key_pool: CredentialKeyPool | None = None,
 ) -> CollectionRuntime:
-    runtime_settings = runtime_settings or default_settings
+    from app.core.config import get_settings
+
+    runtime_settings = runtime_settings or get_settings()
     registry = adapter_registry or build_adapter_registry(runtime_settings)
     pool = key_pool or build_credential_key_pool(runtime_settings)
     return CollectionRuntime(
@@ -166,6 +168,24 @@ def build_default_runtime(
         adapter_registry=registry,
         key_pool=pool,
     )
+
+
+def platform_runtime_diagnostics(db: Session) -> dict[str, Any]:
+    """采集运行时各平台 DB / adapter / 凭证脱敏诊断（供 /ready 与脚本复用）。"""
+    from app.geo_monitoring.adapters.registry import build_platform_runtime_diagnostics
+
+    runtime = get_runtime()
+    platforms = build_platform_runtime_diagnostics(
+        db,
+        runtime_settings=runtime.settings,
+        adapter_registry=runtime.adapter_registry,
+        key_pool=runtime.key_pool,
+    )
+    enabled_in_db = [item for item in platforms if item["db_enabled"]]
+    return {
+        "collection_ready": all(item["ready_for_collection"] for item in enabled_in_db),
+        "platforms": platforms,
+    }
 
 
 # 为跨 worker 凭证协调创建 Redis 客户端；stub broker 测试环境跳过

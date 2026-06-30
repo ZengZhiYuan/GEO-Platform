@@ -146,13 +146,6 @@ def e2e_project(client, session_factory, monkeypatch):
 
 @pytest.fixture
 def fake_llm(monkeypatch):
-    llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
-    monkeypatch.setattr(
-        "app.worker.actors.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
-    return llm
+    from tests.geo_monitoring.analysis_support import patch_fake_llm_for_analyze
+
+    return patch_fake_llm_for_analyze(monkeypatch)

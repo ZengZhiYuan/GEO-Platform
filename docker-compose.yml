@@ -33,7 +33,10 @@ x-backend-build: &backend-build
 
 x-release-commands:
   migrate: docker compose run --rm api python -m alembic -c backend/alembic.ini upgrade head
-  smoke: health, ready, create test project, mock run, report download
+  preflight: backend\.venv\Scripts\python.exe backend/scripts/run_production_smoke_test.py
+  smoke-ready: curl -fsS http://127.0.0.1:${BACKEND_PORT:-8000}/api/geo-monitoring/health && curl -fsS http://127.0.0.1:${BACKEND_PORT:-8000}/api/geo-monitoring/ready
+  smoke-real: backend\.venv\Scripts\python.exe backend/scripts/run_production_smoke_test.py --api-preflight --base-url http://127.0.0.1:${BACKEND_PORT:-8000}
+  smoke-business-loop: backend\.venv\Scripts\python.exe backend/scripts/run_production_smoke_test.py --business-loop --allow-paid-provider --base-url http://127.0.0.1:${BACKEND_PORT:-8000}
 
 services:
   api:

@@ -36,6 +36,7 @@ class MonitorProject(BaseModel):
             name="ck_geo_monitor_project_status",
         ),
         Index("ix_geo_monitor_project_status", "status"),
+        Index("ix_geo_monitor_project_tenant", "tenant_id"),
     )
 
     project_name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -332,6 +333,7 @@ class MonitorRun(BaseModel):
         Index("ix_geo_monitor_run_project_created", "project_id", "created_at"),
         Index("ix_geo_monitor_run_status", "status", "created_at"),
         Index("ix_geo_monitor_run_status_completed", "status", "completed_at"),
+        Index("ix_geo_monitor_run_tenant", "tenant_id"),
     )
 
     run_no: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)

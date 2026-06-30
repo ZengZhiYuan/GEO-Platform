@@ -22,10 +22,6 @@ def report_storage(tmp_path) -> ReportStorage:
 @pytest.fixture
 def analyzed_run(session_factory, monkeypatch):
     llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
     with session_factory() as db:
         seeded = _seed_run(db, platforms=("qwen",))
     with session_factory() as db:

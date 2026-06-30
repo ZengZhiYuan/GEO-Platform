@@ -460,7 +460,7 @@ def test_completed_answer_persists_provider_raw_response(
 
 
 def test_smoke_script_exits_without_token_from_repo_root_command():
-    """按 README 文档命令从仓库根目录执行，无 token 时应提示并退出。"""
+    """按 README 文档命令从仓库根目录执行，无 token 时 dry-run 应提示并退出非零。"""
     import os
     import subprocess
     import sys

@@ -44,6 +44,7 @@ COPY backend/requirements.txt backend/requirements.txt
 RUN python -m pip install --upgrade pip setuptools wheel \
     && python -m pip install --prefer-binary -r backend/requirements.txt
 
+# Respect .dockerignore: excludes backend/tests, backend/scripts, backend/app/test, data/, etc.
 COPY backend backend
 RUN mkdir -p /app/backend/data/reports \
     && chown -R appuser:appuser /app/backend/data

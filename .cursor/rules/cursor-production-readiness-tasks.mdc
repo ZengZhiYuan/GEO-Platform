@@ -1,0 +1,57 @@
+---
+description: Cursor 线上版本代码优化整改任务执行流程（O 系列生产 readiness 任务书）
+alwaysApply: true
+---
+
+# Cursor 线上版本代码优化整改任务执行
+
+线上版本代码优化整改以 **`docs/superpowers/plans/2026-06-30-production-readiness-remediation.md`** 为主任务书。用户下达 O 系列 Task、生产可用性、MVP/Mock 清理、真实 provider/Agent 配置、鉴权、镜像瘦身、线上 smoke 或 production readiness 相关任务时，默认已授权按该任务书执行。
+
+## 默认入口与优先级
+
+1. 只要用户提出线上版本、生产发布、production readiness、MVP 模块整改、Mock/Fake/Stub 清理、真实第三方采集、真实 Agent LLM、鉴权/租户、镜像安全、Docker 瘦身、线上 smoke、O0–O10 等需求，默认进入本规则。
+2. 用户只写 `执行 Task O0`、`执行 O3`、`执行 Task O7：鉴权、租户与权限边界` 等简短 prompt 时，自动按 `docs/superpowers/plans/2026-06-30-production-readiness-remediation.md` 定位任务。
+3. O 系列任务优先处理生产安全、配置 fail-fast、真实 provider/Agent 闭环和鉴权；若同一请求同时涉及 P 系列接口缺口或 M 系列模力指数替换，以用户当次指令为准，并说明采用哪个任务书为主。
+4. 发生口径冲突时，按以下顺序处理：用户当次指令 > `AGENTS.md` / `.cursor/rules/*` > 线上整改任务书 > `docs/Cursor模力指数API替换Aidso开发任务书.md` > `docs/Cursor接口缺口开发任务书.md` > `docs/API接口文档.md` / 当前代码实现 > 历史 MVP V2 任务书。
+
+## 读取策略
+
+1. 先读线上整改任务书的「审计结论摘要」「当前发现分类」「建议执行顺序」和当前 Task 对应章节（O0–O10）。
+2. 按 Task 局部读取相关文档：
+   - 安全/镜像：`Dockerfile`、`.dockerignore`、`backend/tests/test_security.py`、`backend/tests/test_deployment_contract.py`
+   - 配置：`backend/app/core/config.py`、`.env.example`、README、`docs/API接口文档.md`
+   - 模力指数真实采集：M 系列任务书索引、`docs/API测试文档.md`、`docs/采集任务生命周期说明.md`
+   - Agent LLM：`backend/app/geo_monitoring/agents/`、`backend/app/geo_monitoring/services/analysis.py`
+   - 鉴权/租户：`backend/app/core/`、`backend/app/geo_monitoring/api/`、API 文档
+3. 不要读取、打印或提交 `.env` 真实值；如需判断配置状态，只输出“已配置/为空/true/false/缺失”等脱敏状态。
+4. 文档-only 任务无需 pytest 和 CodeGraph，但必须验证文件存在、标题结构、关键新规则可被 `rg` 命中。
+
+## 执行顺序
+
+1. 从用户消息识别 O 系列 Task 编号和目标。
+2. 读取线上整改任务书当前 Task 的目标、Files、步骤和验收命令。
+3. **Superpowers：** 读取 `using-superpowers`；代码任务读取 `test-driven-development`；收尾前读取 `verification-before-completion`。
+4. 检查工作树，保护用户或其他 Agent 的未提交改动。
+5. 代码任务测试先行；文档任务先定位现有口径，再最小范围更新。
+6. 实现时严禁把测试默认值、Fake LLM、StubBroker、mock URL 或硬编码凭证作为生产兜底。
+7. 按任务书执行验收命令；真实第三方接口 smoke 只能手动显式开启，并说明费用风险。
+8. 同步相关文档和规则：`docs/API接口文档.md`、`docs/API测试文档.md`、`docs/采集任务生命周期说明.md`、`.env.example`、README、Docker/部署说明或 `.cursor/rules/*`。
+9. 改动 `backend/` 源码且验收通过后执行 CodeGraph 更新。
+10. 汇报变更、验证证据、未覆盖风险和下一步建议。
+
+## 生产整改硬约束
+
+- 生产路径不得默认回退到 `*.test` URL、`test-*` key、FakeLLMClient、StubBroker 或 mock 平台。
+- 生产镜像不得包含 `backend/app/test`、手工厂商连通性脚本、逆向研究脚本、测试夹具或硬编码 JWT/token。
+- `APP_ENV=prod` 目标口径：`DRAMATIQ_BROKER=redis`；Agent LLM base_url/api_key/model 必填；启用模力指数必须显式 `MOLIZHISHU_ENABLED=true` 且 token 可用。
+- Run 创建前应校验平台 DB enabled 与运行时 adapter/credential 一致，不要把配置错误延迟到 worker。
+- 自动化 pytest 默认 mock/respx，不访问真实模力指数或官方平台；真实 smoke 必须显式费用风险。
+- 文档描述必须区分“当前实现”和“线上整改目标”，不得把尚未实现的 O 系列目标写成已完成能力。
+
+## 用户下任务时的推荐格式
+
+```text
+执行 Task O0：生产安全清理与密钥止血
+```
+
+Agent 应自动完成任务书定位、必要文档局部读取、测试先行或文档自检、实现/更新、验收和汇报。

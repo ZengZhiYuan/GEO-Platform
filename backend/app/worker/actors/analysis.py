@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 import dramatiq
 
-from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.exceptions import BusinessException
 from app.geo_monitoring.agents.llm import create_agent_llm_client
@@ -117,9 +116,22 @@ def analyze_run(run_id: int) -> None:
                 return
             raise
 
-        # 调用 LangGraph 分析流水线
-        llm_client = create_agent_llm_client(build_agent_llm_config(settings))
-        result = run_analysis(db, run_id, llm_client=llm_client, settings=settings)
+        try:
+            llm_client = create_agent_llm_client(build_agent_llm_config())
+        except BusinessException as exc:
+            if exc.code == 50301:
+                run = db.get(MonitorRun, run_id)
+                if run is not None:
+                    run.analysis_status = "failed"
+                    db.commit()
+                logger.warning(
+                    "analysis skipped run_id=%s: agent llm not configured",
+                    run_id,
+                )
+                return
+            raise
+
+        result = run_analysis(db, run_id, llm_client=llm_client)
         logger.info(
             "analysis finished run_id=%s status=%s skip_reason=%s",
             run_id,

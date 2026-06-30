@@ -18,6 +18,24 @@ from app.geo_monitoring.services import runs as run_service
 from app.geo_monitoring.services.platforms import DEFAULT_PLATFORMS
 
 
+def _enable_molizhishu_runtime(session_factory) -> None:
+    import os
+
+    from app.core.config import get_settings
+    from app.geo_monitoring.services import collection as collection_service
+
+    os.environ["MOLIZHISHU_ENABLED"] = "true"
+    os.environ["MOLIZHISHU_API_TOKEN"] = "test-molizhishu-token"
+    get_settings.cache_clear()
+    runtime_settings = get_settings()
+    collection_service.configure_runtime(
+        collection_service.build_default_runtime(
+            session_factory=session_factory,
+            runtime_settings=runtime_settings,
+        )
+    )
+
+
 def _seed_platforms(session_factory, disabled: set[str] | None = None) -> None:
     disabled = disabled or set()
     with session_factory() as db:
@@ -316,6 +334,7 @@ def _seed_molizhishu_run_with_provider_tasks(
 ) -> dict:
     from app.geo_monitoring.models import MonitorProject
 
+    _enable_molizhishu_runtime(session_factory)
     _active_prompt_setup(client, project_id, prompt_count=len(statuses))
     _seed_platforms(session_factory)
     with session_factory() as db:

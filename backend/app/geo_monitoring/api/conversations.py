@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.response import ResponseModel, success
-from app.geo_monitoring.schemas import EvaluationTagsOut
+from app.geo_monitoring.schemas import EvaluationTagClusterMethod, EvaluationTagsOut
 from app.geo_monitoring.services import conversations as conversations_service
 from app.geo_monitoring.services import evaluation_tags as evaluation_tags_service
 from app.geo_monitoring.services.exports import csv_file_response
@@ -77,7 +77,7 @@ def list_conversation_question_answers(
 
 @router.get(
     "/projects/{project_id}/conversation-questions/{prompt_id}/evaluation-tags",
-    summary="高频评价标签规则聚类",
+    summary="高频评价标签聚类",
     response_model=ResponseModel[EvaluationTagsOut],
 )
 def list_evaluation_tags(
@@ -88,6 +88,10 @@ def list_evaluation_tags(
     start_at: datetime | None = Query(None),
     end_at: datetime | None = Query(None),
     limit: int = Query(10, ge=1, le=50),
+    cluster_method: str = Query(
+        EvaluationTagClusterMethod.AUTO.value,
+        description="rule=仅规则；llm=优先 LLM；auto=先规则命中，否则样本足够时 LLM",
+    ),
     db: Session = Depends(get_db),
 ) -> dict:
     data = evaluation_tags_service.cluster_evaluation_tags(
@@ -99,6 +103,7 @@ def list_evaluation_tags(
         start_at=start_at,
         end_at=end_at,
         limit=limit,
+        cluster_method=cluster_method,
     )
     return success(data)
 

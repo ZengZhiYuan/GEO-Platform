@@ -76,6 +76,18 @@ _SETTINGS_FIELDS_IN_ENV_EXAMPLE = frozenset(
         "AGENT_LLM_PROVIDER",
         "AGENT_LLM_TIMEOUT_SECONDS",
         "AGENT_LLM_MAX_ATTEMPTS",
+        "AI_GENERATION_LLM_ENABLED",
+        "AI_GENERATION_TIMEOUT_SECONDS",
+        "AI_GENERATION_MAX_INPUT_CHARS",
+        "EVALUATION_TAGS_LLM_ENABLED",
+        "EVALUATION_TAGS_LLM_MIN_ANSWERS",
+        "EVALUATION_TAGS_LLM_MAX_ANSWERS",
+        "EVALUATION_TAGS_LLM_TIMEOUT_SECONDS",
+        "EVALUATION_TAGS_LLM_MAX_INPUT_CHARS",
+        "API_AUTH_ENABLED",
+        "API_AUTH_DEFAULT_TENANT_ID",
+        "API_AUTH_BEARER_TOKENS",
+        "API_AUTH_TOKEN_MAP_JSON",
         "SCHEDULER_ENABLED",
         "SCHEDULER_TIMEZONE",
         "SCHEDULER_POLL_SECONDS",
@@ -131,6 +143,141 @@ def make_settings(**overrides) -> Settings:
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
+
+
+def _prod_required_overrides() -> dict[str, object]:
+    return {
+        "APP_ENV": "prod",
+        "DRAMATIQ_BROKER": "redis",
+        "AGENT_LLM_BASE_URL": "https://agent.example.test/v1",
+        "AGENT_LLM_API_KEY": "agent-key",
+        "AGENT_LLM_MODEL": "agent-model",
+        "API_AUTH_ENABLED": True,
+        "API_AUTH_TOKEN_MAP_JSON": (
+            '[{"token":"prod-token","tenant_id":1,"actor_id":1}]'
+        ),
+    }
+
+
+def _apply_prod_auth_env(monkeypatch) -> None:
+    monkeypatch.setenv("API_AUTH_ENABLED", "true")
+    monkeypatch.setenv(
+        "API_AUTH_TOKEN_MAP_JSON",
+        '[{"token":"prod-token","tenant_id":1,"actor_id":1}]',
+    )
+
+
+def test_prod_rejects_stub_dramatiq_broker(tmp_path):
+    overrides = _prod_required_overrides()
+    overrides["DRAMATIQ_BROKER"] = "stub"
+    with pytest.raises(ValidationError, match="DRAMATIQ_BROKER"):
+        make_settings(REPORT_STORAGE_DIR=str(tmp_path), **overrides)
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["AGENT_LLM_BASE_URL", "AGENT_LLM_API_KEY", "AGENT_LLM_MODEL"],
+)
+def test_prod_requires_agent_llm_configuration(tmp_path, field_name):
+    overrides = _prod_required_overrides()
+    overrides[field_name] = ""
+    with pytest.raises(ValidationError, match=field_name):
+        make_settings(REPORT_STORAGE_DIR=str(tmp_path), **overrides)
+
+
+def test_prod_accepts_valid_minimal_configuration(tmp_path, monkeypatch):
+    _apply_prod_auth_env(monkeypatch)
+    settings = make_settings(
+        REPORT_STORAGE_DIR=str(tmp_path),
+        **_prod_required_overrides(),
+    )
+
+    assert settings.APP_ENV == "prod"
+    assert settings.DRAMATIQ_BROKER == "redis"
+    assert settings.AGENT_LLM_MODEL == "agent-model"
+    assert settings.API_AUTH_ENABLED is True
+
+
+def test_prod_accepts_bearer_tokens_without_token_map_json(tmp_path, monkeypatch):
+    monkeypatch.setenv("API_AUTH_ENABLED", "true")
+    monkeypatch.setenv("API_AUTH_BEARER_TOKENS", "prod-bearer-token")
+    monkeypatch.delenv("API_AUTH_TOKEN_MAP_JSON", raising=False)
+
+    settings = make_settings(
+        REPORT_STORAGE_DIR=str(tmp_path),
+        APP_ENV="prod",
+        DRAMATIQ_BROKER="redis",
+        AGENT_LLM_BASE_URL="https://agent.example.test/v1",
+        AGENT_LLM_API_KEY="agent-key",
+        AGENT_LLM_MODEL="agent-model",
+        API_AUTH_ENABLED=True,
+        API_AUTH_BEARER_TOKENS="prod-bearer-token",
+        API_AUTH_TOKEN_MAP_JSON="[]",
+    )
+
+    entries = settings.parsed_api_auth_token_entries()
+    assert len(entries) == 1
+    assert entries[0].token == "prod-bearer-token"
+
+
+def test_prod_molizhishu_requires_explicit_env_vars(tmp_path, monkeypatch):
+    _apply_prod_auth_env(monkeypatch)
+    monkeypatch.setenv("MOLIZHISHU_ENABLED", "true")
+    monkeypatch.setenv("MOLIZHISHU_API_TOKEN", "molizhishu-token")
+
+    with pytest.raises(ValidationError, match="MOLIZHISHU_PROVIDER_BATCH_ENABLED"):
+        make_settings(
+            REPORT_STORAGE_DIR=str(tmp_path),
+            **_prod_required_overrides(),
+            MOLIZHISHU_ENABLED=True,
+            MOLIZHISHU_API_TOKEN="molizhishu-token",
+        )
+
+
+def test_prod_molizhishu_accepts_explicit_env_vars(tmp_path, monkeypatch):
+    _apply_prod_auth_env(monkeypatch)
+    monkeypatch.setenv("MOLIZHISHU_ENABLED", "true")
+    monkeypatch.setenv("MOLIZHISHU_API_TOKEN", "molizhishu-token")
+    monkeypatch.setenv("MOLIZHISHU_PROVIDER_BATCH_ENABLED", "true")
+
+    settings = make_settings(
+        REPORT_STORAGE_DIR=str(tmp_path),
+        **_prod_required_overrides(),
+        MOLIZHISHU_ENABLED=True,
+        MOLIZHISHU_API_TOKEN="molizhishu-token",
+        MOLIZHISHU_PROVIDER_BATCH_ENABLED=True,
+    )
+
+    assert settings.MOLIZHISHU_ENABLED is True
+    assert settings.MOLIZHISHU_PROVIDER_BATCH_ENABLED is True
+
+
+def test_runtime_summary_includes_molizhishu_runtime_flags(tmp_path):
+    settings = make_settings(
+        REPORT_STORAGE_DIR=str(tmp_path),
+        MOLIZHISHU_ENABLED=True,
+        MOLIZHISHU_API_TOKEN="molizhishu-token",
+        MOLIZHISHU_PROVIDER_BATCH_ENABLED=False,
+        MOLIZHISHU_CALLBACK_ENABLED=True,
+        MOLIZHISHU_REGIONS_CACHE_SECONDS=600,
+    )
+
+    molizhishu_summary = settings.runtime_summary()["platforms"]["molizhishu"]
+
+    assert molizhishu_summary["provider_batch_enabled"] is False
+    assert molizhishu_summary["callback_enabled"] is True
+    assert molizhishu_summary["regions_cache_seconds"] == 600
+    assert "molizhishu-token" not in repr(molizhishu_summary)
+
+
+def test_env_example_documents_prod_fail_fast_requirements():
+    text = (Path(__file__).parents[2] / ".env.example").read_text(encoding="utf-8")
+
+    assert "APP_ENV=prod" in text or "APP_ENV=dev" in text
+    assert "生产环境" in text and "APP_ENV=prod" in text
+    assert "DRAMATIQ_BROKER" in text and "redis" in text
+    assert "AGENT_LLM_BASE_URL" in text
+    assert "MOLIZHISHU_PROVIDER_BATCH_ENABLED" in text
 
 
 def test_database_and_redis_urls_are_required_without_env_file(monkeypatch, tmp_path):
@@ -424,6 +571,9 @@ def test_runtime_summary_redacts_all_secrets(tmp_path):
         "enabled": True,
         "base_url": settings.MOLIZHISHU_BASE_URL,
         "has_token": True,
+        "provider_batch_enabled": settings.MOLIZHISHU_PROVIDER_BATCH_ENABLED,
+        "callback_enabled": settings.MOLIZHISHU_CALLBACK_ENABLED,
+        "regions_cache_seconds": settings.MOLIZHISHU_REGIONS_CACHE_SECONDS,
     }
     assert "molizhishu-secret-token" not in repr(molizhishu_summary)
     assert "molizhishu-callback-secret" not in rendered

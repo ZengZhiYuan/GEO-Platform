@@ -81,6 +81,12 @@ def stub_broker():
 
 @pytest.fixture
 def collection_env(session_factory, stub_broker, tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_LLM_BASE_URL", "https://agent.example.test/v1")
+    monkeypatch.setenv("AGENT_LLM_API_KEY", "test-agent-key")
+    monkeypatch.setenv("AGENT_LLM_MODEL", "agent-model")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
     settings = Settings(
         _env_file=None,
         APP_ENV="test",
@@ -92,6 +98,9 @@ def collection_env(session_factory, stub_broker, tmp_path, monkeypatch):
         QWEN_ENABLED=True,
         QWEN_MODEL="qwen-test",
         QWEN_API_KEYS="test-key",
+        AGENT_LLM_BASE_URL="https://agent.example.test/v1",
+        AGENT_LLM_API_KEY="test-agent-key",
+        AGENT_LLM_MODEL="agent-model",
     )
     adapter = MockAdapter()
     registry = AdapterRegistry()
@@ -226,6 +235,66 @@ def test_analyze_run_persists_platform_analysis(collection_env, session_factory)
         assert run.analysis_status == "completed"
         assert len(rows) == 1
         assert rows[0].platform_code == "qwen"
+
+
+def test_analyze_run_marks_failed_when_agent_llm_not_configured(
+    session_factory, stub_broker, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("AGENT_LLM_BASE_URL", "")
+    monkeypatch.setenv("AGENT_LLM_API_KEY", "")
+    monkeypatch.setenv("AGENT_LLM_MODEL", "")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    with session_factory() as db:
+        seeded = _seed_run(db, platforms=("qwen",))
+        run = db.get(MonitorRun, seeded["run_id"])
+        run.status = "completed"
+        run.analysis_status = "skipped"
+        db.commit()
+
+    analyze_run.fn(seeded["run_id"])
+
+    with session_factory() as db:
+        run = db.get(MonitorRun, seeded["run_id"])
+        assert run.analysis_status == "failed"
+
+
+def test_trigger_run_analysis_enqueues_worker(client, session_factory, monkeypatch):
+    from tests.geo_monitoring.agents.test_graph import _seed_run
+
+    sent: list[int] = []
+
+    def spy_send(run_id: int):
+        sent.append(run_id)
+
+    monkeypatch.setattr(
+        "app.geo_monitoring.api.analysis.analyze_run.send",
+        spy_send,
+    )
+    monkeypatch.setenv("AGENT_LLM_BASE_URL", "https://agent.example.test/v1")
+    monkeypatch.setenv("AGENT_LLM_API_KEY", "test-agent-key")
+    monkeypatch.setenv("AGENT_LLM_MODEL", "agent-model")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+
+    with session_factory() as db:
+        seeded = _seed_run(db, platforms=("qwen",))
+        run = db.get(MonitorRun, seeded["run_id"])
+        run.status = "completed"
+        run.analysis_status = "skipped"
+        db.commit()
+        run_id = seeded["run_id"]
+
+    response = client.post(f"/api/geo-monitoring/runs/{run_id}/analyze")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["code"] == 0
+    assert body["data"]["queued"] is True
+    assert body["data"]["analysis_status"] == "pending"
+    assert sent == [run_id]
 
 
 def test_on_query_task_terminal_triggers_enqueue_when_run_becomes_terminal(

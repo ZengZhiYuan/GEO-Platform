@@ -9,12 +9,17 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
-from app.geo_monitoring.models import Answer, MonitorRun, QueryTask
+from app.geo_monitoring.models import Answer, MonitorProject, MonitorRun, QueryTask
 from app.geo_monitoring.repositories import platforms as platform_repo
 from app.geo_monitoring.repositories import prompts as prompt_repo
 from app.geo_monitoring.repositories import runs as run_repo
 from app.geo_monitoring.schemas import RunCreate, RunDetailRead
 from app.geo_monitoring.services.projects import require_active_project, require_monitoring_not_paused
+from app.geo_monitoring.services.tenant_access import (
+    ensure_project_tenant_access,
+    list_tenant_filter,
+    stamp_tenant_fields,
+)
 
 RUN_TERMINAL_STATUSES = frozenset(
     {"completed", "partial_success", "failed", "cancelled"}
@@ -138,6 +143,17 @@ def prepare_run_create(db: Session, payload: RunCreate):
     )
     resolved_platform_codes = [platform.platform_code for platform in platforms]
     _validate_provider_mode_for_resolved_platforms(payload, resolved_platform_codes)
+    from app.geo_monitoring.adapters.registry import validate_resolved_platforms_runtime
+    from app.geo_monitoring.services.collection import get_runtime
+
+    runtime = get_runtime()
+    validate_resolved_platforms_runtime(
+        platforms,
+        collection_source=payload.collection_source.value,
+        runtime_settings=runtime.settings,
+        adapter_registry=runtime.adapter_registry,
+        key_pool=runtime.key_pool,
+    )
     return project, prompt_set, prompts, platforms, resolved_platform_codes
 
 
@@ -339,6 +355,7 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
         expected_query_count=task_count,
         total_tasks=task_count,
     )
+    stamp_tenant_fields(run)
     try:
         run_repo.add_run(db, run)
         db.flush()
@@ -372,6 +389,7 @@ def get_run(db: Session, run_id: int) -> MonitorRun:
     run = run_repo.get_by_id(db, run_id)
     if run is None:
         raise BusinessException(message="监测运行不存在", code=40400)
+    ensure_project_tenant_access(db, run.project_id)
     return run
 
 
@@ -395,9 +413,18 @@ def list_runs(
     created_after: datetime | None = None,
     created_before: datetime | None = None,
 ) -> tuple[list[MonitorRun], int]:
+    if project_id is not None:
+        ensure_project_tenant_access(db, project_id)
     conditions = [MonitorRun.is_deleted.is_(False)]
     if project_id is not None:
         conditions.append(MonitorRun.project_id == project_id)
+    tenant_id = list_tenant_filter()
+    if tenant_id is not None:
+        tenant_project_ids = select(MonitorProject.id).where(
+            MonitorProject.is_deleted.is_(False),
+            MonitorProject.tenant_id == tenant_id,
+        )
+        conditions.append(MonitorRun.project_id.in_(tenant_project_ids))
     if status:
         conditions.append(MonitorRun.status == status)
     if created_after is not None:

@@ -96,6 +96,9 @@ class CredentialKeyPool:
         self._fallback_state: dict[tuple[str, str], dict[str, str]] = {}
         self._redis_degraded_logged = False
 
+    def credential_count(self, platform_code: str) -> int:
+        return len(self._credentials.get(platform_code, ()))
+
     # 注册某平台的凭证列表并同步 Redis 元数据
     def register_platform_credentials(
         self,

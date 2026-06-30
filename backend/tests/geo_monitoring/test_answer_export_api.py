@@ -21,6 +21,7 @@ from app.geo_monitoring.models import (
     PromptSet,
     QueryTask,
 )
+from tests.geo_monitoring.analysis_support import patch_fake_llm_for_analyze
 from tests.geo_monitoring.agents.test_graph import FakeLLMClient
 from tests.geo_monitoring.test_conversations_api import _seed_multi_prompt_run
 from tests.geo_monitoring.test_source_analysis_api import _seed_source_analysis_run
@@ -126,11 +127,7 @@ def test_answer_detail_includes_prompt_and_metadata(client, session_factory):
 
 @pytest.fixture
 def conversation_run(client, session_factory, monkeypatch):
-    llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
+    llm = patch_fake_llm_for_analyze(monkeypatch)
     with session_factory() as db:
         seeded = _seed_multi_prompt_run(db)
     response = client.post(f"/api/geo-monitoring/runs/{seeded['run_id']}/analyze")
@@ -141,11 +138,7 @@ def conversation_run(client, session_factory, monkeypatch):
 def test_conversation_question_answers_exposes_metadata_from_raw_response(
     client, session_factory, conversation_run, monkeypatch
 ):
-    llm = FakeLLMClient()
-    monkeypatch.setattr(
-        "app.geo_monitoring.api.analysis.create_agent_llm_client",
-        lambda *_args, **_kwargs: llm,
-    )
+    llm = patch_fake_llm_for_analyze(monkeypatch)
     with session_factory() as db:
         answer = db.get(Answer, conversation_run["answer_ids"]["1-qwen"])
         answer.raw_response_json = {

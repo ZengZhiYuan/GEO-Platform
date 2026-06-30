@@ -205,5 +205,7 @@ def test_cancel_retry_and_analysis_rerun(
     client.get(f"/api/geo-monitoring/runs/{run2_id}/analysis").json()["data"]
     rerun = client.post(f"/api/geo-monitoring/runs/{run2_id}/analyze").json()["data"]
     second = client.get(f"/api/geo-monitoring/runs/{run2_id}/analysis").json()["data"]
-    assert rerun["analysis_status"] in {"completed", "partial_success", "skipped"}
+    assert rerun["queued"] is True
+    assert rerun["analysis_status"] == "pending"
+    assert rerun["run_analysis_status"] in {"completed", "partial_success", "skipped"}
     assert second["platforms"]

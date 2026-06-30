@@ -27,6 +27,9 @@ from app.geo_monitoring.agents.schemas import (
     RiskAssessmentOutput,
     SentimentOutput,
 )
+from app.core.exceptions import BusinessException
+from app.geo_monitoring.services.analysis import build_agent_llm_config, run_analysis
+from tests.test_config import make_settings
 
 
 API_KEY = "sk-agent-test-secret"
@@ -349,3 +352,63 @@ def test_risk_and_insight_schemas():
     assert isinstance(risk.parsed, RiskAssessmentOutput)
     assert isinstance(insight.parsed, InsightSummaryOutput)
     assert insight.parsed.suggestions[0].priority.value == "P1"
+
+
+def test_build_agent_llm_config_raises_when_settings_incomplete(tmp_path):
+    settings = make_settings(
+        REPORT_STORAGE_DIR=str(tmp_path),
+        AGENT_LLM_BASE_URL="",
+        AGENT_LLM_API_KEY="",
+        AGENT_LLM_MODEL="",
+    )
+
+    with pytest.raises(BusinessException, match="AGENT_LLM_BASE_URL") as exc_info:
+        build_agent_llm_config(settings)
+
+    assert exc_info.value.code == 50301
+    assert "test-agent-key" not in exc_info.value.message
+    assert "sk-" not in exc_info.value.message
+
+
+def test_build_agent_llm_config_does_not_leak_api_key_in_error_message(tmp_path):
+    settings = make_settings(
+        REPORT_STORAGE_DIR=str(tmp_path),
+        AGENT_LLM_BASE_URL="https://agent.example.test/v1",
+        AGENT_LLM_API_KEY="sk-leaked-should-not-appear",
+        AGENT_LLM_MODEL="",
+    )
+
+    with pytest.raises(BusinessException, match="AGENT_LLM_MODEL") as exc_info:
+        build_agent_llm_config(settings)
+
+    assert "sk-leaked-should-not-appear" not in exc_info.value.message
+
+
+def test_build_agent_llm_config_returns_explicit_settings(tmp_path):
+    settings = make_settings(
+        REPORT_STORAGE_DIR=str(tmp_path),
+        AGENT_LLM_BASE_URL="https://agent.example.test/v1",
+        AGENT_LLM_API_KEY=API_KEY,
+        AGENT_LLM_MODEL=MODEL,
+        AGENT_LLM_PROVIDER="openai_compatible",
+    )
+
+    config = build_agent_llm_config(settings)
+
+    assert config.base_url == "https://agent.example.test/v1"
+    assert config.api_key == API_KEY
+    assert config.model == MODEL
+    assert config.provider == "openai_compatible"
+
+
+def test_run_analysis_accepts_explicit_fake_llm_client(session_factory, monkeypatch):
+    from tests.geo_monitoring.agents.test_graph import FakeLLMClient, _seed_run
+
+    llm = FakeLLMClient()
+    with session_factory() as db:
+        seeded = _seed_run(db, platforms=("qwen",))
+
+    with session_factory() as db:
+        result = run_analysis(db, seeded["run_id"], llm_client=llm)
+
+    assert result["analysis_status"] in {"completed", "partial_success", "failed", "skipped"}

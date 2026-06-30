@@ -1,6 +1,9 @@
+import os
+
 import pytest
 from sqlalchemy import func, select
 
+from app.core.config import get_settings
 from app.geo_monitoring.models import (
     AIPlatform,
     MonitorProject,
@@ -23,6 +26,33 @@ def _disabled_except(*enabled_codes: str) -> set[str]:
         for platform in DEFAULT_PLATFORMS
         if platform["platform_code"] not in enabled
     }
+
+
+@pytest.fixture
+def molizhishu_client(client, session_factory):
+    """启用模力指数运行时配置，供 molizhishu Run 创建成功路径测试。"""
+    from app.geo_monitoring.services import collection as collection_service
+
+    os.environ["MOLIZHISHU_ENABLED"] = "true"
+    os.environ["MOLIZHISHU_API_TOKEN"] = "test-molizhishu-token"
+    get_settings.cache_clear()
+    runtime_settings = get_settings()
+    collection_service.configure_runtime(
+        collection_service.build_default_runtime(
+            session_factory=session_factory,
+            runtime_settings=runtime_settings,
+        )
+    )
+    yield client
+    os.environ["MOLIZHISHU_ENABLED"] = "false"
+    os.environ["MOLIZHISHU_API_TOKEN"] = ""
+    get_settings.cache_clear()
+    collection_service.configure_runtime(
+        collection_service.build_default_runtime(
+            session_factory=session_factory,
+            runtime_settings=get_settings(),
+        )
+    )
 
 
 def _seed_platforms(session_factory, disabled: set[str] | None = None) -> None:
@@ -124,12 +154,12 @@ def test_create_run_uses_configured_collection_max_attempts(
 
 
 def test_create_molizhishu_run_persists_provider_fields(
-    client, session_factory, project_id
+    molizhishu_client, session_factory, project_id
 ):
-    setup = _active_prompt_setup(client, project_id, prompt_count=1)
+    setup = _active_prompt_setup(molizhishu_client, project_id, prompt_count=1)
     _seed_platforms(session_factory)
 
-    response = client.post(
+    response = molizhishu_client.post(
         "/api/geo-monitoring/runs",
         json={
             "project_id": project_id,
@@ -196,6 +226,106 @@ def test_create_run_rejects_legacy_aidso_thinking_field(
     assert response["code"] == 422
 
 
+def test_molizhishu_run_rejected_when_provider_disabled(
+    client, session_factory, project_id
+):
+    _active_prompt_setup(client, project_id, prompt_count=1)
+    _seed_platforms(session_factory)
+
+    response = client.post(
+        "/api/geo-monitoring/runs",
+        json={
+            "project_id": project_id,
+            "collection_source": "molizhishu",
+            "platform_codes": ["molizhishu_doubao_web"],
+        },
+    ).json()
+
+    assert response["code"] == 40908
+    assert "MOLIZHISHU_ENABLED" in response["message"]
+
+
+def test_official_run_rejected_when_platform_runtime_not_configured(
+    client, session_factory, project_id, monkeypatch
+):
+    from app.core.config import Settings
+    from app.geo_monitoring.services import collection as collection_service
+
+    _active_prompt_setup(client, project_id, prompt_count=1)
+    _seed_platforms(session_factory)
+    disabled_runtime = collection_service.build_default_runtime(
+        session_factory=session_factory,
+        runtime_settings=Settings(
+            _env_file=None,
+            APP_ENV="test",
+            DATABASE_URL="sqlite+pysqlite:///:memory:",
+            REDIS_URL="redis://test-redis.invalid:6379/15",
+            DRAMATIQ_BROKER="stub",
+            NACOS_ENABLED=False,
+            REPORT_STORAGE_DIR="data/reports",
+            QWEN_ENABLED=False,
+            QWEN_API_KEYS="",
+            QWEN_MODEL="",
+        ),
+    )
+    monkeypatch.setattr(collection_service, "get_runtime", lambda: disabled_runtime)
+
+    response = client.post(
+        "/api/geo-monitoring/runs",
+        json={"project_id": project_id, "platform_codes": ["qwen"]},
+    ).json()
+
+    assert response["code"] == 40908
+    assert "qwen" in response["message"]
+
+
+def test_ready_includes_platform_runtime_diagnostics(
+    client, session_factory, project_id, monkeypatch
+):
+    _seed_platforms(session_factory)
+    monkeypatch.setattr(
+        "app.main.check_readiness",
+        lambda: {
+            "status": "ready",
+            "database": {"ok": True, "target": "sqlite:///:memory:"},
+            "redis": {"ok": True, "target": "redis://redis.test:6379/0"},
+        },
+    )
+
+    def _platform_runtime(_db):
+        from app.geo_monitoring.services.collection import platform_runtime_diagnostics
+
+        with session_factory() as db:
+            return platform_runtime_diagnostics(db)
+
+    monkeypatch.setattr("app.main.check_platform_runtime_diagnostics", _platform_runtime)
+    response = client.get("/api/geo-monitoring/ready")
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["code"] == 0
+    platform_runtime = body["data"]["platform_runtime"]
+    assert "platforms" in platform_runtime
+    assert "collection_ready" in platform_runtime
+    qwen = next(
+        item
+        for item in platform_runtime["platforms"]
+        if item["platform_code"] == "qwen"
+    )
+    assert qwen["db_enabled"] is True
+    assert qwen["adapter_registered"] is True
+    assert qwen["runtime_configured"] is True
+    assert qwen["credential_count"] >= 1
+    molizhishu = next(
+        item
+        for item in platform_runtime["platforms"]
+        if item["platform_code"] == "molizhishu_doubao_web"
+    )
+    assert molizhishu["db_enabled"] is True
+    assert molizhishu["adapter_registered"] is False
+    assert molizhishu["runtime_configured"] is False
+
+
 def test_molizhishu_run_rejects_official_platform(client, session_factory, project_id):
     _active_prompt_setup(client, project_id, prompt_count=1)
     _seed_platforms(session_factory)
@@ -212,11 +342,13 @@ def test_molizhishu_run_rejects_official_platform(client, session_factory, proje
     assert body["code"] == 40031
 
 
-def test_molizhishu_run_rejects_invalid_mode_via_api(client, session_factory, project_id):
-    _active_prompt_setup(client, project_id, prompt_count=1)
+def test_molizhishu_run_rejects_invalid_mode_via_api(
+    molizhishu_client, session_factory, project_id
+):
+    _active_prompt_setup(molizhishu_client, project_id, prompt_count=1)
     _seed_platforms(session_factory)
 
-    response = client.post(
+    response = molizhishu_client.post(
         "/api/geo-monitoring/runs",
         json={
             "project_id": project_id,
@@ -230,18 +362,18 @@ def test_molizhishu_run_rejects_invalid_mode_via_api(client, session_factory, pr
 
 
 def test_molizhishu_run_rejects_provider_mode_outside_default_platforms(
-    client, session_factory, project_id
+    molizhishu_client, session_factory, project_id
 ):
     from app.geo_monitoring.models import MonitorProject
 
-    _active_prompt_setup(client, project_id, prompt_count=1)
+    _active_prompt_setup(molizhishu_client, project_id, prompt_count=1)
     _seed_platforms(session_factory)
     with session_factory() as db:
         project = db.get(MonitorProject, project_id)
         project.default_platform_codes = ["molizhishu_doubao_web"]
         db.commit()
 
-    response = client.post(
+    response = molizhishu_client.post(
         "/api/geo-monitoring/runs",
         json={
             "project_id": project_id,
@@ -255,18 +387,18 @@ def test_molizhishu_run_rejects_provider_mode_outside_default_platforms(
 
 
 def test_molizhishu_run_persists_provider_mode_for_default_platforms(
-    client, session_factory, project_id
+    molizhishu_client, session_factory, project_id
 ):
     from app.geo_monitoring.models import MonitorProject
 
-    _active_prompt_setup(client, project_id, prompt_count=1)
+    _active_prompt_setup(molizhishu_client, project_id, prompt_count=1)
     _seed_platforms(session_factory)
     with session_factory() as db:
         project = db.get(MonitorProject, project_id)
         project.default_platform_codes = ["molizhishu_doubao_web"]
         db.commit()
 
-    response = client.post(
+    response = molizhishu_client.post(
         "/api/geo-monitoring/runs",
         json={
             "project_id": project_id,

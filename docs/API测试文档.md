@@ -447,9 +447,9 @@ backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_
 
 | 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
 | --- | --- | --- | --- | --- | --- | --- |
-| AI 生成品牌词（创建向导推荐） | `POST` | `/api/geo-monitoring/ai/brand-words:generate` | Body：`brand_name`（必填）、`category`、`official_domain`、`limit` 默认 10 | `{ "brand_words": string[] }` | `code=0`；必含 `brand_name`；去重；**不落库** | 品牌名为空 `422` |
-| AI 生成竞品（创建向导推荐） | `POST` | `/api/geo-monitoring/ai/competitors:generate` | Body：`brand_name`（必填）、`category`、`region`、`limit` 默认 5 | `{ "competitors": [{ brand_name, competitor_words[], official_domain? }] }` | `code=0`；排除目标品牌自身；**不落库** | 品牌名为空 `422` |
-| AI 生成监测问题（创建向导推荐） | `POST` | `/api/geo-monitoring/ai/questions:generate` | Body：`brand_name`（必填）、`category`、`region`、`core_keywords[]`、`competitors[]`、`limit` 默认 10 | `{ "questions": [{ prompt_text, prompt_type, core_keyword? }] }` | 五类意图模板；按 `limit` 截断；**不落库** | 品牌名为空 `422` |
+| AI 生成品牌词（创建向导推荐） | `POST` | `/api/geo-monitoring/ai/brand-words:generate` | Body：`brand_name`（必填）、`category`、`official_domain`、`limit` 默认 10 | `{ "brand_words": string[], "generation_method": "llm"\|"rule_fallback" }` | `code=0`；必含 `brand_name`；去重；**不落库** | 品牌名为空 `422` |
+| AI 生成竞品（创建向导推荐） | `POST` | `/api/geo-monitoring/ai/competitors:generate` | Body：`brand_name`（必填）、`category`、`region`、`limit` 默认 5 | `{ "competitors": [...], "generation_method": "llm"\|"rule_fallback" }` | `code=0`；排除目标品牌自身；**不落库** | 品牌名为空 `422` |
+| AI 生成监测问题（创建向导推荐） | `POST` | `/api/geo-monitoring/ai/questions:generate` | Body：`brand_name`（必填）、`category`、`region`、`core_keywords[]`、`competitors[]`、`limit` 默认 10 | `{ "questions": [...], "generation_method": "llm"\|"rule_fallback" }` | 五类意图模板或 LLM 结构化输出；按 `limit` 截断；**不落库** | 品牌名为空 `422` |
 | AI 生成品牌词（项目域兼容） | `POST` | `/api/geo-monitoring/projects/{project_id}/ai/brand-words:generate` | 同上 | 同上 | `code=0` | 项目不存在 `40400`；品牌名为空 `422` |
 | AI 生成竞品（项目域兼容） | `POST` | `/api/geo-monitoring/projects/{project_id}/ai/competitors:generate` | 同上 | 同上 | `code=0` | 项目不存在 `40400` |
 | AI 生成监测问题（项目域兼容） | `POST` | `/api/geo-monitoring/projects/{project_id}/ai/questions:generate` | 同上 | 同上 | 五类意图模板；按 `limit` 截断 | 项目不存在 `40400` |
@@ -631,7 +631,7 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/projects/1/monitor-setup" 
 | 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 分页查询监测运行 | `GET` | `/api/geo-monitoring/runs` | Query：`page`、`page_size`、`project_id`、`status`、`created_after`、`created_before` | 分页 `MonitorRunOut[]` | `code=0`，筛选条件生效 | 状态非法或时间格式非法返回 `422` |
-| 创建监测运行 | `POST` | `/api/geo-monitoring/runs` | Body：`RunCreate` | `MonitorRunOut` | 返回新 `run_no`，`total_tasks = 可用提示词数 * 平台数`，状态进入 `collecting` 或后续终态；模力指数 run 持久化 `provider_*` 字段 | 项目无激活提示词集 `40030`；无可用提示词 HTTP `409`、`40901`；AI 平台不可用 `40031`；无可用平台 HTTP `409`、`40902`；非法 mode/废弃 Aidso 字段 `422` |
+| 创建监测运行 | `POST` | `/api/geo-monitoring/runs` | Body：`RunCreate` | `MonitorRunOut` | 返回新 `run_no`，`total_tasks = 可用提示词数 * 平台数`，状态进入 `collecting` 或后续终态；模力指数 run 持久化 `provider_*` 字段 | 项目无激活提示词集 `40030`；无可用提示词 HTTP `409`、`40901`；AI 平台不可用 `40031`；无可用平台 HTTP `409`、`40902`；平台 DB 已启用但运行时 adapter/凭证未配置 HTTP `409`、`40908`；非法 mode/废弃 Aidso 字段 `422` |
 | 获取运行详情 | `GET` | `/api/geo-monitoring/runs/{run_id}` | Path：`run_id` | `MonitorRunOut + progress_rate` | `data.id = run_id`，任务统计刷新 | 不存在 `40400` |
 | 取消运行 | `POST` | `/api/geo-monitoring/runs/{run_id}/cancel` | Path：`run_id` | `MonitorRunOut` | 未终态运行返回 `status=cancelled`；已终态运行返回当前终态；模力指数运行本地先落库，后台调度 provider stop | 不存在 `40400` |
 | 重试失败任务 | `POST` | `/api/geo-monitoring/runs/{run_id}/retry-failed` | Path：`run_id` | `MonitorRunOut + retried_count` | `retried_count` 等于重置的失败任务数；有失败任务时状态回到 `collecting` | 已取消运行不可重试 `40040` |
@@ -814,7 +814,7 @@ backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_
 | 按 AI 问题聚合主表 | `GET` | `/api/geo-monitoring/projects/{project_id}/conversation-questions` | Path：`project_id`；Query：可选 `run_id`、`platform_codes[]`、`start_at`、`end_at`、`keyword`、`page`、`page_size` | `run_id`、`items[]`、分页 | 同 prompt 多平台答案聚合成一行；`keyword` 过滤问题文本；`platform_codes` 过滤平台指标 | 项目不存在 `40400`；无目标品牌 `40400` |
 | 指定问题下各平台回答详情 | `GET` | `/api/geo-monitoring/projects/{project_id}/conversation-questions/{prompt_id}/answers` | Path：`project_id`、`prompt_id`；Query：同主表 | `run_id`、`prompt_id`、`items[]`、分页 | 含 `citations`、`brand_results[].brand_name`；无引用/品牌时为空数组；`reasoning_text`/`search_keywords` 从 `raw_response_json` 提取 | 问题不存在 `40400` |
 | 导出对话记录主表 CSV | `GET` | `/api/geo-monitoring/projects/{project_id}/conversation-questions/export` | Query 同主表（无分页） | CSV 文件流 | `Content-Type: text/csv; charset=utf-8`；UTF-8 BOM；列与主表指标一致 | 项目不存在 `40400` |
-| 高频评价标签规则聚类 | `GET` | `/api/geo-monitoring/projects/{project_id}/conversation-questions/{prompt_id}/evaluation-tags` | Path：`project_id`、`prompt_id`；Query：可选 `run_id`、`platform_codes[]`、`start_at`、`end_at`、`limit` | `cluster_method`、`answer_count`、`items[]` | `cluster_method=rule`；按命中次数降序；`share_rate` 为 decimal 字符串 | 问题不存在 `40400` |
+| 高频评价标签聚类 | `GET` | `/api/geo-monitoring/projects/{project_id}/conversation-questions/{prompt_id}/evaluation-tags` | Path：`project_id`、`prompt_id`；Query：可选 `run_id`、`platform_codes[]`、`start_at`、`end_at`、`limit`、`cluster_method`（`rule`/`llm`/`auto`，默认 `auto`） | `cluster_method`（`rule`/`llm`）、`answer_count`、`items[]` | `auto` 先规则命中；无命中且样本 ≥3 时 LLM；LLM 结果缓存于 `run.result_json`；`share_rate` 为 decimal 字符串 | 问题不存在 `40400`；非法 `cluster_method` `42200` |
 
 **自动化测试：**
 
@@ -1303,3 +1303,108 @@ backend\.venv\Scripts\alembic.exe -c backend\alembic.ini heads
 ```
 
 **配置项：** `MOLIZHISHU_PROVIDER_BATCH_ENABLED`（默认 true）、`MOLIZHISHU_PROVIDER_BATCH_MAX_SUBTASKS`（默认 100）。
+
+## 27. 模力指数真实采集前置校验（Task O3）
+
+文件：`backend/tests/geo_monitoring/test_runs.py`、`test_molizhishu_collection.py`、`test_molizhishu_provider_batch.py`
+
+| 场景 | 测试函数 | 预期 |
+| --- | --- | --- |
+| 模力指数未启用拒绝创建 | `test_molizhishu_run_rejected_when_provider_disabled` | HTTP `409`，`code=40908`，提示 `MOLIZHISHU_ENABLED` |
+| 官方平台运行时未配置 | `test_official_run_rejected_when_platform_runtime_not_configured` | HTTP `409`，`code=40908` |
+| ready 平台诊断 | `test_ready_includes_platform_runtime_diagnostics` | `/ready` 返回 `platform_runtime.platforms[]` 脱敏字段 |
+| ProviderBatch 守卫 | `test_create_provider_batches_rejected_when_molizhishu_not_configured` | 未配置模力指数时 `create_provider_batches_for_run` 抛 `40908` |
+
+**执行命令（Task O3 验收）：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\geo_monitoring\test_runs.py backend\tests\geo_monitoring\test_molizhishu_collection.py backend\tests\geo_monitoring\test_molizhishu_provider_batch.py
+```
+
+## 28. 真实第三方采集 smoke 分层（Task O4）
+
+| 层级 | 脚本 / 测试 | 预期 |
+| --- | --- | --- |
+| mock 回归 | `backend/tests/**` pytest | 不访问真实模力指数或 Agent |
+| adapter dry-run | `test_molizhishu_smoke_default_is_dry_run_without_paid_calls` | 默认不调用真实 HTTP，提示 `--allow-paid-provider` |
+| adapter 无 token | `test_smoke_script_exits_without_token_from_repo_root_command` | 退出非零并提示配置 token |
+| production preflight | `test_production_smoke_default_preflight_only` | 输出 preflight/blocker，不付费 |
+| business-loop 门禁 | `test_production_smoke_business_loop_requires_allow_paid_flag` | 无 `--allow-paid-provider` 时拒绝 |
+| 输出脱敏 | `test_production_smoke_output_redacts_secrets` | stdout 不含 token / Agent key 明文 |
+
+**手动 smoke（可能产生费用，需记录结果）：**
+
+```powershell
+# 1. 配置 dry-run
+backend\.venv\Scripts\python.exe backend\scripts\run_production_smoke_test.py
+
+# 2. adapter 层真实调用
+backend\.venv\Scripts\python.exe backend\scripts\molizhishu_smoke_test.py --allow-paid-provider
+
+# 3. 业务闭环（需 API + worker + Agent LLM）
+backend\.venv\Scripts\python.exe backend\scripts\run_production_smoke_test.py --business-loop --allow-paid-provider --base-url http://127.0.0.1:8000
+```
+
+**自动化验收（mock）：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\scripts\test_production_smoke.py backend\tests\geo_monitoring\test_molizhishu_collection.py::test_smoke_script_exits_without_token_from_repo_root_command
+```
+
+## 29. 业务 API 鉴权与租户隔离（Task O7）
+
+| 场景 | 测试 | 预期 |
+| --- | --- | --- |
+| 鉴权关闭 | `test_api_auth_disabled_allows_anonymous_project_access` | 无 `Authorization` 可访问业务接口 |
+| 缺少 Bearer | `test_api_auth_enabled_rejects_missing_bearer` | HTTP `401`，`code=401` |
+| 有效 token | `test_api_auth_enabled_accepts_valid_bearer` | HTTP `200`，`code=0` |
+| 租户隔离 | `test_api_auth_tenant_isolation_hides_other_tenant_project` | 跨租户访问项目返回 `40400` |
+| 回调独立鉴权 | `test_provider_callback_does_not_require_bearer_auth` | 无 Bearer 但带 `X-Callback-Token` 可访问回调 |
+| 生产 fail-fast | `test_prod_requires_api_auth_enabled` | `APP_ENV=prod` 且 `API_AUTH_ENABLED=false` 时 Settings 初始化失败 |
+
+**配置示例（测试 / 联调）：**
+
+```env
+API_AUTH_ENABLED=true
+API_AUTH_TOKEN_MAP_JSON=[{"token":"tenant-a-token","tenant_id":100,"actor_id":1001}]
+```
+
+**执行命令（Task O7 验收）：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend/tests/test_security.py backend/tests/geo_monitoring
+```
+
+## 30. 上线验收与观测（Task O10）
+
+脚本：`backend/scripts/release_observability.py`（helper）、`backend/scripts/run_api_full_test.py`（集成入口）
+
+| 观测项 | 来源 | 说明 |
+| --- | --- | --- |
+| 配置 preflight | 本地 `settings.runtime_summary()` + `build_preflight_report` | adapter registry 数量、credential count 样本 |
+| DB / Redis ready | `GET /api/geo-monitoring/ready` | 含 `platform_runtime` 脱敏诊断 |
+| Worker 三队列 | Redis `LLEN dramatiq:{collection,analysis,report}` | `DRAMATIQ_BROKER=stub` 时跳过 |
+| ProviderBatch 指标 | DB 聚合 `geo_provider_batch` | submitted / processing / completed / failed / poll_count |
+| Agent LLM 观测 | DB 聚合 `geo_agent_execution` | call_count、by_status、failure_categories、token、耗时 p50/p95 |
+
+**执行命令（Task O10 验收）：**
+
+```powershell
+# 默认：先跑 release checklist，再跑 API 全量用例
+backend\.venv\Scripts\python.exe backend\scripts\run_api_full_test.py --base-url http://127.0.0.1:8000
+
+# 仅发布前观测（strict preflight，需 API 已启动）
+backend\.venv\Scripts\python.exe backend\scripts\run_api_full_test.py --release-checklist-only --base-url http://127.0.0.1:8000
+
+# 跳过观测，仅 API 回归
+backend\.venv\Scripts\python.exe backend\scripts\run_api_full_test.py --skip-release-checklist --base-url http://127.0.0.1:8000
+```
+
+**自动化 mock 验收：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -v backend\tests\scripts\test_release_observability.py
+```
+
+> 真实 provider / Agent 付费 smoke 仍通过 `run_production_smoke_test.py` 手动开启（Task O4），不在 O10 默认门禁内。
+

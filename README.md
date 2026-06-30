@@ -265,11 +265,13 @@ GET /api/geo-monitoring/reports/{report_id}/download
 
 `pdf` 响应类型为 `application/pdf`，`md` 和 `html` 使用 UTF-8 文本响应。报告文件写入 `REPORT_STORAGE_DIR`；容器部署时写入持久卷 `geo_platform_reports_data`。
 
-## Docker Compose 部署
+## 后端部署、发布与回滚
 
 `docker-compose.yml` 只编排后端 API、Dramatiq worker 和 APScheduler scheduler，不启动 PostgreSQL、Redis、Nacos。三者连接信息从根目录 `.env` 读取。
 
-发布顺序建议固定为：构建镜像，暂停后台任务，执行迁移，启动 worker / scheduler，最后启动或切换 API。
+**发布前：** 备份数据库和报告目录；确认 `.env` 中 `APP_ENV=prod`、`DRAMATIQ_BROKER=redis`、Agent LLM 与需启用的平台开关已显式配置（未启用的官方平台保持 `*_ENABLED=false`；Nacos 不可用时设 `NACOS_ENABLED=false` 使用本地 `.env` 兜底）。
+
+**发布顺序（固定）：** 构建镜像 → 暂停 worker/scheduler → 执行迁移 → 启动 worker/scheduler，最后切换 API。
 
 ```bash
 cd /opt/geo-platform
@@ -286,6 +288,19 @@ docker compose up -d api
 docker compose ps
 ```
 
+**发布后 smoke（分层，不再使用 mock run）：**
+
+1. **config preflight（默认，无付费）：** 在仓库根目录执行 `backend/scripts/run_production_smoke_test.py`，仅检查配置与 blocker。
+2. **ready 探针：** `GET /api/geo-monitoring/health` 与 `GET /api/geo-monitoring/ready` 均返回成功。
+3. **可选真实 smoke：** 加 `--api-preflight` 或 `--business-loop --allow-paid-provider`（见 `docker-compose.yml` 中 `x-release-commands`）。
+
+```powershell
+backend\.venv\Scripts\python.exe backend\scripts\run_production_smoke_test.py
+backend\.venv\Scripts\python.exe backend\scripts\run_production_smoke_test.py --api-preflight --base-url http://127.0.0.1:8000
+```
+
+**回滚：** 应用回滚优先回滚镜像，不自动 downgrade 数据库；平台异常优先将对应 `*_ENABLED=false` 并重启 worker。
+
 常用运维命令：
 
 ```bash
@@ -296,7 +311,13 @@ docker compose restart worker
 docker compose down
 ```
 
-不要轻易执行 `docker compose down -v`，它会删除报告持久卷。容器访问宿主机中间件时，不要把 `DATABASE_URL` 或 `REDIS_URL` 的 host 写成 `localhost`，优先使用服务器内网 IP 或 `host.docker.internal`。
+不要轻易执行 `docker compose down -v`，它会删除报告持久卷 `geo_platform_reports_data`。容器访问宿主机中间件时，不要把 `DATABASE_URL` 或 `REDIS_URL` 的 host 写成 `localhost`，优先使用服务器内网 IP 或 `host.docker.internal`。
+
+生产镜像通过 `.dockerignore` 排除 `backend/tests`、`backend/scripts`、`backend/app/test` 与本地 `data/`，仅保留 API / worker / scheduler 运行所需代码。正式 Dramatiq 入口为 `app.worker.actors.*`，历史 `app.workers` 空包已移除。
+
+## Docker Compose 部署
+
+本节与上一节「后端部署、发布与回滚」内容一致，保留命令速查。
 
 ## 关键配置
 
@@ -304,7 +325,8 @@ docker compose down
 | --- | --- |
 | `DATABASE_URL` | PostgreSQL 连接；pytest 可覆盖为 SQLite |
 | `REDIS_URL` | Redis 连接；Dramatiq 与运行时标记共用 |
-| `DRAMATIQ_BROKER` | 联调/生产使用 `redis`，测试覆盖为 `stub` |
+| `DRAMATIQ_BROKER` | 联调/生产使用 `redis`，测试覆盖为 `stub`；`APP_ENV=prod` 时启动会拒绝 `stub` |
+| `APP_ENV` | `dev` 为本地默认；生产部署设为 `prod` 并触发 fail-fast 校验 |
 | `API_PREFIX` | 默认 `/api` |
 | `CORS_ALLOWED_ORIGINS` | 逗号分隔的允许跨域来源；为空时不开放跨域凭据 |
 | `REPORT_STORAGE_DIR` | 报告文件目录 |
@@ -316,7 +338,16 @@ docker compose down
 | `DOUBAO_*` / `QWEN_*` / `YUANBAO_*` / `DEEPSEEK_*` / `KIMI_*` | 官方平台 Adapter 开关、模型、密钥或凭证 |
 | `MOLIZHISHU_*` / `COLLECTION_MOLIZHISHU_*` | 模力指数 API 开关、Token、超时、轮询、截图默认、回调与区域列表 |
 | `AIDSO_*` / `COLLECTION_AIDSO_MAX_POLLS` | **历史兼容**：仅用于续跑历史 pending Aidso 任务；新建 Run 不使用 |
-| `AGENT_LLM_*` | Agent 语义分析使用的 OpenAI-compatible 或 DashScope LLM 配置 |
+| `AGENT_LLM_*` | Agent 语义分析使用的 OpenAI-compatible 或 DashScope LLM 配置；`APP_ENV=prod` 时三项必填 |
+
+### 生产环境 fail-fast（`APP_ENV=prod`）
+
+线上进程启动时会拒绝以下配置，避免误用测试默认值或隐式开关：
+
+- `DRAMATIQ_BROKER` 必须为 `redis`，不得为 `stub`。
+- `AGENT_LLM_BASE_URL`、`AGENT_LLM_API_KEY`、`AGENT_LLM_MODEL` 不能为空。
+- 启用模力指数（`MOLIZHISHU_ENABLED=true`）时，`.env` 必须显式提供 `MOLIZHISHU_ENABLED`、`MOLIZHISHU_API_TOKEN`、`MOLIZHISHU_PROVIDER_BATCH_ENABLED`，不能仅依赖代码默认值。
+- `GET /api/geo-monitoring/ready` 的 `runtime_summary()` 会输出 `provider_batch_enabled`、`callback_enabled`、`regions_cache_seconds` 等运行画像，但不会输出 token 明文。
 
 真实账号、密码、API Key 只写入 `.env`、Nacos 或服务器密钥管理系统，不写入仓库。
 
@@ -353,15 +384,44 @@ backend\.venv\Scripts\python.exe backend\scripts\run_api_focused_retest.py --bas
 backend\.venv\Scripts\python.exe backend\scripts\run_e2e_pipeline_test.py --base-url http://127.0.0.1:8000
 ```
 
-pytest 默认使用 SQLite、Stub broker、mock 平台 HTTP 和 Fake Agent LLM，不连接真实官方 API。真实平台 smoke test 需要在 `.env` 中显式启用对应平台并配置密钥。
+pytest 默认使用 SQLite、Stub broker、mock 平台 HTTP 和 Fake Agent LLM，不连接真实官方 API。真实平台 smoke 需要在 `.env` 中显式启用对应平台并配置密钥，且必须手动执行下列脚本。
 
-模力指数真实接口 smoke（手动执行，可能产生费用，不写业务库）：
+### Smoke 分层（Task O4）
+
+| 层级 | 命令 | 说明 |
+| --- | --- | --- |
+| mock 回归 | `backend\.venv\Scripts\python.exe -m pytest -v backend\tests` | 自动化测试，不访问真实 provider |
+| preflight dry-run | `backend\.venv\Scripts\python.exe backend\scripts\run_production_smoke_test.py` | 默认仅检查配置与 blocker，不产生费用 |
+| adapter-smoke | `backend\.venv\Scripts\python.exe backend\scripts\molizhishu_smoke_test.py --allow-paid-provider` | 单条模力指数 adapter 真实 HTTP，可能付费，不写业务库 |
+| business-loop | `backend\.venv\Scripts\python.exe backend\scripts\run_production_smoke_test.py --business-loop --allow-paid-provider` | 经 API 创建 `collection_source=molizhishu` Run，等待 worker、分析、PDF 报告 |
+
+模力指数 adapter smoke（默认 dry-run，不加 `--allow-paid-provider` 不会调用真实 API）：
 
 ```powershell
 backend\.venv\Scripts\python.exe backend\scripts\molizhishu_smoke_test.py
+backend\.venv\Scripts\python.exe backend\scripts\molizhishu_smoke_test.py --allow-paid-provider
 ```
 
-需先在 `.env` 配置 `MOLIZHISHU_API_TOKEN`；无 token 时脚本会直接退出。
+生产 preflight + 可选 API / 业务闭环 smoke：
+
+```powershell
+backend\.venv\Scripts\python.exe backend\scripts\run_production_smoke_test.py
+backend\.venv\Scripts\python.exe backend\scripts\run_production_smoke_test.py --api-preflight --base-url http://127.0.0.1:8000
+backend\.venv\Scripts\python.exe backend\scripts\run_production_smoke_test.py --business-loop --allow-paid-provider --base-url http://127.0.0.1:8000
+```
+
+### 上线验收观测（Task O10）
+
+`run_api_full_test.py` 默认在 API 全量联调前输出 release checklist：配置摘要、/ready、Dramatiq 三队列深度、ProviderBatch 与 Agent LLM 聚合指标。
+
+```powershell
+backend\.venv\Scripts\python.exe backend\scripts\run_api_full_test.py --base-url http://127.0.0.1:8000
+backend\.venv\Scripts\python.exe backend\scripts\run_api_full_test.py --release-checklist-only --base-url http://127.0.0.1:8000
+```
+
+报告默认写入 `docs/API全量接口测试报告.md`。
+
+需先在 `.env` 配置 `MOLIZHISHU_ENABLED=true`、`MOLIZHISHU_API_TOKEN`；business-loop 另需 API/worker 已启动、Agent LLM 已配置。脚本输出已脱敏，不包含 token 或完整 prompt 回答正文。
 
 上线前最小 smoke test：
 

@@ -64,11 +64,12 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import struct
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 from urllib.parse import urlencode  # noqa: F401  (保留给后续可能的查询参数扩展)
 
 # stdlib 的 urllib 即可流式读取，无需第三方依赖；若环境装了 requests 也可换用。
@@ -76,35 +77,32 @@ import urllib.request
 
 
 # ============================================================
-# 鉴权 ——【只需填 JWT 一个值】
+# 鉴权 —— 仅从环境变量读取，禁止在仓库中硬编码 JWT / cookie
 # ------------------------------------------------------------
-# JWT 从浏览器抓包获取：DevTools → Network → 任意一次 ChatService/Chat 请求
-# → 复制请求头 Authorization: Bearer <这里这一长串>。
-#   - 它也等于 cookie 里 kimi-auth 的值（HttpOnly，页面 JS 读不到，必须手动复制）。
-#   - 约 30 天过期（JWT 内 exp 字段），过期后重新登录 kimi.com 再抓一次即可。
-#   - 过期表现为服务端返回 {"error":{"code":"unauthenticated"}}。
-#
-# device_id / session_id / traffic_id 这三个值【不再需要手填】——它们编码在
-# JWT 内部（见下方 _JWT_CLAIMS 的解析），脚本会自动提取，保证永远和 JWT 一致，
-# 避免"JWT 改了但 device_id 忘改"导致的不一致错误。
-#
-# 关于 x-msh-shield-data（风控头）：真实网页端请求会带这个头，它是前端 JS
-# 实时生成的设备风控签名。实测【不带这个头也能成功】——只要请求体按
-# Connect 帧正确封装 + JWT 有效即可。所以本脚本不处理 shield。
+# 设置 KIMI_WEB_JWT（或 KIMI_WEB_AUTH_TOKEN）为浏览器抓包的 Bearer JWT。
+# device_id / session_id / traffic_id 会从 JWT payload 自动派生。
+# 历史曾提交到仓库的凭证视为已泄露，使用前请先在 Kimi 侧轮换会话。
 # ============================================================
-JWT = (
-    "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9."
-    "eyJpc3MiOiJ1c2VyLWNlbnRlciIsImV4cCI6MTc4NDE2NjY4MCwiaWF0IjoxNzgxNTc0NjgwL"
-    "CJqdGkiOiJkOG9hbzY0cWRxZWxza20zdjRvZyIsInR5cCI6ImFjY2VzcyIsImFwcF9pZCI6Imt"
-    "pbWkiLCJzdWIiOiJjc2Rqb2Zrcm1lZTljaTdmbzIwZyIsInNwYWNlX2lkIjoiY3Nkam9ma3JtZ"
-    "WU5Y2k3Zm8xdmciLCJhYnN0cmFjdF91c2VyX2lkIjoiY3Nkam9ma3JtZWU5Y2k3Zm8xdjAiLCJz"
-    "c2lkIjoiMTczMTA4NjQ5OTk1ODYzOTgwMiIsImRldmljZV9pZCI6Ijc2NTE4MDQxMTQxMDMzMj"
-    "kyOTEiLCJyZWdpb24iOiJjbiIsIm1lbWJlcnNoaXAiOnsibGV2ZWwiOjEwfX0."
-    "1QH050GH1_j4VnDT2BJUwmr_U0F-i1jMsQvcrEuKS6ajC_wVIu6fSzEeQgLz3rReCryAz-stX9nnI8KjmDwqqg"
-)
-X_MSH_DEVICE_ID = "7651804114103329291"
-X_MSH_SESSION_ID = "1731086499958639802"
-X_TRAFFIC_ID = "csdjofkrmee9ci7fo20g"
+def _load_web_jwt() -> str:
+    token = (os.getenv("KIMI_WEB_JWT") or os.getenv("KIMI_WEB_AUTH_TOKEN") or "").strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+    return token
+
+
+def _web_auth_context() -> Tuple[str, str, str, str, str]:
+    jwt = _load_web_jwt()
+    if not jwt:
+        raise RuntimeError(
+            "请设置环境变量 KIMI_WEB_JWT（或 KIMI_WEB_AUTH_TOKEN）；"
+            "历史硬编码凭证视为已泄露，需轮换后重新抓包。"
+        )
+    claims = _decode_jwt_claims(jwt)
+    device_id = str(claims["device_id"])
+    session_id = str(claims["ssid"])
+    traffic_id = str(claims["sub"])
+    cookie = f"kimi-auth={jwt}"
+    return jwt, device_id, session_id, traffic_id, cookie
 
 
 def _decode_jwt_claims(token: str) -> Dict[str, Any]:
@@ -121,19 +119,6 @@ def _decode_jwt_claims(token: str) -> Dict[str, Any]:
     payload_b64 += "=" * (-len(payload_b64) % 4)
     return json.loads(base64.urlsafe_b64decode(payload_b64))
 
-
-# 从 JWT 自动派生 device_id / session_id / traffic_id，保证三者永远和 JWT 内部一致。
-# 字段对应关系（解码 JWT payload 可见）：
-#   device_id  ← claims["device_id"]   （浏览器设备指纹）
-#   session_id ← claims["ssid"]        （登录会话 id）
-#   traffic_id ← claims["sub"]         （用户 id，用作流量统计标识）
-_JWT_CLAIMS = _decode_jwt_claims(JWT)
-X_MSH_DEVICE_ID = str(_JWT_CLAIMS["device_id"])
-X_MSH_SESSION_ID = str(_JWT_CLAIMS["ssid"])
-X_TRAFFIC_ID = str(_JWT_CLAIMS["sub"])
-
-# cookie 也建议带上（服务端会校验 kimi-auth；JWT 已包含同样身份，但带上更稳妥）。
-COOKIE = "kimi-auth=" + JWT
 
 CHAT_URL = "https://www.kimi.com/apiv2/kimi.gateway.chat.v1.ChatService/Chat"
 
@@ -248,18 +233,19 @@ def _urllib_byte_iter(resp: Any, chunk_size: int = 4096) -> Iterator[bytes]:
 # 发起请求
 # ============================================================
 def build_headers() -> Dict[str, str]:
+    jwt, device_id, session_id, traffic_id, cookie = _web_auth_context()
     return {
         "content-type": "application/connect+json",
         "connect-protocol-version": "1",
-        "authorization": f"Bearer {JWT}",
-        "x-traffic-id": X_TRAFFIC_ID,
+        "authorization": f"Bearer {jwt}",
+        "x-traffic-id": traffic_id,
         "x-msh-platform": "web",
         "x-msh-version": "1.0.0",
-        "x-msh-device-id": X_MSH_DEVICE_ID,
-        "x-msh-session-id": X_MSH_SESSION_ID,
+        "x-msh-device-id": device_id,
+        "x-msh-session-id": session_id,
         "x-language": "zh-CN",
         "r-timezone": "Asia/Shanghai",
-        "cookie": COOKIE,
+        "cookie": cookie,
         # 伪装成浏览器，部分网关会校验 UA
         "user-agent": (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -523,8 +509,11 @@ def main() -> None:
     )
     args = p.parse_args()
 
-    if not JWT or JWT.startswith("请填"):
-        print("【请先填写脚本顶部的 JWT / device_id 等变量】", file=sys.stderr)
+    if not _load_web_jwt():
+        print(
+            "请设置环境变量 KIMI_WEB_JWT（或 KIMI_WEB_AUTH_TOKEN）后再运行本脚本。",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     # 默认不实时打印（引用标记分散在流里，实时清洗不可靠）；--stream 时才打字机输出。
