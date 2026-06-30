@@ -15,6 +15,7 @@ from app.geo_monitoring.adapters.base import (
     PlatformQuery,
 )
 from app.geo_monitoring.adapters.errors import AdapterError, ErrorCategory
+from app.geo_monitoring.adapters.molizhishu import MolizhishuPendingError
 
 BASE_URL = "https://molizhishu.test"
 
@@ -124,8 +125,8 @@ def test_molizhishu_submits_then_pending_carries_metadata():
         == "Bearer molizhishu-token"
     )
     assert payload == {
-        "promptList": ["100w汽车推荐"],
-        "platformList": [
+        "prompts": ["100w汽车推荐"],
+        "platforms": [
             {"platform": "doubao", "mode": "search", "screenshot": 0},
         ],
     }
@@ -302,6 +303,73 @@ def test_molizhishu_non_json_response_is_classified():
         ErrorCategory.UNKNOWN,
     }
     assert "molizhishu-token" not in str(exc_info.value)
+
+
+@respx.mock
+def test_molizhishu_result_non_json_during_poll_raises_pending_then_completes():
+    respx.post(f"{BASE_URL}/task/batch/shared").mock(
+        return_value=httpx.Response(200, json=_submit_payload())
+    )
+    result_route = respx.get(f"{BASE_URL}/task/result/task-mlz-1/sub-1")
+    call_count = {"n": 0}
+
+    def result_side_effect(request: httpx.Request) -> httpx.Response:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return httpx.Response(200, text="not-json")
+        return httpx.Response(200, json=_completed_result_payload())
+
+    result_route.mock(side_effect=result_side_effect)
+
+    with pytest.raises(MolizhishuPendingError) as exc_info:
+        asyncio.run(_adapter().query(_query(), credential=_credential()))
+
+    assert exc_info.value.pending_metadata["molizhishu_task_id"] == "task-mlz-1"
+    assert exc_info.value.pending_metadata["molizhishu_subtask_id"] == "sub-1"
+
+    answer = asyncio.run(
+        _adapter().query(
+            _query(
+                {
+                    "molizhishu_task_id": "task-mlz-1",
+                    "molizhishu_subtask_id": "sub-1",
+                    "molizhishu_status": "processing",
+                    "provider_mode": "search",
+                }
+            ),
+            credential=_credential(),
+        )
+    )
+
+    assert answer.text == "推荐目标品牌。"
+    assert call_count["n"] == 2
+
+
+@respx.mock
+def test_molizhishu_processing_with_answer_content_returns_completed():
+    """生产口径：provider status 滞后时，answerContent 非空即视为成功。"""
+    respx.post(f"{BASE_URL}/task/batch/shared").mock(
+        return_value=httpx.Response(200, json=_submit_payload())
+    )
+    respx.get(f"{BASE_URL}/task/result/task-mlz-1/sub-1").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "success": True,
+                "code": 200,
+                "message": "ok",
+                "data": {
+                    "status": "processing",
+                    "answerContent": "推荐目标品牌。",
+                    "citationList": [],
+                },
+            },
+        )
+    )
+
+    answer = asyncio.run(_adapter().query(_query(), credential=_credential()))
+
+    assert answer.text == "推荐目标品牌。"
 
 
 @respx.mock
@@ -537,7 +605,7 @@ def test_molizhishu_submit_includes_screenshot_when_provided():
         )
 
     payload = json.loads(submit_route.calls.last.request.content.decode("utf-8"))
-    assert payload["platformList"][0]["screenshot"] == 2
+    assert payload["platforms"][0]["screenshot"] == 2
 
 
 @respx.mock

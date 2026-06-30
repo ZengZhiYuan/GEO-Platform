@@ -1030,7 +1030,9 @@ backend\.venv\Scripts\python.exe -m pytest -q backend\tests\test_config.py
 | HTTP 200 业务失败 | `test_molizhishu_http_200_business_failure_is_rejected` | `success=false` 抛 `AdapterError` |
 | Token 失效 | `test_molizhishu_token_expired_is_unauthorized` | `ErrorCategory.UNAUTHORIZED`，消息不含 token |
 | 余额不足 | `test_molizhishu_insufficient_balance_is_non_retryable` | `ErrorCategory.INVALID_REQUEST` |
-| 非 JSON / 超时 | `test_molizhishu_non_json_response_is_classified`、`test_molizhishu_timeout_is_network_error` | 分别归类为无效响应 / 网络错误 |
+| 非 JSON / 超时 | `test_molizhishu_non_json_response_is_classified`、`test_molizhishu_timeout_is_network_error` | 提交阶段非 JSON 归类为无效响应；轮询阶段见下行 |
+| 轮询非 JSON 续跑 | `test_molizhishu_result_non_json_during_poll_raises_pending_then_completes` | result 先返回非 JSON 抛 `MolizhishuPendingError`，下次轮询 completed |
+| processing 已有答案 | `test_molizhishu_processing_with_answer_content_returns_completed` | `status=processing` 且 `answerContent` 非空时直接返回结果（生产口径：答案就绪优先于 provider status） |
 | 子任务终态失败 | `test_molizhishu_terminal_failure_status_raises_adapter_error` | `failed/error/stopped` 抛不可重试错误 |
 | regionCode 提交 | `test_molizhishu_submit_includes_region_code_when_provided` | 提交体含 `regionCode: [code]` |
 
@@ -1046,6 +1048,7 @@ backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\adapt
 - 单元测试覆盖提交、轮询、完成、失败、鉴权、异常响应。
 - 错误消息不泄漏 token。
 - `raw_response` 仅保存 submit/result 原始包，不含 token。
+- **结果就绪口径：** `pending/assigned/processing` 且无 `answerContent` 时 pending；有 `answerContent` 时即使 provider `status` 非 `completed` 也返回成功（与任务书 §3.2、§7.1 一致）。
 
 ## 20. CollectionService 轮询续跑测试（Task M7）
 
@@ -1140,7 +1143,7 @@ backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\adapt
 | --- | --- | --- |
 | regionCode 提交 | `test_molizhishu_submit_includes_region_code_when_provided` | 提交体含 `regionCode: [code]` |
 | 无 region 仍可提交 | `test_molizhishu_submit_omits_region_code_when_not_provided` | 提交体不含 `regionCode` |
-| screenshot 提交 | `test_molizhishu_submit_includes_screenshot_when_provided` | `platformList[].screenshot` 为 `0/1/2` |
+| screenshot 提交 | `test_molizhishu_submit_includes_screenshot_when_provided` | `platforms[].screenshot` 为 `0/1/2` |
 | screenshot 校验 | `test_run_create_rejects_invalid_provider_screenshot` | `provider_screenshot=3` 返回校验错误 |
 | bool 截图拒绝 | `test_run_create_rejects_bool_provider_screenshot` | `provider_screenshot=true` 返回 `422` |
 | 默认截图策略 | `test_run_create_applies_molizhishu_default_screenshot_when_omitted` | 未传字段时使用 `MOLIZHISHU_DEFAULT_SCREENSHOT` |
@@ -1165,7 +1168,7 @@ backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\test_
 
 - 不传 `region_code` 时模力指数提交仍可成功。
 - 传 `region_code` 时提交体为长度为 1 的 `regionCode` 数组。
-- `provider_screenshot` 仅允许 `0/1/2`，并写入 `platformList[].screenshot`。
+- `provider_screenshot` 仅允许 `0/1/2`，并写入 `platforms[].screenshot`。
 - 区域接口为 provider 代理能力，上游失败返回清晰错误。
 
 ## 24. 分析、报告与页面聚合回归测试（Task M12）
@@ -1193,3 +1196,72 @@ backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\test_
 - 品牌提及率、首推率、竞品提及、引用来源统计可正常生成。
 - 官方 run 与模力指数 run 的报告字段结构保持一致。
 - 分析/聚合链路不依赖 `collection_source` 或 provider 类型分支。
+
+## 25. 测试套件迁移与真实接口 smoke 脚本（Task M13）
+
+覆盖模力指数采集集成测试、callback/adapter 既有 mock 套件、迁移校验，以及可手动执行的真实接口 smoke 脚本。pytest 默认使用 `respx` mock，不访问真实模力指数网络；smoke 脚本仅手动运行。
+
+### 25.1 模力指数采集集成测试
+
+文件：`backend/tests/geo_monitoring/test_molizhishu_collection.py`
+
+| 场景 | 测试函数 | 预期 |
+| --- | --- | --- |
+| 1 prompt × 1 platform | `test_one_prompt_one_platform_collects_answer_with_citations` | 任务 `success`，答案与 citation/brand 入库，run `completed` |
+| pending 续跑 | `test_pending_poll_resume_reuses_submitted_task` | 首次 `processing` 后复用 taskId/subTaskId，仅提交一次 |
+| 轮询上限 | `test_max_poll_limit_marks_task_failed` | 达到 `COLLECTION_MOLIZHISHU_MAX_POLLS` 后 `failed`，无答案 |
+| 部分失败 | `test_partial_success_when_one_subtask_fails` | 两子任务一成功一失败，run `partial_success` |
+| 取消任务 | `test_cancelled_task_does_not_call_provider` | `cancelled` 任务不调用 provider submit |
+| provider raw 入库 | `test_completed_answer_persists_provider_raw_response` | `raw_response_json` 含 submit/result，不含 token |
+| smoke 无 token 退出 | `test_smoke_script_exits_without_token_from_repo_root_command` | 按 README 根目录命令执行，返回非 0 并提示 `MOLIZHISHU_API_TOKEN` |
+
+**执行命令：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\test_molizhishu_collection.py
+```
+
+### 25.2 适配器 / Callback / Worker / 迁移（M13 回归范围）
+
+| 范围 | 文件 | 说明 |
+| --- | --- | --- |
+| 适配器单元 | `backend/tests/geo_monitoring/adapters/test_molizhishu.py` | 提交、pending、完成、失败、token/余额/超时等 |
+| Callback 幂等 | `backend/tests/geo_monitoring/test_molizhishu_callback.py` | 成功、重复推送、与轮询并发 |
+| Worker 轮询 | `backend/tests/worker/test_collection_actor.py` | pending metadata、轮询上限、重入队延迟 |
+| 入库契约 | `backend/tests/geo_monitoring/test_collection_contract.py` | citation/reference、provider 品牌上下文 |
+| 迁移 | `backend/tests/test_migrations.py` | `collection_source` 扩展、seed 11 平台、provider 字段 |
+| Aidso 历史兼容 | `backend/tests/geo_monitoring/adapters/test_aidso.py` | 保留历史 adapter mock，不访问真实 Aidso |
+
+**执行命令：**
+
+```powershell
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\adapters\test_molizhishu.py
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\test_molizhishu_callback.py
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\worker\test_collection_actor.py
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\test_migrations.py backend\tests\test_migration_baseline.py
+backend\.venv\Scripts\python.exe -m pytest -q backend\tests\geo_monitoring\adapters\test_qwen.py backend\tests\geo_monitoring\adapters\test_doubao.py
+```
+
+### 25.3 真实接口 smoke 脚本（手动）
+
+文件：`backend/scripts/molizhishu_smoke_test.py`
+
+- 读取 `.env` / 环境中的 `MOLIZHISHU_API_TOKEN`；无 token 时直接退出并提示。
+- 默认提交 1 prompt × 1 platform：`platform=qianwen`、`mode=search`、`screenshot=0`。
+- 轮询打印 `taskId`、`subTaskId`、`status`、`answerContent` 摘要、citation/reference 数量。
+- **不写业务数据库**，不经过采集 worker。
+- **可能产生费用**；仅用于上线前或密钥变更后的手动连通性验证。
+
+**执行命令（需已配置真实 token）：**
+
+```powershell
+backend\.venv\Scripts\python.exe backend\scripts\molizhishu_smoke_test.py
+backend\.venv\Scripts\python.exe backend\scripts\molizhishu_smoke_test.py --prompt "100w汽车推荐" --platform qianwen --mode search --screenshot 0
+```
+
+**验收点（Task M13）：**
+
+- Mock 测试不访问真实网络。
+- smoke 脚本只有手动运行才访问真实接口。
+- 旧官方 API 采集测试（`test_qwen.py`、`test_doubao.py` 等）仍通过。
+- 真实 smoke 成功时，provider `status` 可能仍为 `processing`；以 `answerContent` 非空为准，与 adapter 生产口径一致。

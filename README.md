@@ -350,6 +350,14 @@ backend\.venv\Scripts\python.exe backend\scripts\run_e2e_pipeline_test.py --base
 
 pytest 默认使用 SQLite、Stub broker、mock 平台 HTTP 和 Fake Agent LLM，不连接真实官方 API。真实平台 smoke test 需要在 `.env` 中显式启用对应平台并配置密钥。
 
+模力指数真实接口 smoke（手动执行，可能产生费用，不写业务库）：
+
+```powershell
+backend\.venv\Scripts\python.exe backend\scripts\molizhishu_smoke_test.py
+```
+
+需先在 `.env` 配置 `MOLIZHISHU_API_TOKEN`；无 token 时脚本会直接退出。
+
 上线前最小 smoke test：
 
 1. `GET /api/geo-monitoring/health` 返回成功。

@@ -25,6 +25,7 @@ GEO-Platform 当前支持官方 AI 厂商 API 采集（`collection_source=offici
 | D6 | 品牌指标以本地计算为准 | Provider 的 `mentionPosition/sentiment/rankings` 只写入 raw 或 `context_json.provider_*`，不覆盖本地确定性指标。 |
 | D7 | 模式字段采用通用 `provider_mode_by_platform` | 替代 `aidso_thinking_enabled_by_platform`；值限定 `standard/reasoning/search/reasoning_search`。 |
 | D8 | 前端不在本阶段默认开发 | 仅更新后端 API 契约与文档；除非用户明确要求，不改 `frontend/`。 |
+| D9 | 模力指数结果以 `answerContent` 非空作为可落库条件 | provider 子任务 `status` 可能滞后于答案内容；`pending/assigned/processing` 且无内容时继续轮询，有内容则本地 `QueryTask=success`；原始 `status` 写入 `provider_result_json`。 |
 
 ## 3. 改动前代码基线（M0 快照）
 

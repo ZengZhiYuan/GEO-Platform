@@ -95,6 +95,8 @@ class MolizhishuAdapter:
             task_id,
             subtask_id,
             api_key=api_key,
+            mode=mode,
+            last_status=_metadata_text(metadata, "molizhishu_status"),
         )
         status = _result_status(result_data)
         pending_metadata = {
@@ -104,16 +106,20 @@ class MolizhishuAdapter:
             "molizhishu_mode": mode,
             "molizhishu_status": status or "unknown",
         }
+        text = _extract_answer_content(result_data)
+        # 真实接口常在 status 仍为 pending/processing 时先返回 answerContent；
+        # 有内容即视为可落库，无内容才续轮询（见任务书 §3.2 / §7.1）。
         if status in _PENDING_STATUSES:
-            raise MolizhishuPendingError(pending_metadata=pending_metadata)
-        if status == "stopped":
+            if not text.strip():
+                raise MolizhishuPendingError(pending_metadata=pending_metadata)
+        elif status == "stopped":
             error_message = _result_error_message(result_data)
             raise AdapterError(
                 f"molizhishu subtask stopped: {error_message}",
                 category=ErrorCategory.CANCELLED,
                 secrets=(api_key,),
             )
-        if status in _TERMINAL_FAILURE_STATUSES:
+        elif status in _TERMINAL_FAILURE_STATUSES:
             error_message = _result_error_message(result_data)
             raise AdapterError(
                 f"molizhishu subtask failed: {error_message}",
@@ -121,14 +127,13 @@ class MolizhishuAdapter:
                 secrets=(api_key,),
                 provider_error_message=error_message,
             )
-        if status != "completed":
+        elif status != "completed":
             raise AdapterError(
                 f"molizhishu returned unsupported status: {status or 'unknown'}",
                 category=ErrorCategory.UNKNOWN,
                 secrets=(api_key,),
             )
 
-        text = _extract_answer_content(result_data)
         if not text.strip():
             raise AdapterError(
                 "molizhishu returned empty answer",
@@ -161,8 +166,8 @@ class MolizhishuAdapter:
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "promptList": [prompt],
-            "platformList": [
+            "prompts": [prompt],
+            "platforms": [
                 {
                     "platform": self._molizhishu_platform,
                     "mode": mode,
@@ -194,6 +199,8 @@ class MolizhishuAdapter:
         subtask_id: str,
         *,
         api_key: str,
+        mode: str,
+        last_status: str | None = None,
     ) -> dict[str, Any]:
         response = await _request(
             "GET",
@@ -201,7 +208,20 @@ class MolizhishuAdapter:
             api_key=api_key,
             timeout_seconds=self._timeout_seconds,
         )
-        data = _json_response(response, api_key=api_key)
+        try:
+            parsed = response.json()
+        except ValueError as exc:
+            # 轮询阶段上游偶发返回 HTML/空体等非 JSON，按 pending 续跑而非终止采集。
+            raise MolizhishuPendingError(
+                pending_metadata={
+                    "molizhishu_task_id": task_id,
+                    "molizhishu_subtask_id": subtask_id,
+                    "molizhishu_platform": self._molizhishu_platform,
+                    "molizhishu_mode": mode,
+                    "molizhishu_status": last_status or "unknown",
+                }
+            ) from exc
+        data = parsed if isinstance(parsed, dict) else {"data": parsed}
         _raise_for_envelope(response, data, api_key=api_key)
         return data
 

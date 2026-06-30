@@ -1,4 +1,9 @@
-"""Aidso OpenAPI 适配器测试。"""
+"""Aidso OpenAPI 适配器历史兼容测试。
+
+Task M13 后新建采集默认使用 `collection_source=molizhishu`；本文件保留 Aidso
+adapter 的 mock 单元测试，用于历史数据与迁移兼容，不访问真实 Aidso 接口。
+模力指数采集集成测试见 `test_molizhishu_collection.py`。
+"""
 
 from __future__ import annotations
 

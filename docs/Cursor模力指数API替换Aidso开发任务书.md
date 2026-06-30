@@ -64,6 +64,7 @@ codegraph status
 - 区域列表：`GET /api/business/eip-edge/ports/city-info`，免鉴权。
 - 子任务状态：`pending/assigned/processing/completed/stopped/failed/error`
 - 主任务状态：`pending/processing/completed/partial_completed/failed/stopped`
+- **结果就绪口径（生产兼容）：** 真实接口可能在子任务仍为 `pending/assigned/processing` 时先返回非空 `answerContent`。adapter 以「`answerContent` 非空」作为可落库/可返回的成功条件；仅当 pending 类状态且 `answerContent` 为空时才继续轮询。`raw_response_json` 仍保留 provider 原始 `status`（可能为 `processing`），本地 `QueryTask` 仍映射为 `success`。
 - 结果字段重点：`answerContent`、`citationList`、`referenceList`、`reasoningProcess`、`recommendedQuestions`、`pageScreenshot`、`mediaContent`、`mentionPosition`、`mentionContext`、`sentiment`、`competitorRankings`、`allRankings`、`amount`、`errorMessage`。
 
 ### 3.3 本任务书默认决策
@@ -360,9 +361,10 @@ backend\.venv\Scripts\alembic.exe -c backend\alembic.ini heads
   2. 无 subtask 时调用 `POST /task/batch/shared`，提交 1 prompt × 1 platform。
   3. 从响应中提取 `taskId` 与 `subTaskList[0].subTaskId`。
   4. 调用 `GET /task/result/{taskId}/{subTaskId}` 获取子任务结果。
-  5. `pending/assigned/processing` 抛 `MolizhishuPendingError`。
-  6. `completed` 转为 `PlatformAnswer`。
+  5. `pending/assigned/processing` 且 `answerContent` 为空时抛 `MolizhishuPendingError`。
+  6. `pending/assigned/processing` 但 `answerContent` 非空，或 `completed` 时转为 `PlatformAnswer`（provider `status` 可能仍为 `processing`，见 §3.2 结果就绪口径）。
   7. `failed/error/stopped` 抛不可重试 `AdapterError`，并保留 provider 错误信息。
+  8. result 轮询阶段若 HTTP 体非 JSON，视为临时上游异常，抛 `MolizhishuPendingError` 续轮询（不算失败 attempt）。
 - HTTP 层必须同时检查 HTTP 状态和 body `success/code/message`。
 - Token 失效归类为 `UNAUTHORIZED`，余额不足归类为不可重试错误，非 JSON 和网络超时分别归类。
 - citation 映射：
@@ -373,8 +375,9 @@ backend\.venv\Scripts\alembic.exe -c backend\alembic.ini heads
 
 测试先行：
 
-- 成功提交并遇到 `processing` 时抛 pending，metadata 完整。
+- 成功提交并遇到 `processing` 且 `answerContent` 为空时抛 pending，metadata 完整。
 - pending 后再次 query 复用 taskId/subTaskId。
+- `processing` 且 `answerContent` 非空时直接返回 `PlatformAnswer`（真实接口常见）。
 - completed 正确返回 `answerContent`、citations、provider_request_id。
 - HTTP 200 但 `success=false` 被识别为失败。
 - token 失效、余额不足、非 JSON、超时、failed/error/stopped 均有测试。
@@ -801,6 +804,8 @@ Smoke 脚本要求：
 | `error` | `failed` |
 | `stopped` | `cancelled` |
 
+**结果就绪与本地成功映射（§3.2）：** 上表描述 provider 子任务状态与本地 `QueryTask` 的常规对应关系。实际落库时，若 result 中 `answerContent` 已非空，即使 provider `status` 仍为 `pending/assigned/processing`，adapter 也会写入 `Answer` 并将 `QueryTask` 置为 `success`；`provider_result_json.status` 保留 provider 原值供排查。
+
 ### 7.2 主任务状态映射
 
 | 模力指数主任务状态 | 本地 Run 状态建议 |
@@ -817,7 +822,8 @@ Smoke 脚本要求：
 - HTTP 200 但 `success=false` 必须按失败处理。
 - `Token失效` 归类为 `UNAUTHORIZED`，不可无限重试。
 - 余额不足归类为不可重试错误。
-- `pending/assigned/processing` 只走 pending 轮询，不算失败 attempt。
+- `pending/assigned/processing` 且 `answerContent` 为空时只走 pending 轮询，不算失败 attempt。
+- result 轮询阶段非 JSON 响应按 pending 续轮询，不算失败 attempt。
 - 子任务失败不应直接让整个 Run 失败，除非所有子任务都失败。
 - 错误日志必须包含本地 task id、provider taskId、subTaskId、platform code。
 - 日志、响应、raw safe view 不得泄漏 token。
