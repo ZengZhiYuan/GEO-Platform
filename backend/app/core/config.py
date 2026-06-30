@@ -211,7 +211,7 @@ class Settings(BaseSettings):
     KIMI_MODEL: str = ""
     KIMI_API_KEYS: str = ""
 
-    AIDSO_ENABLED: bool = False
+    AIDSO_ENABLED: bool = False  # 历史兼容：续跑 pending Aidso 任务；新建 Run 不得使用 aidso
     AIDSO_BASE_URL: str = "https://odapi.aidso.com"
     AIDSO_API_TOKEN: str = ""
 

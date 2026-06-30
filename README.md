@@ -15,7 +15,7 @@ GEO-Platform 是一个后端优先的 AI 应用监测平台。系统围绕监测
 - 项目管理：项目列表、项目卡片概览、项目切换器、一步创建项目、创建向导草稿、暂停/恢复监测、删除前关联检查。
 - 监测配置：目标品牌、竞品、品牌别名、核心词、Prompt 词库、Prompt 集版本、监测设置、平台端元数据与展示字典。
 - AI 生成辅助：按项目生成品牌词候选、竞品候选、监测问题候选；候选结果不自动落库。
-- 平台采集：支持豆包、通义千问、腾讯元宝、DeepSeek、Kimi 官方 Adapter，也支持 `collection_source=aidso` 的 Aidso 第三方采集源。
+- 平台采集：支持豆包、通义千问、腾讯元宝、DeepSeek、Kimi 官方 Adapter，以及 `collection_source=molizhishu` 的模力指数第三方采集（11 个 `molizhishu_*` 平台端）。历史 Aidso 数据只读兼容，新建 Run 不再接受 `collection_source=aidso`。
 - 异步运行：创建监测运行后生成 QueryTask，由 Dramatiq worker 消费 `collection`、`analysis`、`report` 队列。
 - 分析指标：品牌可见度、提及率、首位率、平均排名、平台表现、Prompt 竞争力、引用来源、竞品表现、趋势快照等确定性指标。
 - Agent 洞察：采集/分析完成后可通过 LangGraph + OpenAI-compatible LLM 生成诊断和建议，并保留 Agent 执行审计。
@@ -52,7 +52,7 @@ GEO-Platform 是一个后端优先的 AI 应用监测平台。系统围绕监测
 │   │   │   ├── services/                 # 业务编排与事务边界
 │   │   │   ├── repositories/             # 查询与持久化封装
 │   │   │   ├── analysis/                 # 指标、品牌、竞品、信源分析
-│   │   │   ├── adapters/                 # AI 平台与 Aidso 采集适配器
+│   │   │   ├── adapters/                 # 官方 / 模力指数 / 历史 Aidso 采集适配器
 │   │   │   ├── agents/                   # LangGraph Agent 分析链路
 │   │   │   ├── reports/                  # 报告渲染、PDF、文件存储
 │   │   │   ├── templates/report/         # md/html 报告模板
@@ -208,7 +208,7 @@ Content-Type: application/json
 }
 ```
 
-指定 Aidso 数据源运行：
+指定模力指数第三方采集（需 `.env` 中 `MOLIZHISHU_ENABLED=true` 且配置 `MOLIZHISHU_API_TOKEN`）：
 
 ```http
 POST /api/geo-monitoring/runs
@@ -216,14 +216,18 @@ Content-Type: application/json
 
 {
   "project_id": 1,
-  "collection_source": "aidso",
-  "platform_codes": ["aidso_doubao_web", "aidso_doubao_app"],
-  "aidso_thinking_enabled_by_platform": {
-    "aidso_doubao_web": false,
-    "aidso_doubao_app": true
-  }
+  "collection_source": "molizhishu",
+  "platform_codes": ["molizhishu_doubao_web", "molizhishu_kimi_web"],
+  "provider_mode_by_platform": {
+    "molizhishu_doubao_web": "search",
+    "molizhishu_kimi_web": "standard"
+  },
+  "provider_screenshot": 0,
+  "region_code": "110000"
 }
 ```
+
+区域编码可选，列表见 `GET /api/geo-monitoring/providers/molizhishu/regions`。`collection_source=aidso` 与 `aidso_thinking_enabled_by_platform` 在新建请求中返回 `422`（历史 Run 详情仍可读取）。
 
 取消运行、重试失败任务：
 
@@ -308,9 +312,10 @@ docker compose down
 | `SCHEDULER_ENABLED` | scheduler 进程开关 |
 | `SCHEDULER_POLL_SECONDS` | 调度计划同步周期 |
 | `NACOS_ENABLED` / `NACOS_*` | 可选配置中心连接 |
-| `COLLECTION_*` | 采集超时、重试、并发、Aidso 轮询上限、原始响应保存开关 |
+| `COLLECTION_*` | 采集超时、重试、并发、模力指数/Aidso 轮询上限、原始响应保存开关 |
 | `DOUBAO_*` / `QWEN_*` / `YUANBAO_*` / `DEEPSEEK_*` / `KIMI_*` | 官方平台 Adapter 开关、模型、密钥或凭证 |
-| `AIDSO_ENABLED` / `AIDSO_BASE_URL` / `AIDSO_API_TOKEN` | Aidso 第三方数据源配置 |
+| `MOLIZHISHU_*` / `COLLECTION_MOLIZHISHU_*` | 模力指数 API 开关、Token、超时、轮询、截图默认、回调与区域列表 |
+| `AIDSO_*` / `COLLECTION_AIDSO_MAX_POLLS` | **历史兼容**：仅用于续跑历史 pending Aidso 任务；新建 Run 不使用 |
 | `AGENT_LLM_*` | Agent 语义分析使用的 OpenAI-compatible 或 DashScope LLM 配置 |
 
 真实账号、密码、API Key 只写入 `.env`、Nacos 或服务器密钥管理系统，不写入仓库。
@@ -378,9 +383,12 @@ npm run build
 
 ## 开发依据与文档入口
 
-当前接口缺口阶段以以下文档为准：
+当前后端开发以接口缺口任务书与模力指数替换任务书为准：
 
-- Task 索引：[docs/Cursor接口缺口开发任务书_Task索引.md](./docs/Cursor接口缺口开发任务书_Task索引.md)
+- 模力指数替换 Task 索引：[docs/Cursor模力指数API替换Aidso开发任务书_Task索引.md](./docs/Cursor模力指数API替换Aidso开发任务书_Task索引.md)
+- 模力指数设计决策：[docs/molizhishu-collection-source-design.md](./docs/molizhishu-collection-source-design.md)
+- 采集生命周期：[docs/采集任务生命周期说明.md](./docs/采集任务生命周期说明.md)
+- 接口缺口 Task 索引：[docs/Cursor接口缺口开发任务书_Task索引.md](./docs/Cursor接口缺口开发任务书_Task索引.md)
 - 主任务书：[docs/Cursor接口缺口开发任务书.md](./docs/Cursor接口缺口开发任务书.md)
 - 原型/API 映射：[docs/原型功能_API映射整合精简版.md](./docs/原型功能_API映射整合精简版.md)
 - API 接口文档：[docs/API接口文档.md](./docs/API接口文档.md)

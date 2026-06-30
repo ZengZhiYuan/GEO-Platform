@@ -1738,7 +1738,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/prompt-sets/1/activate"
 
 官方平台编码：`doubao`、`qwen`、`yuanbao`、`deepseek`、`kimi`。
 
-Aidso 第三方数据源端侧平台编码：
+Aidso 第三方数据源端侧平台编码（**历史只读**：数据库中可能存在 `collection_source=aidso` 的历史 Run；新建 Run 禁止 `aidso`，平台种子不再新增 `aidso_*`）：
 
 | 平台编码 | 说明 |
 | --- | --- |
@@ -1755,7 +1755,25 @@ Aidso 第三方数据源端侧平台编码：
 | `aidso_douyin_web` | 抖音 AI |
 | `aidso_wenxin_web` | 文心一言 |
 
-模力指数第三方采集（`collection_source=molizhishu`，平台码 `molizhishu_*` 见 Task M2）依赖以下环境变量，模板见仓库根目录 `.env.example`：
+模力指数第三方采集（`collection_source=molizhishu`）平台码唯一口径（`services/platforms.py` → `MOLIZHISHU_PLATFORM_MAPPINGS`）：
+
+| 本地 platform_code | 模力指数 platform | 平台名 | base_platform | endpoint_type | 默认 mode |
+| --- | --- | --- | --- | --- | --- |
+| `molizhishu_deepseek_web` | `deepseek` | DeepSeek 网页端 | `deepseek` | `web` | `reasoning_search` |
+| `molizhishu_deepseek_mobile` | `deepseek_mobile` | DeepSeek 手机端 | `deepseek` | `app` | `reasoning_search` |
+| `molizhishu_doubao_web` | `doubao` | 豆包网页端 | `doubao` | `web` | `search` |
+| `molizhishu_doubao_mobile` | `doubao_mobile` | 豆包手机端 | `doubao` | `app` | `search` |
+| `molizhishu_yuanbao_web` | `yuanbao` | 腾讯元宝 | `yuanbao` | `web` | `search` |
+| `molizhishu_kimi_web` | `kimi` | Kimi | `kimi` | `web` | `search` |
+| `molizhishu_qianwen_web` | `qianwen` | 通义千问 | `qianwen` | `web` | `search` |
+| `molizhishu_quark_web` | `quark` | 夸克 AI | `quark` | `web` | `search` |
+| `molizhishu_baiduai_web` | `baiduai` | 百度 AI+ | `baiduai` | `web` | `search` |
+| `molizhishu_weibo_zhisou_web` | `weibo_zhisou` | 微博智搜 | `weibo_zhisou` | `web` | `search` |
+| `molizhishu_wenxinyiyan_web` | `wenxinyiyan` | 文心一言 | `wenxinyiyan` | `web` | `search` |
+
+> 模力指数 provider 平台标识须逐字使用上表「模力指数 platform」列（如 `qianwen`、`baiduai`）。移动端为独立 provider 平台，展示仍通过 `base_platform + endpoint_type` 归组。`provider_mode_by_platform` 取值须为各平台 `supported_modes` 子集：`standard` / `reasoning` / `search` / `reasoning_search`。
+
+模力指数依赖以下环境变量，模板见仓库根目录 `.env.example`：
 
 | 环境变量 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -1767,9 +1785,20 @@ Aidso 第三方数据源端侧平台编码：
 | `COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS` | int | `8` | 轮询间隔（秒） |
 | `MOLIZHISHU_DEFAULT_SCREENSHOT` | int | `0` | 模力指数 Run 未传 `provider_screenshot` 时的默认截图策略（`0` 不截 / `1` 仅成功 / `2` 全部） |
 | `MOLIZHISHU_CALLBACK_ENABLED` | bool | `false` | 是否启用 provider 回调（M10 实现） |
-| `MOLIZHISHU_CALLBACK_TOKEN` | string | 空 | 回调鉴权令牌（M10 实现；不得写入日志明文） |
+| `MOLIZHISHU_CALLBACK_TOKEN` | string | 空 | 回调鉴权令牌（不得写入日志明文） |
+| `MOLIZHISHU_REGIONS_URL` | string | 见 `.env.example` | 模力指数区域列表上游地址（免鉴权 city-info） |
+| `MOLIZHISHU_REGIONS_CACHE_SECONDS` | int | `300` | 区域列表本地缓存 TTL（秒） |
 
-> 启动校验：`MOLIZHISHU_ENABLED=true` 且 `MOLIZHISHU_API_TOKEN` 为空时，应用启动失败并抛出明确错误。`Settings.runtime_summary()` 中 `platforms.molizhishu` 仅输出 `enabled` / `base_url` / `has_token`，不得输出 token 明文。历史 `AIDSO_*` 配置暂保留兼容，运行期下线见 Task M14。
+> 启动校验：`MOLIZHISHU_ENABLED=true` 且 `MOLIZHISHU_API_TOKEN` 为空时，应用启动失败并抛出明确错误。`Settings.runtime_summary()` 中 `platforms.molizhishu` 仅输出 `enabled` / `base_url` / `has_token`，不得输出 token 明文。历史 `AIDSO_*` 配置暂保留兼容，仅用于续跑历史 pending 任务；新建 Run 使用 `official` 或 `molizhishu`。
+
+#### 10.0.1 模力指数 pending 轮询与费用
+
+- 单 QueryTask 提交 1 prompt × 1 platform 后，adapter 保存 `taskId/subTaskId` 于 `request_json`；pending 时 Actor 按 `COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS` 延迟重入队，最多 `COLLECTION_MOLIZHISHU_MAX_POLLS` 次。
+- `pending/assigned/processing` 且 `answerContent` 为空时**不算失败 attempt**，仅增加 `molizhishu_poll_count`。
+- `answerContent` 非空即可落库为 `success`，即使 provider `status` 仍为 processing（原始 status 保留在 `provider_result_json`）。
+- 模力指数 HTTP **200** 仍可能 `success=false`：client 必须检查 body `success/code/message`；`Token失效` 归类为不可无限重试的鉴权失败；余额不足为不可重试错误。
+- 真实接口可能产生费用：自动化 pytest **不得**访问真实模力指数；仅可手动运行 `backend/scripts/molizhishu_smoke_test.py`（不写业务库）。
+- 线上可通过 `MOLIZHISHU_ENABLED=false` 关闭模力指数采集，不影响官方 `*_ENABLED` 平台。
 
 ### 10.1 分页查询 AI 平台
 
@@ -3157,6 +3186,9 @@ curl -O -J "http://127.0.0.1:8000/api/geo-monitoring/reports/1/download"
 | `40910` | 409 | 采集未完成，不可分析 |
 | `40920` | 409 | 分析未完成，不可生成报告 |
 | `40921` | 409 | 报告未生成完成，不可下载 |
+| `40401` | 200 | Provider 回调找不到对应 QueryTask |
+| `42201` | 200 | Provider 回调 payload 非法 |
+| `50210` | 200 | 模力指数区域列表上游不可用 |
 | `500` | 500 | 服务器内部错误 |
 
 ---

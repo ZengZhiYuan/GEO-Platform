@@ -1,11 +1,118 @@
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from app.core.config import Settings, _parse_comma_separated_keys
+
+_ENV_EXAMPLE_KEY_PATTERN = re.compile(r"^([A-Z][A-Z0-9_]*)=")
+
+# Settings 字段名；对应 .env.example 中的部署配置键（DEBUG 映射为 APP_DEBUG）
+_SETTINGS_FIELDS_IN_ENV_EXAMPLE = frozenset(
+    {
+        "APP_ENV",
+        "DEBUG",
+        "APP_TIMEZONE",
+        "BACKEND_HOST",
+        "BACKEND_PORT",
+        "DATABASE_URL",
+        "REDIS_URL",
+        "DRAMATIQ_BROKER",
+        "NACOS_ENABLED",
+        "NACOS_SERVER_ADDRESSES",
+        "NACOS_NAMESPACE",
+        "NACOS_GROUP",
+        "NACOS_USERNAME",
+        "NACOS_PASSWORD",
+        "NACOS_CONFIG_DATA_ID",
+        "COLLECTION_REQUEST_TIMEOUT_SECONDS",
+        "COLLECTION_MAX_ATTEMPTS",
+        "COLLECTION_RETRY_BASE_SECONDS",
+        "COLLECTION_AIDSO_MAX_POLLS",
+        "COLLECTION_MAX_CONCURRENCY",
+        "COLLECTION_RAW_RESPONSE_ENABLED",
+        "DOUBAO_ENABLED",
+        "DOUBAO_BASE_URL",
+        "DOUBAO_MODEL",
+        "DOUBAO_API_KEYS",
+        "QWEN_ENABLED",
+        "QWEN_BASE_URL",
+        "QWEN_MODEL",
+        "QWEN_API_KEYS",
+        "YUANBAO_ENABLED",
+        "YUANBAO_BASE_URL",
+        "YUANBAO_MODEL",
+        "YUANBAO_CREDENTIALS_JSON",
+        "DEEPSEEK_ENABLED",
+        "DEEPSEEK_BASE_URL",
+        "DEEPSEEK_MODEL",
+        "DEEPSEEK_API_KEYS",
+        "KIMI_ENABLED",
+        "KIMI_BASE_URL",
+        "KIMI_MODEL",
+        "KIMI_API_KEYS",
+        "AIDSO_ENABLED",
+        "AIDSO_BASE_URL",
+        "AIDSO_API_TOKEN",
+        "MOLIZHISHU_ENABLED",
+        "MOLIZHISHU_BASE_URL",
+        "MOLIZHISHU_API_TOKEN",
+        "MOLIZHISHU_REQUEST_TIMEOUT_SECONDS",
+        "COLLECTION_MOLIZHISHU_MAX_POLLS",
+        "COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS",
+        "MOLIZHISHU_DEFAULT_SCREENSHOT",
+        "MOLIZHISHU_CALLBACK_ENABLED",
+        "MOLIZHISHU_CALLBACK_TOKEN",
+        "MOLIZHISHU_REGIONS_URL",
+        "MOLIZHISHU_REGIONS_CACHE_SECONDS",
+        "AGENT_LLM_BASE_URL",
+        "AGENT_LLM_API_KEY",
+        "AGENT_LLM_MODEL",
+        "AGENT_LLM_PROVIDER",
+        "AGENT_LLM_TIMEOUT_SECONDS",
+        "AGENT_LLM_MAX_ATTEMPTS",
+        "SCHEDULER_ENABLED",
+        "SCHEDULER_TIMEZONE",
+        "SCHEDULER_POLL_SECONDS",
+        "REPORT_STORAGE_DIR",
+        "REPORT_PUBLIC_BASE_URL",
+        "REPORT_RETENTION_DAYS",
+    }
+)
+
+
+def _env_var_name_for_settings_field(field_name: str) -> str:
+    if field_name == "DEBUG":
+        return "APP_DEBUG"
+    return field_name
+
+
+def _settings_env_var_names() -> frozenset[str]:
+    names = {_env_var_name_for_settings_field(name) for name in Settings.model_fields}
+    return frozenset(names)
+
+
+def _expected_env_example_keys() -> frozenset[str]:
+    return frozenset(
+        _env_var_name_for_settings_field(name)
+        for name in _SETTINGS_FIELDS_IN_ENV_EXAMPLE
+    )
+
+
+def _parse_env_example_keys(text: str) -> frozenset[str]:
+    keys: set[str] = set()
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        match = _ENV_EXAMPLE_KEY_PATTERN.match(stripped)
+        if match is None:
+            raise AssertionError(f"invalid .env.example line: {line!r}")
+        keys.add(match.group(1))
+    return frozenset(keys)
 
 
 def make_settings(**overrides) -> Settings:
@@ -377,3 +484,28 @@ def test_env_example_uses_placeholders_without_real_connection_values():
     assert "MOLIZHISHU_DEFAULT_SCREENSHOT=0" in text
     assert "MOLIZHISHU_CALLBACK_ENABLED=false" in text
     assert "MOLIZHISHU_CALLBACK_TOKEN=" in text
+    assert "MOLIZHISHU_REQUEST_TIMEOUT_SECONDS=30" in text
+    assert "MOLIZHISHU_REGIONS_URL=" in text
+    assert "MOLIZHISHU_REGIONS_CACHE_SECONDS=300" in text
+    assert "COLLECTION_AIDSO_MAX_POLLS=120" in text
+
+
+def test_env_example_keys_match_settings_deployment_whitelist():
+    text = (Path(__file__).parents[2] / ".env.example").read_text(encoding="utf-8")
+    parsed_keys = _parse_env_example_keys(text)
+    expected_keys = _expected_env_example_keys()
+
+    assert parsed_keys == expected_keys, (
+        "missing="
+        f"{sorted(expected_keys - parsed_keys)!r}, "
+        f"extra={sorted(parsed_keys - expected_keys)!r}"
+    )
+
+
+def test_env_example_keys_map_to_settings_fields():
+    text = (Path(__file__).parents[2] / ".env.example").read_text(encoding="utf-8")
+    parsed_keys = _parse_env_example_keys(text)
+    settings_keys = _settings_env_var_names()
+
+    unknown_keys = parsed_keys - settings_keys
+    assert not unknown_keys, f"unknown .env.example keys: {sorted(unknown_keys)!r}"

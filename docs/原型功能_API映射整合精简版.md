@@ -1,6 +1,6 @@
 # 原型功能 API 映射调用手册
 
-> 更新日期：2026-06-26
+> 更新日期：2026-06-30
 > 本文定位：说明原型 6 个页面中每个入口、按钮、筛选和弹窗应该调用哪些后端接口，以及推荐调用顺序。
 > 互补文档：接口字段、入参、出参、错误码以 `docs/API接口文档.md` 为准；验收口径和自动化命令以 `docs/API测试文档.md` 为准。
 
@@ -18,6 +18,7 @@
 需要前端注意的现实差异：
 
 - 对话记录和信源导出当前是 CSV 文件流，不是原型文案里的 Excel。
+- 第三方采集：新建 Run 使用 `collection_source=molizhishu` 与 `molizhishu_*` 平台码（见 `GET /platform-endpoints`）；**不得**再传 `collection_source=aidso` 或 `aidso_thinking_enabled_by_platform`（返回 422）。历史 Aidso Run 详情仍可只读展示。
 - `/projects/{project_id}/competitor-analysis` 的 `trends` 字段仍是空数组占位；竞品趋势图应直接调用 `/projects/{project_id}/trends`，并传 `brand_id`。
 - `GET /projects/{project_id}/trends` 只支持单个 `platform_code`；多平台趋势图需要前端按平台分别请求，或不传平台取平台级汇总快照。
 - AI 生成提供无 `project_id` 的全局路径 `/ai/*:generate`，**创建向导中途 AI 生成应优先使用该路径**，无需先 `POST /projects`；项目域路径 `/projects/{project_id}/ai/*:generate` 保留供已创建项目的编辑配置场景。
@@ -34,6 +35,7 @@
    - `GET /projects/overview` 已返回 `platform_endpoints[]`，首页无需再额外调用 `GET /platform-endpoints` 映射图标。
 2. `GET /api/geo-monitoring/platform-endpoints?enabled=true`
    - 用于平台端多选控件、平台 Logo、Web/App 端展示（创建向导等场景仍需要）。
+   - 官方平台码：`doubao`、`qwen` 等；第三方模力指数平台码：`molizhishu_*`（与 `collection_source=molizhishu` 配套）。
 3. 按页面需要加载字典：
    - `GET /api/geo-monitoring/prompt-types`
    - `GET /api/geo-monitoring/source-types`
@@ -215,7 +217,8 @@
 4. 点击完成（推荐一步创建）：
    - `POST /projects:setup`，一次性创建项目并保存完整监测配置。
 5. 如完成后立即开始监测：
-   - `POST /runs`
+   - 官方采集（默认）：`POST /runs`（`collection_source` 省略或 `official`）。
+   - 模力指数采集：先确认 `.env` 已配置 `MOLIZHISHU_*`；`POST /runs` 传 `collection_source=molizhishu`、`platform_codes` 为所选 `molizhishu_*`；可选 `provider_mode_by_platform`、`provider_screenshot`、`region_code`（区域列表 `GET /providers/molizhishu/regions`）。
    - `GET /runs/{run_id}` 轮询进度。
 
 **取消向导**：仅丢弃草稿，不会产生正式项目脏数据。
@@ -557,6 +560,8 @@ KPI 直接来自 `GET /dashboard/overview` 的 `kpis`：
 1. `GET /projects/{project_id}/monitor-setup`
    - 确认有目标品牌、启用问题、默认平台。
 2. `POST /runs`
+   - 默认 `collection_source=official`，`platform_codes` 为官方码或项目默认。
+   - 第三方模力指数：传 `collection_source=molizhishu` 与 `molizhishu_*` 平台；勿混用官方码。
 3. `GET /runs/{run_id}` 轮询进度。
 4. `GET /runs/{run_id}/query-tasks` 查看任务明细。
 5. `GET /runs/{run_id}/answers` 查看答案粒度数据。
@@ -567,7 +572,7 @@ KPI 直接来自 `GET /dashboard/overview` 的 `kpis`：
 
 | 原型动作 | 接口顺序 |
 | --- | --- |
-| 取消运行 | `POST /runs/{run_id}/cancel` |
+| 取消运行 | `POST /runs/{run_id}/cancel`（模力指数 Run 可能产生 provider 侧计费，见 API 文档 §11.4） |
 | 重试失败任务 | `POST /runs/{run_id}/retry-failed` |
 | 查看任务 | `GET /runs/{run_id}/query-tasks` 或 `GET /runs/{run_id}/tasks` |
 

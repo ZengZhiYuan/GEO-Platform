@@ -35,6 +35,7 @@ OFFICIAL_PLATFORMS = (
     },
 )
 
+# 历史 Aidso 平台映射：不再写入 DEFAULT_PLATFORMS 种子；仅用于历史 Run 与 AIDSO_ENABLED 续跑
 AIDSO_PLATFORM_MAPPINGS = {
     "aidso_doubao_web": {"aidso_name": "DB", "platform_name": "豆包 Web 端"},
     "aidso_doubao_app": {"aidso_name": "DOUBA", "platform_name": "豆包 App 端"},

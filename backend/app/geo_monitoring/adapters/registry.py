@@ -37,7 +37,11 @@ class AdapterRegistry:
 
 
 def build_adapter_registry(runtime_settings: Any | None = None) -> AdapterRegistry:
-    """按运行配置注册已启用且已配置模型的平台适配器。"""
+    """按运行配置注册已启用且已配置模型的平台适配器。
+
+    Aidso 仅在 ``AIDSO_ENABLED=true`` 时注册，供历史 pending 任务续跑；
+    新建采集应使用 ``official`` 或 ``molizhishu``（见 ``RunCreateCollectionSource``）。
+    """
 
     if runtime_settings is None:
         from app.core.config import settings as runtime_settings

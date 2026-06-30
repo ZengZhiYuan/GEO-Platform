@@ -430,14 +430,14 @@ backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_
 
 | 用途 | 方法 | 路径 | 入参 | 出参 | 验证成功 | 常见失败 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 获取平台端元数据分组 | `GET` | `/api/geo-monitoring/platform-endpoints` | Query：`enabled` 可选 | `groups[]`，含 `base_platform`、`endpoints[]` | `code=0`；Aidso 端码解析为 `web`/`app`；同组内 `web` 排在 `app` 前 | 无 |
+| 获取平台端元数据分组 | `GET` | `/api/geo-monitoring/platform-endpoints` | Query：`enabled` 可选 | `groups[]`，含 `base_platform`、`endpoints[]` | `code=0`；默认种子含官方与 `molizhishu_*` 平台；`web`/`app` 同组排序正确；历史库中若仍存在 `aidso_*` 平台行，元数据解析仍可兼容 | 无 |
 | 获取 Prompt 意图类型字典 | `GET` | `/api/geo-monitoring/prompt-types` | 无 | `items[]` 共 5 项，含 `compatible_values` | `code=0`；含 `comparison`、`recommendation` 等兼容值 | 无 |
 | 获取信源类型展示字典 | `GET` | `/api/geo-monitoring/source-types` | 无 | `items[]` 与 `storage_mappings[]` | `code=0`；六类存储值均可映射到展示字典 | 无 |
 | 获取行业基准参照 | `GET` | `/api/geo-monitoring/benchmarks` | Query：可选 `industry` | 列表或单行业 `metrics` + `market_position_thresholds` | `code=0`；含「文旅演艺」；`sample_source=static_config` | 未知行业 `40400` |
 
 自动化测试文件：`backend/tests/geo_monitoring/test_metadata_api.py`、`backend/tests/geo_monitoring/test_benchmarks_api.py`
 
-覆盖场景：Aidso 端码分组、`extra_config` 覆盖、`enabled` 过滤、平台数超过 500 不截断、v1 兼容前缀可访问、行业基准列表与单行业查询。
+覆盖场景：官方/`molizhishu_*` 端码分组、`extra_config` 覆盖、`enabled` 过滤、平台数超过 500 不截断、v1 兼容前缀可访问、行业基准列表与单行业查询；历史 `aidso_*` 平台行（若库中仍存在）的 web/app 解析兼容。
 
 ```powershell
 backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_metadata_api.py backend/tests/geo_monitoring/test_benchmarks_api.py
@@ -661,12 +661,20 @@ backend\.venv\Scripts\python.exe -m pytest -v backend/tests/geo_monitoring/test_
 - 兼容前缀：`/api/v1/geo-monitoring/provider-callbacks/molizhishu`。
 - `MOLIZHISHU_CALLBACK_TOKEN` 须与部署环境一致；勿写入仓库或日志。
 
-创建运行示例：
+创建运行示例（官方）：
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
   -H "Content-Type: application/json" \
   -d '{"project_id":1,"platform_codes":["doubao","qwen"]}'
+```
+
+模力指数运行示例（pytest 使用 mock，勿连真实 API）：
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs" \
+  -H "Content-Type: application/json" \
+  -d '{"project_id":1,"collection_source":"molizhishu","platform_codes":["molizhishu_doubao_web"],"provider_mode_by_platform":{"molizhishu_doubao_web":"search"},"provider_screenshot":0}'
 ```
 
 ## 9. 调度模块
@@ -911,7 +919,8 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 4. 验证 AI 生成候选不落库：创建向导使用 `POST /ai/brand-words:generate`、`/ai/competitors:generate`、`/ai/questions:generate`（全局路径，调用前后 `GET /projects` 的 `total` 不变）；已创建项目场景仍可用项目域路径。
 5. 保存完整监测设置：`PUT /projects/{project_id}/monitor-setup`，建议传 `activate_prompt_set=true`。
 6. 查询或更新 AI 平台，保证至少一个平台 `enabled=true`。
-7. 创建监测运行：`POST /runs`（可不传 `platform_codes`，使用项目默认平台）。
+7. 创建监测运行：`POST /runs`（可不传 `platform_codes`，使用项目默认平台；官方为默认 `collection_source=official`）。
+   - 模力指数路径（mock 测试）：`POST /runs` 传 `collection_source=molizhishu`、`platform_codes` 为 `molizhishu_*`，可选 `provider_mode_by_platform` / `provider_screenshot` / `region_code`。
 8. 查询运行详情和任务：`GET /runs/{run_id}`、`GET /runs/{run_id}/query-tasks`。
 9. 采集完成后查询答案：`GET /runs/{run_id}/answers`、`GET /answers/{answer_id}`。
 10. 运行终态后触发或重跑分析：`POST /runs/{run_id}/analyze`。
@@ -953,6 +962,8 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/runs/1/reports" \
 | 非草稿提示词集修改 | 激活后修改提示词集或提示词 | `code=40020` |
 | 无激活提示词集创建运行 | 项目未激活提示词集时创建运行 | `code=40030` |
 | 无可用平台创建运行 | 所有平台禁用后创建运行 | HTTP `409`，`code=40902` |
+| 新建 Aidso 运行 | `POST /runs` 传 `collection_source=aidso` 或 `aidso_thinking_enabled_by_platform` | HTTP `422` |
+| 混用官方与模力指数平台 | `collection_source=molizhishu` 且 `platform_codes` 含 `doubao` 等官方码 | HTTP `422` |
 | 采集未完成触发分析 | 非终态运行调用 `/analyze` | HTTP `409`，`code=40910` |
 | 分析未完成生成报告 | `analysis_status` 不是 `completed` 或 `partial_success` | HTTP `409`，`code=40920` |
 | 下载未完成报告 | 报告 `status` 不是 `completed` | HTTP `409`，`code=40921` |
