@@ -279,7 +279,7 @@
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `base_platform` | string/null | 基础平台编码，如 `doubao`、`qwen`；用于平台端分组 |
-| `endpoint_type` | string/null | 端类型：`web` / `app` / `other` |
+| `endpoint_type` | string/null | 端类型：`web` / `app` |
 | `endpoint_label` | string/null | 端侧展示名，如“网页端”“手机端” |
 | `logo_url` | string/null | 平台 Logo 地址 |
 | `thinking_mode` | string/null | 深度思考模式展示值 |
@@ -950,7 +950,7 @@ curl -X GET "http://127.0.0.1:8000/api/geo-monitoring/projects/options"
 | `platform_code` | string | 平台编码 |
 | `platform_name` | string | 平台名称 |
 | `base_platform` | string | 基础平台编码 |
-| `endpoint_type` | string | `web` / `app` / `other` |
+| `endpoint_type` | string | `web` / `app` |
 | `endpoint_label` | string | 端展示文案 |
 | `logo_url` | string/null | Logo 地址 |
 | `enabled` | boolean | 是否启用 |
@@ -2097,7 +2097,7 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/platforms/qwen" \
 | --- | --- | --- |
 | `base_platform` | string | 基础平台编码，如 `doubao` |
 | `base_platform_label` | string | 基础平台中文名 |
-| `endpoints` | array | 该平台下的端侧列表，顺序为 `web` → `app` → `other` |
+| `endpoints` | array | 该平台下的端侧列表，顺序为 `web` → `app` |
 
 `endpoints[]` 元素：
 
@@ -2107,7 +2107,7 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/platforms/qwen" \
 | `platform_name` | string | 平台端名称 |
 | `base_platform` | string | 基础平台编码 |
 | `base_platform_label` | string | 基础平台中文名 |
-| `endpoint_type` | string | 端类型：`web` / `app` / `other` |
+| `endpoint_type` | string | 端类型：`web` / `app` |
 | `endpoint_label` | string | 端侧展示名 |
 | `logo_url` | string/null | Logo 地址，优先读 `extra_config.logo_url` |
 | `thinking_mode` | string/null | 深度思考模式，优先读 `extra_config.thinking_mode` |
@@ -2119,7 +2119,7 @@ curl -X PUT "http://127.0.0.1:8000/api/geo-monitoring/platforms/qwen" \
 **解析规则：**
 
 1. 优先使用 `AIPlatform.extra_config` 中的 `base_platform`、`endpoint_type`、`endpoint_label`、`logo_url`、`thinking_mode`。
-2. 历史数据缺少 `extra_config` 时，从 `platform_code` 兼容解析：`aidso_*_web` 识别为网页端，`aidso_*_app` 识别为手机端；普通平台码归入 `other`。
+2. 历史数据缺少 `extra_config` 时，从 `platform_code` 兼容解析：`aidso_*_web` 识别为网页端，`aidso_*_app` 识别为手机端；普通平台码默认归入 `web`。
 3. 只读聚合，不修改数据库。
 
 **调用示例：**

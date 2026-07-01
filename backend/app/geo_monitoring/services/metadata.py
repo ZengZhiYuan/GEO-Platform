@@ -15,6 +15,7 @@ from app.geo_monitoring.models import AIPlatform
 from app.geo_monitoring.repositories import platforms as platform_repo
 from app.geo_monitoring.schemas import (
     MolizhishuRegionsOut,
+    PlatformEndpointType,
     PlatformEndpointsOut,
     PromptTypesOut,
     SourceTypesOut,
@@ -22,7 +23,7 @@ from app.geo_monitoring.schemas import (
 
 _regions_cache: dict[str, Any] = {"expires_at": 0.0, "payload": None}
 
-_ENDPOINT_ORDER = {"web": 0, "app": 1, "other": 2}
+_ENDPOINT_ORDER = {"web": 0, "app": 1}
 _AIDSO_CODE_PATTERN = re.compile(r"^aidso_(?P<base>.+)_(?P<endpoint>web|app)$")
 
 _BASE_PLATFORM_LABELS = {
@@ -44,7 +45,6 @@ _BASE_PLATFORM_LABELS = {
 _ENDPOINT_TYPE_LABELS = {
     "web": "网页端",
     "app": "手机端",
-    "other": "其他端",
 }
 
 _PROMPT_TYPES = (
@@ -146,20 +146,20 @@ def _resolve_base_platform(platform: AIPlatform) -> str:
     return platform.platform_code
 
 
-def _resolve_endpoint_type(platform: AIPlatform) -> str:
+def _resolve_endpoint_type(platform: AIPlatform) -> PlatformEndpointType:
     extra = _coerce_extra_config(platform.extra_config)
     if endpoint_type := extra.get("endpoint_type"):
         normalized = str(endpoint_type).strip().lower()
-        if normalized in {"web", "app"}:
-            return normalized
-        return "other"
+        if normalized == "app":
+            return PlatformEndpointType.APP
+        return PlatformEndpointType.WEB
     _, parsed_endpoint = _parse_aidso_platform_code(platform.platform_code)
-    if parsed_endpoint:
-        return parsed_endpoint
-    return "other"
+    if parsed_endpoint == "app":
+        return PlatformEndpointType.APP
+    return PlatformEndpointType.WEB
 
 
-def _resolve_endpoint_label(platform: AIPlatform, *, endpoint_type: str) -> str:
+def _resolve_endpoint_label(platform: AIPlatform, *, endpoint_type: PlatformEndpointType) -> str:
     extra = _coerce_extra_config(platform.extra_config)
     if endpoint_label := extra.get("endpoint_label"):
         return str(endpoint_label).strip()
@@ -167,14 +167,11 @@ def _resolve_endpoint_label(platform: AIPlatform, *, endpoint_type: str) -> str:
         base_label = _BASE_PLATFORM_LABELS.get(
             _resolve_base_platform(platform), platform.platform_name
         )
-        return f"{base_label} {_ENDPOINT_TYPE_LABELS[endpoint_type]}"
+        return f"{base_label} {_ENDPOINT_TYPE_LABELS[endpoint_type.value]}"
     return platform.platform_name
 
 
-def _resolve_base_platform_label(base_platform: str, endpoints: list[dict[str, Any]]) -> str:
-    for endpoint in endpoints:
-        if endpoint["base_platform"] == base_platform and endpoint["endpoint_type"] == "other":
-            return _BASE_PLATFORM_LABELS.get(base_platform, endpoint["platform_name"])
+def _resolve_base_platform_label(base_platform: str, _endpoints: list[dict[str, Any]]) -> str:
     return _BASE_PLATFORM_LABELS.get(base_platform, base_platform)
 
 
@@ -228,7 +225,7 @@ def list_platform_endpoints(
         group_endpoints = sorted(
             grouped[base_platform],
             key=lambda item: (
-                _ENDPOINT_ORDER.get(item["endpoint_type"], 99),
+                _ENDPOINT_ORDER.get(item["endpoint_type"].value, 99),
                 item["platform_code"],
             ),
         )

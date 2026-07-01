@@ -82,6 +82,11 @@ class CollectionSource(StrEnum):
     MOLIZHISHU = "molizhishu"
 
 
+class PlatformEndpointType(StrEnum):
+    WEB = "web"
+    APP = "app"
+
+
 class RunCreateCollectionSource(StrEnum):
     OFFICIAL = "official"
     MOLIZHISHU = "molizhishu"
@@ -188,7 +193,7 @@ class ProjectOverviewPlatformEndpointRead(BaseModel):
     platform_code: str
     platform_name: str
     base_platform: str
-    endpoint_type: str
+    endpoint_type: PlatformEndpointType
     endpoint_label: str
     logo_url: str | None = None
     enabled: bool
@@ -491,7 +496,7 @@ class PlatformEndpointOut(BaseModel):
     platform_name: str
     base_platform: str
     base_platform_label: str
-    endpoint_type: str
+    endpoint_type: PlatformEndpointType
     endpoint_label: str
     logo_url: str | None = None
     thinking_mode: str | None = None
