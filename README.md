@@ -188,6 +188,33 @@ worker 消费三类队列：
 - `analysis`：生成确定性指标快照和 Agent 洞察。
 - `report`：生成报告文件。
 
+本地联调可使用上面的 all-in-one worker；生产建议按队列拆分 worker，避免采集队列积压时阻塞分析或报告任务：
+
+```powershell
+# 采集 worker：外部平台调用、模力指数 ProviderBatch 提交与轮询
+.\.venv\Scripts\dramatiq.exe app.worker.actors.collection `
+  -Q collection --processes 4 --threads 2
+
+# 分析 worker：确定性指标与 Agent LLM 洞察
+.\.venv\Scripts\dramatiq.exe app.worker.actors.analysis `
+  -Q analysis --processes 1 --threads 1
+
+# 报告 worker：异步报告生成/清理任务
+.\.venv\Scripts\dramatiq.exe app.worker.actors.report `
+  -Q report --processes 1 --threads 1
+```
+
+推荐的生产环境变量：
+
+```env
+COLLECTION_WORKER_PROCESSES=4
+COLLECTION_WORKER_THREADS=2
+ANALYSIS_WORKER_PROCESSES=1
+ANALYSIS_WORKER_THREADS=1
+REPORT_WORKER_PROCESSES=1
+REPORT_WORKER_THREADS=1
+```
+
 ### 5. 启动 scheduler
 
 调度进程要求 `.env` 中 `SCHEDULER_ENABLED=true`。
@@ -279,11 +306,11 @@ GET /api/geo-monitoring/reports/{report_id}/download
 
 ## 后端部署、发布与回滚
 
-`docker-compose.yml` 只编排后端 API、Dramatiq worker 和 APScheduler scheduler，不启动 PostgreSQL、Redis、Nacos。三者连接信息从根目录 `.env` 读取。
+`docker-compose.yml` 只编排后端 API、Dramatiq worker 和 APScheduler scheduler，不启动 PostgreSQL、Redis、Nacos。生产建议将 Dramatiq worker 拆分为 `worker-collection`、`worker-analysis`、`worker-report` 三个服务；如部署文件尚未拆分，可继续使用 all-in-one `worker` 服务临时过渡。三者连接信息从根目录 `.env` 读取。
 
 **发布前：** 备份数据库和报告目录；确认 `.env` 中 `APP_ENV=prod`、`DRAMATIQ_BROKER=redis`、Agent LLM 与需启用的平台开关已显式配置（未启用的官方平台保持 `*_ENABLED=false`；Nacos 不可用时设 `NACOS_ENABLED=false` 使用本地 `.env` 兜底）。
 
-**发布顺序（固定）：** 构建镜像 → 暂停 worker/scheduler → 执行迁移 → 启动 worker/scheduler，最后切换 API。
+**发布顺序（固定）：** 构建镜像 → 暂停 worker/scheduler → 执行迁移 → 启动拆分 worker/scheduler，最后切换 API。
 
 ```bash
 cd /opt/geo-platform
@@ -292,13 +319,15 @@ git pull origin main
 docker compose config --quiet
 docker compose build
 
-docker compose stop worker scheduler
+docker compose stop worker-collection worker-analysis worker-report scheduler
 docker compose run --rm api python -m alembic -c backend/alembic.ini upgrade head
 
-docker compose up -d worker scheduler
+docker compose up -d worker-collection worker-analysis worker-report scheduler
 docker compose up -d api
 docker compose ps
 ```
+
+若部署文件仍使用旧的 all-in-one `worker` 服务，发布命令中的 `worker-collection worker-analysis worker-report` 临时替换为 `worker`；生产新部署建议采用拆分服务名。
 
 **发布后 smoke（分层，不再使用 mock run）：**
 
@@ -317,15 +346,17 @@ backend\.venv\Scripts\python.exe backend\scripts\run_production_smoke_test.py --
 
 ```bash
 docker compose logs -f --tail=100 api
-docker compose logs -f --tail=100 worker
+docker compose logs -f --tail=100 worker-collection
+docker compose logs -f --tail=100 worker-analysis
+docker compose logs -f --tail=100 worker-report
 docker compose logs -f --tail=100 scheduler
-docker compose restart worker
+docker compose restart worker-collection worker-analysis worker-report
 docker compose down
 ```
 
 不要轻易执行 `docker compose down -v`，它会删除报告持久卷 `geo_platform_reports_data`。容器访问宿主机中间件时，不要把 `DATABASE_URL` 或 `REDIS_URL` 的 host 写成 `localhost`，优先使用服务器内网 IP 或 `host.docker.internal`。
 
-生产镜像通过 `.dockerignore` 排除 `backend/tests`、`backend/scripts`、`backend/app/test` 与本地 `data/`，仅保留 API / worker / scheduler 运行所需代码。正式 Dramatiq 入口为 `app.worker.actors.*`，历史 `app.workers` 空包已移除。
+生产镜像通过 `.dockerignore` 排除 `backend/tests`、`backend/scripts`、`backend/app/test` 与本地 `data/`，仅保留 API / worker / scheduler 运行所需代码。正式 Dramatiq 入口为 `app.worker.actors.*`，生产推荐拆分消费 `collection`、`analysis`、`report` 三个队列；历史 `app.workers` 空包已移除。
 
 ## Docker Compose 部署
 
@@ -347,6 +378,7 @@ docker compose down
 | `SCHEDULER_POLL_SECONDS` | 调度计划同步周期 |
 | `NACOS_ENABLED` / `NACOS_*` | 可选配置中心连接 |
 | `COLLECTION_*` | 采集超时、重试、并发、模力指数/Aidso 轮询上限、原始响应保存开关 |
+| `COLLECTION_WORKER_*` / `ANALYSIS_WORKER_*` / `REPORT_WORKER_*` | 生产拆分 worker 的进程数和线程数；本地 all-in-one worker 可继续使用 `WORKER_PROCESSES` / `WORKER_THREADS` |
 | `DOUBAO_*` / `QWEN_*` / `YUANBAO_*` / `DEEPSEEK_*` / `KIMI_*` | 官方平台 Adapter 开关、模型、密钥或凭证 |
 | `MOLIZHISHU_*` / `COLLECTION_MOLIZHISHU_*` | 模力指数 API 开关、Token、超时、轮询、截图默认、回调与区域列表 |
 | `AIDSO_*` / `COLLECTION_AIDSO_MAX_POLLS` | **历史兼容**：仅用于续跑历史 pending Aidso 任务；新建 Run 不使用 |

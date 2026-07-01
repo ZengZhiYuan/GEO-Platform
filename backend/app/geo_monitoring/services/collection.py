@@ -259,41 +259,6 @@ def build_credential_key_pool(
                 platform_code,
                 getattr(runtime_settings, f"{prefix}_API_KEYS"),
             )
-    # #region agent log
-    import json as _json
-    import time as _time
-    from pathlib import Path as _Path
-
-    _dbg_payload = {
-        "sessionId": "499d7f",
-        "hypothesisId": "H1-H5",
-        "location": "collection.py:build_credential_key_pool",
-        "message": "platform credential registration gate",
-        "data": {
-            "doubao_enabled": runtime_settings.DOUBAO_ENABLED,
-            "qwen_enabled": runtime_settings.QWEN_ENABLED,
-            "yuanbao_enabled": runtime_settings.YUANBAO_ENABLED,
-            "deepseek_enabled": runtime_settings.DEEPSEEK_ENABLED,
-            "kimi_enabled": runtime_settings.KIMI_ENABLED,
-            "aidso_enabled": runtime_settings.AIDSO_ENABLED,
-            "molizhishu_enabled": runtime_settings.MOLIZHISHU_ENABLED,
-            "yuanbao_configured": _configured(runtime_settings, "YUANBAO"),
-            "aidso_configured": _aidso_configured(runtime_settings),
-            "molizhishu_configured": _molizhishu_configured(runtime_settings),
-        },
-        "timestamp": int(_time.time() * 1000),
-    }
-    for _dbg_path in (
-        _Path("debug-499d7f.log"),
-        _Path(__file__).resolve().parents[4] / "debug-499d7f.log",
-    ):
-        try:
-            with _dbg_path.open("a", encoding="utf-8") as _dbg_f:
-                _dbg_f.write(_json.dumps(_dbg_payload) + "\n")
-            break
-        except OSError:
-            continue
-    # #endregion
     if _configured(runtime_settings, "YUANBAO"):
         yuanbao_credentials = runtime_settings.parsed_yuanbao_credentials()
         if yuanbao_credentials:
