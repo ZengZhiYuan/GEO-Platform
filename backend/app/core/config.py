@@ -594,41 +594,51 @@ class Settings(BaseSettings):
                     self.DOUBAO_ENABLED,
                     self.DOUBAO_BASE_URL,
                     self.DOUBAO_MODEL,
-                    len(self.parsed_api_keys(self.DOUBAO_API_KEYS)),
+                    self._enabled_api_key_count(self.DOUBAO_ENABLED, self.DOUBAO_API_KEYS),
                 ),
                 "qwen": self._platform_summary(
                     self.QWEN_ENABLED,
                     self.QWEN_BASE_URL,
                     self.QWEN_MODEL,
-                    len(self.parsed_api_keys(self.QWEN_API_KEYS)),
+                    self._enabled_api_key_count(self.QWEN_ENABLED, self.QWEN_API_KEYS),
                 ),
                 "yuanbao": {
                     "enabled": self.YUANBAO_ENABLED,
                     "base_url": self.YUANBAO_BASE_URL,
                     "model": self.YUANBAO_MODEL or None,
-                    "credential_count": len(self.parsed_yuanbao_credentials()),
+                    "credential_count": (
+                        len(self.parsed_yuanbao_credentials())
+                        if self.YUANBAO_ENABLED
+                        else 0
+                    ),
                 },
                 "deepseek": self._platform_summary(
                     self.DEEPSEEK_ENABLED,
                     self.DEEPSEEK_BASE_URL,
                     self.DEEPSEEK_MODEL,
-                    len(self.parsed_api_keys(self.DEEPSEEK_API_KEYS)),
+                    self._enabled_api_key_count(
+                        self.DEEPSEEK_ENABLED, self.DEEPSEEK_API_KEYS
+                    ),
                 ),
                 "kimi": self._platform_summary(
                     self.KIMI_ENABLED,
                     self.KIMI_BASE_URL,
                     self.KIMI_MODEL,
-                    len(self.parsed_api_keys(self.KIMI_API_KEYS)),
+                    self._enabled_api_key_count(self.KIMI_ENABLED, self.KIMI_API_KEYS),
                 ),
                 "aidso": {
                     "enabled": self.AIDSO_ENABLED,
                     "base_url": self.AIDSO_BASE_URL,
-                    "has_token": bool(self.AIDSO_API_TOKEN.strip()),
+                    "has_token": bool(
+                        self.AIDSO_ENABLED and self.AIDSO_API_TOKEN.strip()
+                    ),
                 },
                 "molizhishu": {
                     "enabled": self.MOLIZHISHU_ENABLED,
                     "base_url": self.MOLIZHISHU_BASE_URL,
-                    "has_token": bool(self.MOLIZHISHU_API_TOKEN.strip()),
+                    "has_token": bool(
+                        self.MOLIZHISHU_ENABLED and self.MOLIZHISHU_API_TOKEN.strip()
+                    ),
                     "provider_batch_enabled": self.MOLIZHISHU_PROVIDER_BATCH_ENABLED,
                     "callback_enabled": self.MOLIZHISHU_CALLBACK_ENABLED,
                     "regions_cache_seconds": self.MOLIZHISHU_REGIONS_CACHE_SECONDS,
@@ -669,6 +679,11 @@ class Settings(BaseSettings):
             "model": model or None,
             "api_key_count": api_key_count,
         }
+
+    def _enabled_api_key_count(self, enabled: bool, raw_keys: str) -> int:
+        if not enabled:
+            return 0
+        return len(self.parsed_api_keys(raw_keys))
 
 
 # 单例获取应用配置（带 LRU 缓存）

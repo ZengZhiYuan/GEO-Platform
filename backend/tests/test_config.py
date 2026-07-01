@@ -536,9 +536,13 @@ def test_runtime_summary_redacts_all_secrets(tmp_path):
         REDIS_URL="redis://:redis_password@redis.example.test:6379/0",
         DOUBAO_ENABLED=False,
         DOUBAO_API_KEYS="doubao-key-1,doubao-key-2",
+        QWEN_ENABLED=False,
         QWEN_API_KEYS="qwen-key",
+        DEEPSEEK_ENABLED=False,
         DEEPSEEK_API_KEYS="deepseek-key",
+        KIMI_ENABLED=False,
         KIMI_API_KEYS="kimi-key",
+        YUANBAO_ENABLED=False,
         YUANBAO_CREDENTIALS_JSON=[
             {"secret_id": "yuanbao-id", "secret_key": "yuanbao-secret"},
         ],
@@ -563,7 +567,9 @@ def test_runtime_summary_redacts_all_secrets(tmp_path):
     assert "molizhishu-secret-token" not in rendered
     assert "molizhishu-callback-secret" not in rendered
     assert "agent-secret-key" not in rendered
-    assert settings.runtime_summary()["platforms"]["doubao"]["api_key_count"] == 2
+    assert settings.runtime_summary()["platforms"]["doubao"]["api_key_count"] == 0
+    assert settings.runtime_summary()["platforms"]["qwen"]["api_key_count"] == 0
+    assert settings.runtime_summary()["platforms"]["yuanbao"]["credential_count"] == 0
     assert settings.runtime_summary()["platforms"]["aidso"]["enabled"] is True
     assert settings.runtime_summary()["platforms"]["aidso"]["has_token"] is True
     molizhishu_summary = settings.runtime_summary()["platforms"]["molizhishu"]
