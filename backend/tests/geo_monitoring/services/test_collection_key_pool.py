@@ -105,6 +105,29 @@ def test_build_credential_key_pool_registers_molizhishu_token_for_all_platforms(
         assert credential.platform_code == platform_code
 
 
+def test_build_credential_key_pool_registers_molizhishu_token_for_db_platform_codes():
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        DATABASE_URL="sqlite+pysqlite:///:memory:",
+        REDIS_URL="redis://test-redis.invalid:6379/15",
+        DRAMATIQ_BROKER="stub",
+        NACOS_ENABLED=False,
+        MOLIZHISHU_ENABLED=True,
+        MOLIZHISHU_API_TOKEN="molizhishu-token",
+    )
+
+    pool = collection_service.build_credential_key_pool(
+        settings,
+        redis_client=None,
+        molizhishu_platform_codes=["molizhishu_custom_web"],
+    )
+
+    credential = asyncio.run(pool.acquire("molizhishu_custom_web"))
+    assert credential.api_key == "molizhishu-token"
+    assert credential.platform_code == "molizhishu_custom_web"
+
+
 def test_build_credential_key_pool_skips_molizhishu_when_disabled_even_with_token():
     settings = Settings(
         _env_file=None,

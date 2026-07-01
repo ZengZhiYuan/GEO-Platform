@@ -1,5 +1,7 @@
 """AI 平台配置服务。"""
 
+from typing import Any
+
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
@@ -178,6 +180,66 @@ MOLIZHISHU_PLATFORMS = tuple(
 )
 
 DEFAULT_PLATFORMS = (*OFFICIAL_PLATFORMS, *MOLIZHISHU_PLATFORMS)
+
+
+MolizhishuPlatformMapping = dict[str, str | tuple[str, ...]]
+
+
+def _coerce_extra_config(extra_config: dict[str, Any] | None) -> dict[str, Any]:
+    return extra_config if isinstance(extra_config, dict) else {}
+
+
+def _normalize_supported_modes(value: Any, default_mode: str) -> tuple[str, ...]:
+    if isinstance(value, (list, tuple, set)):
+        modes = tuple(str(item).strip() for item in value if str(item).strip())
+    else:
+        modes = ()
+    if modes:
+        return modes
+    if default_mode in {"reasoning", "reasoning_search"}:
+        return _MOLIZHISHU_REASONING_SEARCH_MODES
+    return _MOLIZHISHU_SEARCH_MODES
+
+
+def _molizhishu_provider_code(platform: AIPlatform, extra_config: dict[str, Any]) -> str:
+    configured = extra_config.get("molizhishu_platform")
+    if configured is not None and str(configured).strip():
+        return str(configured).strip()
+    model_name = (platform.model_name or "").strip()
+    if model_name.startswith("molizhishu:"):
+        return model_name.split(":", 1)[1].strip()
+    return platform.platform_code.removeprefix("molizhishu_")
+
+
+def serialize_molizhishu_platform_mapping(platform: AIPlatform) -> MolizhishuPlatformMapping:
+    """从 geo_ai_platform 行构建模力指数 provider 映射。"""
+    extra = _coerce_extra_config(platform.extra_config)
+    default_mode = str(extra.get("default_mode") or "search").strip() or "search"
+    provider_code = _molizhishu_provider_code(platform, extra)
+    return {
+        "molizhishu_platform": provider_code,
+        "platform_name": platform.platform_name,
+        "base_platform": str(extra.get("base_platform") or provider_code).strip(),
+        "endpoint_type": str(extra.get("endpoint_type") or "web").strip(),
+        "default_mode": default_mode,
+        "supported_modes": _normalize_supported_modes(
+            extra.get("supported_modes"), default_mode
+        ),
+    }
+
+
+def load_molizhishu_platform_mappings(
+    db: Session,
+    *,
+    enabled: bool | None = None,
+) -> dict[str, MolizhishuPlatformMapping]:
+    """按 geo_ai_platform 表动态加载模力指数平台映射。"""
+    platforms = platform_repo.list_all_platforms(db, enabled=enabled)
+    return {
+        platform.platform_code: serialize_molizhishu_platform_mapping(platform)
+        for platform in platforms
+        if platform.adapter_type == "molizhishu"
+    }
 
 
 # 按平台编码查询 AI 平台，不存在则抛业务异常

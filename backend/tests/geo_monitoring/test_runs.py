@@ -467,6 +467,91 @@ def test_molizhishu_run_defaults_to_enabled_molizhishu_platforms(
     assert created["expected_query_count"] == len(molizhishu_codes)
 
 
+def test_molizhishu_run_accepts_custom_db_platform_provider_mode(
+    client, session_factory, project_id, tmp_path
+):
+    from app.core.config import Settings
+    from app.geo_monitoring.adapters.key_pool import ApiKeyCredential, CredentialKeyPool
+    from app.geo_monitoring.adapters.molizhishu import MolizhishuAdapter
+    from app.geo_monitoring.adapters.registry import AdapterRegistry
+
+    _active_prompt_setup(client, project_id, prompt_count=1)
+    with session_factory() as db:
+        db.add(
+            AIPlatform(
+                platform_code="molizhishu_custom_web",
+                platform_name="自定义模力平台",
+                adapter_type="molizhishu",
+                model_name="molizhishu:custom_provider",
+                enabled=True,
+                extra_config={
+                    "molizhishu_platform": "custom_provider",
+                    "base_platform": "custom",
+                    "endpoint_type": "web",
+                    "default_mode": "search",
+                    "supported_modes": ["standard", "search"],
+                },
+            )
+        )
+        db.commit()
+
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        DATABASE_URL="sqlite+pysqlite:///:memory:",
+        REDIS_URL="redis://test-redis.invalid:6379/15",
+        DRAMATIQ_BROKER="stub",
+        NACOS_ENABLED=False,
+        REPORT_STORAGE_DIR=str(tmp_path),
+        MOLIZHISHU_ENABLED=True,
+        MOLIZHISHU_BASE_URL="https://molizhishu.test",
+        MOLIZHISHU_API_TOKEN="token",
+    )
+    registry = AdapterRegistry()
+    registry.register(
+        MolizhishuAdapter(
+            code="molizhishu_custom_web",
+            molizhishu_platform="custom_provider",
+            default_mode="search",
+            base_url="https://molizhishu.test",
+        )
+    )
+    key_pool = CredentialKeyPool(None)
+    key_pool.register_platform_credentials(
+        "molizhishu_custom_web",
+        [
+            ApiKeyCredential(
+                platform_code="molizhishu_custom_web",
+                api_key="token",
+            )
+        ],
+    )
+    collection_service.configure_runtime(
+        collection_service.CollectionRuntime(
+            session_factory=session_factory,
+            settings=settings,
+            adapter_registry=registry,
+            key_pool=key_pool,
+        )
+    )
+
+    response = client.post(
+        "/api/geo-monitoring/runs",
+        json={
+            "project_id": project_id,
+            "collection_source": "molizhishu",
+            "platform_codes": ["molizhishu_custom_web"],
+            "provider_mode_by_platform": {"molizhishu_custom_web": "search"},
+        },
+    ).json()
+
+    assert response["code"] == 0
+    assert response["data"]["platform_codes"] == ["molizhishu_custom_web"]
+    assert response["data"]["provider_mode_by_platform"] == {
+        "molizhishu_custom_web": "search"
+    }
+
+
 def test_official_run_defaults_exclude_molizhishu_when_all_platforms_enabled(
     client, session_factory, project_id
 ):

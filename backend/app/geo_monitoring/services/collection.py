@@ -10,8 +10,8 @@ from typing import Any, Callable
 from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.orm import Session, object_session
 
 from app.core.config import Settings, settings as default_settings
 from app.core.database import SessionLocal
@@ -56,6 +56,7 @@ from app.geo_monitoring.services.brand_matcher import (
 from app.geo_monitoring.services.platforms import (
     AIDSO_PLATFORM_MAPPINGS,
     MOLIZHISHU_PLATFORM_MAPPINGS,
+    serialize_molizhishu_platform_mapping,
 )
 
 logger = logging.getLogger(__name__)
@@ -160,14 +161,38 @@ def build_default_runtime(
     from app.core.config import get_settings
 
     runtime_settings = runtime_settings or get_settings()
-    registry = adapter_registry or build_adapter_registry(runtime_settings)
-    pool = key_pool or build_credential_key_pool(runtime_settings)
+    resolved_session_factory = session_factory or SessionLocal
+    molizhishu_mappings = _load_runtime_molizhishu_mappings(resolved_session_factory)
+    registry = adapter_registry or build_adapter_registry(
+        runtime_settings,
+        molizhishu_mappings=molizhishu_mappings,
+    )
+    pool = key_pool or build_credential_key_pool(
+        runtime_settings,
+        molizhishu_platform_codes=list(molizhishu_mappings),
+    )
     return CollectionRuntime(
-        session_factory=session_factory or SessionLocal,
+        session_factory=resolved_session_factory,
         settings=runtime_settings,
         adapter_registry=registry,
         key_pool=pool,
     )
+
+
+def _load_runtime_molizhishu_mappings(
+    session_factory: Callable[[], Session],
+) -> dict:
+    from app.geo_monitoring.services.platforms import (
+        MOLIZHISHU_PLATFORM_MAPPINGS,
+        load_molizhishu_platform_mappings,
+    )
+
+    try:
+        with session_factory() as db:
+            return load_molizhishu_platform_mappings(db, enabled=True)
+    except SQLAlchemyError as exc:
+        logger.warning("load molizhishu platform mappings from db failed: %s", exc)
+        return dict(MOLIZHISHU_PLATFORM_MAPPINGS)
 
 
 def platform_runtime_diagnostics(db: Session) -> dict[str, Any]:
@@ -207,6 +232,7 @@ def build_credential_key_pool(
     runtime_settings: Settings,
     *,
     redis_client: Any | None = _KEY_POOL_REDIS_UNSET,
+    molizhishu_platform_codes: list[str] | tuple[str, ...] | None = None,
 ) -> CredentialKeyPool:
     resolved_redis = (
         _create_key_pool_redis_client(runtime_settings)
@@ -247,7 +273,8 @@ def build_credential_key_pool(
             )
     molizhishu_token = runtime_settings.MOLIZHISHU_API_TOKEN.strip()
     if _molizhishu_configured(runtime_settings) and molizhishu_token:
-        for platform_code in MOLIZHISHU_PLATFORM_MAPPINGS:
+        platform_codes = molizhishu_platform_codes or tuple(MOLIZHISHU_PLATFORM_MAPPINGS)
+        for platform_code in platform_codes:
             pool.register_platform_credentials(
                 platform_code,
                 [
@@ -280,14 +307,28 @@ def _resolve_aidso_thinking_enabled(run: MonitorRun, platform_code: str) -> bool
     return value if isinstance(value, bool) else True
 
 
-def _resolve_provider_mode(run: MonitorRun, platform_code: str) -> str | None:
+def _resolve_provider_mode(run: MonitorRun, platform: AIPlatform) -> str | None:
+    platform_code = platform.platform_code
     configured = (run.provider_mode_by_platform or {}).get(platform_code)
     if isinstance(configured, str) and configured.strip():
         return configured.strip()
-    mapping = MOLIZHISHU_PLATFORM_MAPPINGS.get(platform_code)
+    mapping = (
+        serialize_molizhishu_platform_mapping(platform)
+        if platform.adapter_type == "molizhishu"
+        else None
+    )
     if mapping:
         return str(mapping["default_mode"])
     return None
+
+
+def _task_uses_molizhishu(task: QueryTask) -> bool:
+    if task.provider_name == "molizhishu":
+        return True
+    request_json = task.request_json or {}
+    if any(str(key).startswith("molizhishu_") for key in request_json):
+        return True
+    return task.platform_code.startswith("molizhishu_")
 
 
 def enqueue_run_query_tasks(run_id: int, *, db: Session | None = None) -> int:
@@ -748,11 +789,20 @@ def _provider_batch_items_from_tasks(
     tasks: list[QueryTask],
     run: MonitorRun,
 ) -> list:
+    if not tasks:
+        return []
+
     from app.geo_monitoring.services.provider_batches import (
         ProviderBatchItem,
         _resolve_mode,
         _resolve_molizhishu_platform,
     )
+    from app.geo_monitoring.services.platforms import load_molizhishu_platform_mappings
+
+    session = object_session(run) or object_session(tasks[0])
+    if session is None:
+        raise RuntimeError("provider batch tasks must be attached to a Session")
+    mappings = load_molizhishu_platform_mappings(session)
 
     items: list[ProviderBatchItem] = []
     for task in tasks:
@@ -764,8 +814,10 @@ def _provider_batch_items_from_tasks(
                 prompt_id=task.prompt_id,
                 platform_code=task.platform_code,
                 prompt_text=prompt_text,
-                molizhishu_platform=_resolve_molizhishu_platform(task.platform_code),
-                mode=_resolve_mode(run, task.platform_code),
+                molizhishu_platform=_resolve_molizhishu_platform(
+                    task.platform_code, mappings
+                ),
+                mode=_resolve_mode(run, task.platform_code, mappings),
                 screenshot=run.provider_screenshot,
             )
         )
@@ -1013,7 +1065,7 @@ def _claim_task_for_execution(
             model_name=_resolve_model(runtime.settings, platform),
             project_id=run.project_id,
             collection_source=run.collection_source,
-            provider_mode=_resolve_provider_mode(run, task.platform_code),
+            provider_mode=_resolve_provider_mode(run, platform),
             provider_screenshot=run.provider_screenshot,
             region_code=run.region_code,
             aidso_thinking_enabled=_resolve_aidso_thinking_enabled(
@@ -1280,7 +1332,7 @@ def _handle_adapter_failure(
             retry_delay_seconds = None
             if (
                 error.category == ErrorCategory.PENDING
-                and task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS
+                and _task_uses_molizhishu(task)
             ):
                 retry_delay_seconds = (
                     runtime.settings.COLLECTION_MOLIZHISHU_POLL_DELAY_SECONDS
@@ -1341,7 +1393,7 @@ def _is_provider_pending_poll(task: QueryTask) -> bool:
         return isinstance(request_json.get("aidso_req_id"), str) and bool(
             request_json.get("aidso_req_id", "").strip()
         )
-    if task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS:
+    if _task_uses_molizhishu(task):
         return isinstance(request_json.get("molizhishu_subtask_id"), str) and bool(
             request_json.get("molizhishu_subtask_id", "").strip()
         )
@@ -1349,13 +1401,13 @@ def _is_provider_pending_poll(task: QueryTask) -> bool:
 
 
 def _pending_poll_count_key(task: QueryTask) -> str:
-    if task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS:
+    if _task_uses_molizhishu(task):
         return "molizhishu_poll_count"
     return "aidso_poll_count"
 
 
 def _pending_max_polls(runtime: CollectionRuntime, task: QueryTask) -> int:
-    if task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS:
+    if _task_uses_molizhishu(task):
         return runtime.settings.COLLECTION_MOLIZHISHU_MAX_POLLS
     return runtime.settings.COLLECTION_AIDSO_MAX_POLLS
 
@@ -1385,7 +1437,7 @@ def _persist_pending_metadata(task: QueryTask, error: AdapterError) -> int | Non
         poll_count = int(request_json.get(poll_key) or 0) + 1
         request_json[poll_key] = poll_count
     task.request_json = request_json
-    if task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS:
+    if _task_uses_molizhishu(task):
         subtask_id = pending_metadata.get("molizhishu_subtask_id")
         if isinstance(subtask_id, str) and subtask_id.strip():
             task.provider_request_id = subtask_id.strip()
@@ -1411,7 +1463,7 @@ def _mark_task_failed(
     task.error_message = error_message
     task.last_error_code = error_code
     task.last_error_message = error_message
-    if provider_error_message and task.platform_code in MOLIZHISHU_PLATFORM_MAPPINGS:
+    if provider_error_message and _task_uses_molizhishu(task):
         task.provider_error_message = provider_error_message
     task.completed_at = now
     task.finished_at = now
@@ -1435,7 +1487,7 @@ def _apply_provider_task_fields(
     snapshot: TaskSnapshot,
     platform_answer: PlatformAnswer,
 ) -> None:
-    if snapshot.platform_code not in MOLIZHISHU_PLATFORM_MAPPINGS:
+    if snapshot.collection_source != "molizhishu":
         return
     request_json = snapshot.request_json or {}
     task.provider_name = "molizhishu"
@@ -1478,12 +1530,14 @@ def find_query_task_by_molizhishu_ids(
     if task is not None:
         return task
 
-    molizhishu_codes = list(MOLIZHISHU_PLATFORM_MAPPINGS.keys())
     candidates = list(
         db.execute(
-            select(QueryTask).where(
+            select(QueryTask)
+            .join(AIPlatform, QueryTask.platform_code == AIPlatform.platform_code)
+            .where(
                 QueryTask.is_deleted.is_(False),
-                QueryTask.platform_code.in_(molizhishu_codes),
+                AIPlatform.adapter_type == "molizhishu",
+                AIPlatform.is_deleted.is_(False),
                 QueryTask.provider_task_id == provider_task_id,
             )
         )
@@ -1500,9 +1554,12 @@ def find_query_task_by_molizhishu_ids(
 
     candidates = list(
         db.execute(
-            select(QueryTask).where(
+            select(QueryTask)
+            .join(AIPlatform, QueryTask.platform_code == AIPlatform.platform_code)
+            .where(
                 QueryTask.is_deleted.is_(False),
-                QueryTask.platform_code.in_(molizhishu_codes),
+                AIPlatform.adapter_type == "molizhishu",
+                AIPlatform.is_deleted.is_(False),
                 QueryTask.provider_task_id.is_(None),
                 QueryTask.status.notin_(tuple(TERMINAL_TASK_STATUSES)),
             )
@@ -1559,7 +1616,7 @@ def _build_snapshot_for_task(
         model_name=_resolve_model(runtime.settings, platform),
         project_id=run.project_id,
         collection_source=run.collection_source,
-        provider_mode=_resolve_provider_mode(run, task.platform_code),
+        provider_mode=_resolve_provider_mode(run, platform),
         provider_screenshot=run.provider_screenshot,
         region_code=run.region_code,
         aidso_thinking_enabled=_resolve_aidso_thinking_enabled(run, task.platform_code),
@@ -1894,22 +1951,27 @@ async def _stop_molizhishu_provider_tasks_async(
     task_subtasks: dict[str, list[str | None]],
 ) -> int:
     runtime = get_runtime()
-    platform_code = next(iter(MOLIZHISHU_PLATFORM_MAPPINGS))
+    from app.geo_monitoring.adapters.molizhishu import MolizhishuAdapter
+
+    platform_code = None
+    adapter = None
+    for registered_code in runtime.adapter_registry.registered_codes():
+        candidate = runtime.adapter_registry.get(registered_code)
+        if isinstance(candidate, MolizhishuAdapter):
+            platform_code = registered_code
+            adapter = candidate
+            break
+    if platform_code is None or adapter is None:
+        logger.warning(
+            "molizhishu stop skipped run_id=%s: adapter unavailable",
+            run_id,
+        )
+        return 0
     try:
         credential = await runtime.key_pool.acquire(platform_code)
     except NoAvailableCredentialError:
         logger.warning(
             "molizhishu stop skipped run_id=%s: no credential available",
-            run_id,
-        )
-        return 0
-
-    adapter = runtime.adapter_registry.get(platform_code)
-    from app.geo_monitoring.adapters.molizhishu import MolizhishuAdapter
-
-    if not isinstance(adapter, MolizhishuAdapter):
-        logger.warning(
-            "molizhishu stop skipped run_id=%s: adapter unavailable",
             run_id,
         )
         return 0

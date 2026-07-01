@@ -1,4 +1,5 @@
 from app.geo_monitoring.models import AIPlatform
+from app.geo_monitoring.services import platforms as platform_service
 from app.geo_monitoring.services.platforms import (
     DEFAULT_PLATFORMS,
     MOLIZHISHU_PLATFORM_MAPPINGS,
@@ -38,6 +39,52 @@ def test_platform_list_and_update(client, session_factory):
     assert updated["citation_supported"] is True
     detail = client.get("/api/geo-monitoring/platforms/deepseek").json()["data"]
     assert detail["model_name"] == "deepseek-chat"
+
+
+def test_molizhishu_platform_mappings_are_loaded_from_database(session_factory):
+    with session_factory() as db:
+        db.add(
+            AIPlatform(
+                platform_code="molizhishu_custom_web",
+                platform_name="自定义模力平台",
+                adapter_type="molizhishu",
+                model_name="molizhishu:custom_provider",
+                search_enabled=True,
+                citation_supported=True,
+                extra_config={
+                    "molizhishu_platform": "custom_provider",
+                    "base_platform": "custom",
+                    "endpoint_type": "web",
+                    "default_mode": "search",
+                    "supported_modes": ["standard", "search"],
+                },
+            )
+        )
+        db.commit()
+
+        mappings = platform_service.load_molizhishu_platform_mappings(db)
+
+    assert set(mappings) == {"molizhishu_custom_web"}
+    assert mappings["molizhishu_custom_web"]["molizhishu_platform"] == "custom_provider"
+    assert mappings["molizhishu_custom_web"]["default_mode"] == "search"
+    assert mappings["molizhishu_custom_web"]["supported_modes"] == ("standard", "search")
+
+
+def test_molizhishu_platform_mapping_falls_back_to_model_name_without_extra_config():
+    platform = AIPlatform(
+        platform_code="molizhishu_custom_web",
+        platform_name="自定义模力平台",
+        adapter_type="molizhishu",
+        model_name="molizhishu:custom_provider",
+        extra_config={},
+    )
+
+    mapping = platform_service.serialize_molizhishu_platform_mapping(platform)
+
+    assert mapping["molizhishu_platform"] == "custom_provider"
+    assert mapping["base_platform"] == "custom_provider"
+    assert mapping["default_mode"] == "search"
+    assert mapping["supported_modes"] == ("standard", "search")
 
 
 def test_default_platform_catalog_counts_official_and_molizhishu():
