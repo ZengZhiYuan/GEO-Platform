@@ -12,7 +12,10 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, settings as default_settings
 from app.geo_monitoring.models import MonitorRun, ProviderBatch, QueryTask
 from app.geo_monitoring.repositories import provider_batches as batch_repo
-from app.geo_monitoring.services.platforms import MOLIZHISHU_PLATFORM_MAPPINGS
+from app.geo_monitoring.services.platforms import (
+    MolizhishuPlatformMapping,
+    load_molizhishu_platform_mappings,
+)
 
 MAX_PROVIDER_BATCH_SUBTASKS = 100
 
@@ -168,24 +171,32 @@ def map_subtasks_to_items(
     return mapping
 
 
-def _resolve_mode(run: MonitorRun, platform_code: str) -> str:
+def _resolve_mode(
+    run: MonitorRun,
+    platform_code: str,
+    mappings: dict[str, MolizhishuPlatformMapping],
+) -> str:
     configured = (run.provider_mode_by_platform or {}).get(platform_code)
     if isinstance(configured, str) and configured.strip():
         return configured.strip()
-    mapping = MOLIZHISHU_PLATFORM_MAPPINGS.get(platform_code)
+    mapping = mappings.get(platform_code)
     if mapping:
         return str(mapping["default_mode"])
     return "search"
 
 
-def _resolve_molizhishu_platform(platform_code: str) -> str:
-    mapping = MOLIZHISHU_PLATFORM_MAPPINGS.get(platform_code)
+def _resolve_molizhishu_platform(
+    platform_code: str,
+    mappings: dict[str, MolizhishuPlatformMapping],
+) -> str:
+    mapping = mappings.get(platform_code)
     if mapping is None:
         raise ValueError(f"unsupported molizhishu platform_code: {platform_code}")
     return str(mapping["molizhishu_platform"])
 
 
 def build_batch_items_for_run(db: Session, run: MonitorRun) -> list[ProviderBatchItem]:
+    mappings = load_molizhishu_platform_mappings(db)
     tasks = list(
         db.execute(
             select(QueryTask)
@@ -210,8 +221,10 @@ def build_batch_items_for_run(db: Session, run: MonitorRun) -> list[ProviderBatc
                 prompt_id=task.prompt_id,
                 platform_code=task.platform_code,
                 prompt_text=prompt_text,
-                molizhishu_platform=_resolve_molizhishu_platform(task.platform_code),
-                mode=_resolve_mode(run, task.platform_code),
+                molizhishu_platform=_resolve_molizhishu_platform(
+                    task.platform_code, mappings
+                ),
+                mode=_resolve_mode(run, task.platform_code, mappings),
                 screenshot=run.provider_screenshot,
             )
         )

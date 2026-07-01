@@ -172,10 +172,12 @@ def get_monitor_setup(db: Session, project_id: int) -> dict:
     selected_platform_codes = list(project.default_platform_codes or [])
     deep_thinking_map = dict(project.deep_thinking_enabled_by_platform or {})
     search_enabled_map = dict(project.search_enabled_by_platform or {})
+    molizhishu_mappings = platform_service.load_molizhishu_platform_mappings(db)
     resolved_deep, resolved_search = serialize_platform_toggles(
         selected_platform_codes,
         deep_thinking_by_platform=deep_thinking_map,
         search_enabled_by_platform=search_enabled_map,
+        molizhishu_mappings=molizhishu_mappings,
     )
     return {
         "brand": _serialize_brand(db, target) if target else None,
@@ -395,10 +397,12 @@ def persist_monitor_setup(
     selected_platform_codes = _validate_platform_codes(
         db, payload.selected_platform_codes
     )
+    molizhishu_mappings = platform_service.load_molizhishu_platform_mappings(db)
     stored_deep, stored_search = normalize_platform_toggle_maps(
         selected_platform_codes,
         deep_thinking_by_platform=payload.deep_thinking_enabled_by_platform,
         search_enabled_by_platform=payload.search_enabled_by_platform,
+        molizhishu_mappings=molizhishu_mappings,
     )
     target = _upsert_target_brand(db, project.id, payload)
     _replace_competitors(db, project.id, payload)

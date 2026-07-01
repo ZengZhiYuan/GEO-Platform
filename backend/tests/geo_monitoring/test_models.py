@@ -136,18 +136,19 @@ def test_run_create_rejects_legacy_aidso_thinking_field():
         )
 
 
-def test_run_create_rejects_invalid_provider_mode():
-    from pydantic import ValidationError
-
+def test_run_create_defers_provider_mode_validation_to_service_layer():
     from app.geo_monitoring.schemas import RunCreate
 
-    with pytest.raises(ValidationError):
-        RunCreate(
-            project_id=1,
-            collection_source="molizhishu",
-            platform_codes=["molizhishu_doubao_web"],
-            provider_mode_by_platform={"molizhishu_doubao_web": "reasoning"},
-        )
+    payload = RunCreate(
+        project_id=1,
+        collection_source="molizhishu",
+        platform_codes=["molizhishu_doubao_web"],
+        provider_mode_by_platform={"molizhishu_doubao_web": "reasoning"},
+    )
+
+    assert payload.provider_mode_by_platform == {
+        "molizhishu_doubao_web": "reasoning"
+    }
 
 
 def test_run_create_rejects_unknown_provider_mode_platform():

@@ -779,31 +779,13 @@ class RunCreate(BaseModel):
         if not self.provider_mode_by_platform:
             return self
 
-        from app.geo_monitoring.services.platforms import MOLIZHISHU_PLATFORM_MAPPINGS
-
-        configured = set(self.provider_mode_by_platform)
-        unknown = configured - set(MOLIZHISHU_PLATFORM_MAPPINGS)
-        if unknown:
-            raise PydanticCustomError(
-                "invalid_provider_platform",
-                "provider_mode_by_platform 包含无效模力指数平台编码",
-            )
-
         if self.platform_codes is not None:
+            configured = set(self.provider_mode_by_platform)
             outside_request = configured - set(self.platform_codes)
             if outside_request:
                 raise PydanticCustomError(
                     "provider_platform_outside_request",
                     "provider_mode_by_platform 只能配置本次 platform_codes 内的平台",
-                )
-
-        for platform_code, mode in self.provider_mode_by_platform.items():
-            supported_modes = MOLIZHISHU_PLATFORM_MAPPINGS[platform_code]["supported_modes"]
-            if mode not in supported_modes:
-                raise PydanticCustomError(
-                    "unsupported_provider_mode",
-                    "provider_mode_by_platform[{platform_code}] 不支持模式 {mode}",
-                    {"platform_code": platform_code, "mode": mode},
                 )
 
         if self.collection_source != RunCreateCollectionSource.MOLIZHISHU:

@@ -15,6 +15,7 @@ from app.geo_monitoring.repositories import prompts as prompt_repo
 from app.geo_monitoring.repositories import runs as run_repo
 from app.geo_monitoring.schemas import RunCreate, RunDetailRead
 from app.geo_monitoring.services.projects import require_active_project, require_monitoring_not_paused
+from app.geo_monitoring.services.platforms import MolizhishuPlatformMapping
 from app.geo_monitoring.services.tenant_access import (
     ensure_project_tenant_access,
     list_tenant_filter,
@@ -115,7 +116,9 @@ def _resolve_platforms(
 
 
 def _validate_provider_mode_for_resolved_platforms(
-    payload: RunCreate, resolved_platform_codes: list[str]
+    payload: RunCreate,
+    resolved_platform_codes: list[str],
+    molizhishu_mappings: dict[str, MolizhishuPlatformMapping],
 ) -> None:
     if not payload.provider_mode_by_platform:
         return
@@ -125,6 +128,18 @@ def _validate_provider_mode_for_resolved_platforms(
             message="provider_mode_by_platform 只能配置本次 platform_codes 内的平台",
             code=422,
         )
+    for platform_code, mode in payload.provider_mode_by_platform.items():
+        mapping = molizhishu_mappings.get(platform_code)
+        if mapping is None:
+            raise BusinessException(
+                message="provider_mode_by_platform 包含无效模力指数平台编码",
+                code=422,
+            )
+        if mode not in mapping["supported_modes"]:
+            raise BusinessException(
+                message=f"provider_mode_by_platform[{platform_code}] 不支持模式 {mode}",
+                code=422,
+            )
 
 
 def prepare_run_create(db: Session, payload: RunCreate):
@@ -142,7 +157,12 @@ def prepare_run_create(db: Session, payload: RunCreate):
         collection_source=payload.collection_source.value,
     )
     resolved_platform_codes = [platform.platform_code for platform in platforms]
-    _validate_provider_mode_for_resolved_platforms(payload, resolved_platform_codes)
+    from app.geo_monitoring.services.platforms import load_molizhishu_platform_mappings
+
+    molizhishu_mappings = load_molizhishu_platform_mappings(db)
+    _validate_provider_mode_for_resolved_platforms(
+        payload, resolved_platform_codes, molizhishu_mappings
+    )
     from app.geo_monitoring.adapters.registry import validate_resolved_platforms_runtime
     from app.geo_monitoring.services.collection import get_runtime
 
@@ -333,6 +353,7 @@ def _resolve_run_provider_modes(
     project: MonitorProject,
     payload: RunCreate,
     resolved_platform_codes: list[str],
+    molizhishu_mappings: dict[str, MolizhishuPlatformMapping],
 ) -> dict[str, str]:
     if payload.provider_mode_by_platform:
         return dict(payload.provider_mode_by_platform)
@@ -346,6 +367,7 @@ def _resolve_run_provider_modes(
         resolved_platform_codes,
         deep_thinking_by_platform=project.deep_thinking_enabled_by_platform or {},
         search_enabled_by_platform=project.search_enabled_by_platform or {},
+        molizhishu_mappings=molizhishu_mappings,
     )
 
 
@@ -354,8 +376,11 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
     project, prompt_set, prompts, platforms, resolved_platform_codes = prepare_run_create(
         db, payload
     )
+    from app.geo_monitoring.services.platforms import load_molizhishu_platform_mappings
+
+    molizhishu_mappings = load_molizhishu_platform_mappings(db)
     provider_mode_by_platform = _resolve_run_provider_modes(
-        project, payload, resolved_platform_codes
+        project, payload, resolved_platform_codes, molizhishu_mappings
     )
     task_count = len(prompts) * len(platforms)
     run = MonitorRun(

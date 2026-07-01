@@ -49,6 +49,20 @@ def test_default_platform_toggles_for_molizhishu_platforms():
     assert default_platform_toggles("qwen") == (True, True)
 
 
+def test_default_platform_toggles_uses_injected_molizhishu_mappings():
+    mappings = {
+        "molizhishu_custom_web": {
+            "default_mode": "standard",
+            "supported_modes": ("standard", "search"),
+        }
+    }
+
+    assert (
+        default_platform_toggles("molizhishu_custom_web", molizhishu_mappings=mappings)
+        == (False, False)
+    )
+
+
 def test_serialize_platform_toggles_uses_defaults_for_missing_keys():
     deep, search = serialize_platform_toggles(
         ["molizhishu_doubao_web", "molizhishu_deepseek_web"],

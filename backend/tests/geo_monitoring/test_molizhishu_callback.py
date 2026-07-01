@@ -188,6 +188,94 @@ def _seed_molizhishu_task(
     }
 
 
+def test_find_query_task_by_molizhishu_ids_legacy_request_json_fallback(session_factory):
+    with session_factory() as db:
+        seeded = _seed_molizhishu_task(db, status="queued")
+        task = db.get(QueryTask, seeded["task_id"])
+        task.provider_task_id = None
+        task.provider_subtask_id = None
+        db.commit()
+
+        matched = collection_service.find_query_task_by_molizhishu_ids(
+            db,
+            provider_task_id=seeded["provider_task_id"],
+            provider_subtask_id=seeded["provider_subtask_id"],
+        )
+
+    assert matched is not None
+    assert matched.id == seeded["task_id"]
+
+
+def test_find_query_task_by_molizhishu_ids_supports_custom_db_platform(session_factory):
+    with session_factory() as db:
+        project = MonitorProject(project_name="自定义回调", status="active")
+        db.add(project)
+        db.flush()
+        prompt_set = PromptSet(
+            project_id=project.id,
+            set_name="集",
+            version_no="v1",
+            status="active",
+        )
+        db.add(prompt_set)
+        db.flush()
+        prompt = Prompt(
+            prompt_set_id=prompt_set.id,
+            prompt_code="p1",
+            prompt_text="问题",
+        )
+        db.add(prompt)
+        db.flush()
+        db.add(
+            AIPlatform(
+                platform_code="molizhishu_custom_web",
+                platform_name="自定义模力平台",
+                adapter_type="molizhishu",
+                model_name="molizhishu:custom_provider",
+                enabled=True,
+                extra_config={"molizhishu_platform": "custom_provider"},
+            )
+        )
+        run = MonitorRun(
+            run_no="RUN-CB-CUSTOM",
+            project_id=project.id,
+            prompt_set_id=prompt_set.id,
+            prompt_set_version=prompt_set.version_no,
+            collection_source="molizhishu",
+            platform_codes=["molizhishu_custom_web"],
+            status="collecting",
+            total_tasks=1,
+            expected_query_count=1,
+        )
+        db.add(run)
+        db.flush()
+        task = QueryTask(
+            run_id=run.id,
+            prompt_id=prompt.id,
+            platform_code="molizhishu_custom_web",
+            idempotency_key="callback-custom",
+            status="queued",
+            request_json={
+                "molizhishu_task_id": "task-custom-1",
+                "molizhishu_subtask_id": "subtask-custom-1",
+            },
+            provider_task_id=None,
+            provider_subtask_id=None,
+        )
+        db.add(task)
+        db.commit()
+        task_id = task.id
+
+        matched = collection_service.find_query_task_by_molizhishu_ids(
+            db,
+            provider_task_id="task-custom-1",
+            provider_subtask_id="subtask-custom-1",
+        )
+
+    assert matched is not None
+    assert matched.id == task_id
+
+
 class MockMolizhishuAdapter:
     code = "molizhishu_deepseek_web"
 

@@ -31,6 +31,7 @@ from app.geo_monitoring.repositories import provider_batches as batch_repo
 from app.geo_monitoring.services import collection as collection_service
 from app.geo_monitoring.services.provider_batches import (
     ProviderBatchItem,
+    build_batch_items_for_run,
     build_submit_indexes,
     create_provider_batches_for_run,
     map_subtasks_to_items,
@@ -282,6 +283,74 @@ def test_create_run_builds_three_provider_batches(db, provider_batch_env):
     tasks = db.query(QueryTask).filter(QueryTask.run_id == run.id).all()
     assert len(tasks) == 250
     assert all(task.provider_batch_id is not None for task in tasks)
+
+
+def test_build_batch_items_uses_molizhishu_mapping_from_database(db):
+    project = MonitorProject(project_name="动态平台", status="active")
+    db.add(project)
+    db.flush()
+    prompt_set = PromptSet(
+        project_id=project.id,
+        set_name="集",
+        version_no="v1",
+        status="active",
+    )
+    db.add(prompt_set)
+    db.flush()
+    prompt = Prompt(
+        prompt_set_id=prompt_set.id,
+        prompt_code="p1",
+        prompt_text="动态平台问题",
+    )
+    db.add(prompt)
+    db.add(
+        AIPlatform(
+            platform_code="molizhishu_custom_web",
+            platform_name="自定义模力平台",
+            adapter_type="molizhishu",
+            model_name="molizhishu:custom_provider",
+            extra_config={
+                "molizhishu_platform": "custom_provider",
+                "default_mode": "search",
+                "supported_modes": ["standard", "search"],
+            },
+        )
+    )
+    db.flush()
+    run = MonitorRun(
+        run_no="RUN-PB-DYNAMIC",
+        project_id=project.id,
+        prompt_set_id=prompt_set.id,
+        prompt_set_version=prompt_set.version_no,
+        collection_source="molizhishu",
+        provider_mode_by_platform={},
+        provider_screenshot=1,
+        platform_codes=["molizhishu_custom_web"],
+        status="collecting",
+        collection_status="running",
+        total_tasks=1,
+        expected_query_count=1,
+    )
+    db.add(run)
+    db.flush()
+    db.add(
+        QueryTask(
+            run_id=run.id,
+            prompt_id=prompt.id,
+            platform_code="molizhishu_custom_web",
+            idempotency_key="dynamic-platform-task",
+            status="pending",
+            request_json={"prompt_text": prompt.prompt_text},
+        )
+    )
+    db.commit()
+
+    items = build_batch_items_for_run(db, run)
+
+    assert len(items) == 1
+    assert items[0].platform_code == "molizhishu_custom_web"
+    assert items[0].molizhishu_platform == "custom_provider"
+    assert items[0].mode == "search"
 
 
 def _build_subtask_list(items: list[ProviderBatchItem]) -> list[dict]:
