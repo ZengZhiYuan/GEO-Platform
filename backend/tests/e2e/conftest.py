@@ -64,6 +64,34 @@ def active_prompt_setup(client, project_id: int, *, prompt_count: int = 1) -> di
     return {"prompt_set": activated, "prompt_ids": prompt_ids}
 
 
+def configure_molizhishu_collection_runtime(session_factory, monkeypatch) -> None:
+    monkeypatch.setenv("MOLIZHISHU_ENABLED", "true")
+    monkeypatch.setenv("MOLIZHISHU_API_TOKEN", "test-molizhishu-token")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    runtime_settings = get_settings()
+    collection_service.configure_runtime(
+        collection_service.build_default_runtime(
+            session_factory=session_factory,
+            runtime_settings=runtime_settings,
+        )
+    )
+
+
+def seed_molizhishu_platform(session_factory, *, platform_code: str = "molizhishu_doubao_web") -> None:
+    with session_factory() as db:
+        existing = set(db.execute(select(AIPlatform.platform_code)).scalars().all())
+        for platform in DEFAULT_PLATFORMS:
+            code = platform["platform_code"]
+            if code in existing:
+                continue
+            db.add(AIPlatform(**platform, enabled=False))
+        for row in db.execute(select(AIPlatform)).scalars().all():
+            row.enabled = row.platform_code == platform_code
+        db.commit()
+
+
 def configure_mock_collection_runtime(session_factory, monkeypatch) -> None:
     monkeypatch.setenv("QWEN_ENABLED", "true")
     monkeypatch.setenv("QWEN_MODEL", "qwen-max")

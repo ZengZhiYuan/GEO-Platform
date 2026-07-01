@@ -832,5 +832,13 @@ CREATE INDEX ix_geo_report_tenant ON geo_report (tenant_id);
 
 UPDATE alembic_version SET version_num='geo_monitoring_0013' WHERE alembic_version.version_num = 'geo_monitoring_0012';
 
+-- Running upgrade geo_monitoring_0013 -> geo_monitoring_0014
+
+ALTER TABLE geo_monitor_project ADD COLUMN deep_thinking_enabled_by_platform JSON DEFAULT '{}' NOT NULL;
+
+ALTER TABLE geo_monitor_project ADD COLUMN search_enabled_by_platform JSON DEFAULT '{}' NOT NULL;
+
+UPDATE alembic_version SET version_num='geo_monitoring_0014' WHERE alembic_version.version_num = 'geo_monitoring_0013';
+
 COMMIT;
 

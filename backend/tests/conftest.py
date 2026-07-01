@@ -15,8 +15,7 @@ os.environ["REDIS_URL"] = "redis://test-redis.invalid:6379/15"
 os.environ["DRAMATIQ_BROKER"] = "stub"
 os.environ["NACOS_ENABLED"] = "false"
 
-# 隔离开发机 .env 中的真实凭证，避免 client fixture 启动失败或泄露密钥形态。
-# 官方平台默认启用测试凭证，使 Run 创建前置校验可通过；模力指数默认关闭以覆盖 O3 拒绝路径。
+# 官方平台默认启用测试凭证；模力指数默认关闭，需 molizhishu_client fixture 覆盖启用路径。
 for _env_key, _env_value in {
     "DOUBAO_ENABLED": "true",
     "DOUBAO_API_KEYS": "test-doubao-key",
@@ -131,6 +130,34 @@ def client(session_factory) -> Generator[TestClient, None, None]:
     finally:
         app.dependency_overrides.clear()
         collection_service.reset_runtime()
+
+
+@pytest.fixture
+def molizhishu_client(client, session_factory):
+    """启用模力指数运行时配置，供默认 molizhishu Run 创建成功路径测试。"""
+    from app.core.config import get_settings
+    from app.geo_monitoring.services import collection as collection_service
+
+    os.environ["MOLIZHISHU_ENABLED"] = "true"
+    os.environ["MOLIZHISHU_API_TOKEN"] = "test-molizhishu-token"
+    get_settings.cache_clear()
+    runtime_settings = get_settings()
+    collection_service.configure_runtime(
+        collection_service.build_default_runtime(
+            session_factory=session_factory,
+            runtime_settings=runtime_settings,
+        )
+    )
+    yield client
+    os.environ["MOLIZHISHU_ENABLED"] = "false"
+    os.environ["MOLIZHISHU_API_TOKEN"] = ""
+    get_settings.cache_clear()
+    collection_service.configure_runtime(
+        collection_service.build_default_runtime(
+            session_factory=session_factory,
+            runtime_settings=get_settings(),
+        )
+    )
 
 
 @pytest.fixture

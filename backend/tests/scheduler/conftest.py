@@ -1,9 +1,15 @@
 """调度测试夹具。"""
 
+import os
+
 import pytest
 
+from app.core.config import get_settings
 from app.geo_monitoring.models import AIPlatform
+from app.geo_monitoring.services import collection as collection_service
 from app.geo_monitoring.services.platforms import DEFAULT_PLATFORMS
+
+MOLIZHISHU_SCHEDULE_PLATFORM = "molizhishu_doubao_web"
 
 
 def seed_platforms(session_factory, disabled: set[str] | None = None) -> None:
@@ -17,6 +23,18 @@ def seed_platforms(session_factory, disabled: set[str] | None = None) -> None:
             for platform in DEFAULT_PLATFORMS
         )
         db.commit()
+
+
+def _configure_molizhishu_runtime(session_factory) -> None:
+    os.environ["MOLIZHISHU_ENABLED"] = "true"
+    os.environ["MOLIZHISHU_API_TOKEN"] = "test-molizhishu-token"
+    get_settings.cache_clear()
+    collection_service.configure_runtime(
+        collection_service.build_default_runtime(
+            session_factory=session_factory,
+            runtime_settings=get_settings(),
+        )
+    )
 
 
 def active_prompt_setup(client, project_id: int, prompt_count: int = 1) -> dict:
@@ -43,6 +61,12 @@ def active_prompt_setup(client, project_id: int, prompt_count: int = 1) -> dict:
 
 @pytest.fixture
 def schedule_setup(client, session_factory, project_id):
-    seed_platforms(session_factory, disabled={"yuanbao", "deepseek", "kimi", "doubao"})
+    _configure_molizhishu_runtime(session_factory)
+    disabled = {
+        platform["platform_code"]
+        for platform in DEFAULT_PLATFORMS
+        if platform["platform_code"] != MOLIZHISHU_SCHEDULE_PLATFORM
+    }
+    seed_platforms(session_factory, disabled=disabled)
     prompts = active_prompt_setup(client, project_id, prompt_count=1)
     return {"project_id": project_id, **prompts}

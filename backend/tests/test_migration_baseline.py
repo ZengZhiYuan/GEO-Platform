@@ -27,6 +27,9 @@ PROVIDER_BATCH_NAME = (
 TENANT_INDEXES_NAME = (
     "20260630_0013-geo_monitoring_0013_tenant_indexes.py"
 )
+PROJECT_PLATFORM_TOGGLES_NAME = (
+    "20260630_0014-geo_monitoring_0014_project_platform_toggles.py"
+)
 EXPECTED_MIGRATIONS = [
     BASELINE_NAME,
     COLLECTION_NAME,
@@ -41,6 +44,7 @@ EXPECTED_MIGRATIONS = [
     MOLIZHISHU_COLLECTION_SOURCE_NAME,
     PROVIDER_BATCH_NAME,
     TENANT_INDEXES_NAME,
+    PROJECT_PLATFORM_TOGGLES_NAME,
 ]
 
 
@@ -104,3 +108,14 @@ def test_project_draft_migration_creates_draft_table():
     assert '"ix_geo_project_draft_key_updated"' in migration
     assert '"ck_geo_project_draft_current_step"' in migration
     assert 'op.drop_table("geo_project_draft")' in migration
+
+
+def test_project_platform_toggles_migration_adds_project_columns():
+    migration = (VERSIONS_DIR / PROJECT_PLATFORM_TOGGLES_NAME).read_text(encoding="utf-8")
+
+    assert 'revision = "geo_monitoring_0014"' in migration
+    assert 'down_revision = "geo_monitoring_0013"' in migration
+    assert '"deep_thinking_enabled_by_platform"' in migration
+    assert '"search_enabled_by_platform"' in migration
+    assert 'op.drop_column("geo_monitor_project", "search_enabled_by_platform")' in migration
+    assert 'op.drop_column("geo_monitor_project", "deep_thinking_enabled_by_platform")' in migration

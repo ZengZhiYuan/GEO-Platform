@@ -73,7 +73,8 @@ def _active_prompt_setup(client, project_id: int, prompt_count: int = 1) -> dict
 def test_create_run_returns_409_when_no_enabled_platforms(client, project_id):
     _active_prompt_setup(client, project_id)
     response = client.post(
-        "/api/geo-monitoring/runs", json={"project_id": project_id}
+        "/api/geo-monitoring/runs",
+        json={"project_id": project_id, "collection_source": "official"},
     ).json()
     assert response["code"] == 40902
 
@@ -84,7 +85,8 @@ def test_create_run_returns_409_when_all_platforms_disabled(
     _active_prompt_setup(client, project_id)
     _seed_platforms(session_factory, disabled={p["platform_code"] for p in DEFAULT_PLATFORMS})
     response = client.post(
-        "/api/geo-monitoring/runs", json={"project_id": project_id}
+        "/api/geo-monitoring/runs",
+        json={"project_id": project_id, "collection_source": "official"},
     ).json()
     assert response["code"] == 40902
 
@@ -120,7 +122,8 @@ def test_delete_project_referenced_by_run_returns_409(
     setup = _active_prompt_setup(client, project_id)
     _seed_platforms(session_factory)
     run = client.post(
-        "/api/geo-monitoring/runs", json={"project_id": project_id}
+        "/api/geo-monitoring/runs",
+        json={"project_id": project_id, "collection_source": "official"},
     ).json()["data"]
     assert run["prompt_set_id"] == setup["prompt_set"]["id"]
     response = client.delete(f"/api/geo-monitoring/projects/{project_id}").json()
@@ -141,7 +144,8 @@ def test_run_detail_includes_task_counters_and_progress(
     _active_prompt_setup(client, project_id, prompt_count=2)
     _seed_platforms(session_factory, disabled=_disabled_except("doubao", "qwen"))
     run = client.post(
-        "/api/geo-monitoring/runs", json={"project_id": project_id}
+        "/api/geo-monitoring/runs",
+        json={"project_id": project_id, "collection_source": "official"},
     ).json()["data"]
     detail = client.get(f"/api/geo-monitoring/runs/{run['id']}").json()["data"]
     assert detail["total_tasks"] == 4
@@ -154,7 +158,8 @@ def test_run_tasks_alias_matches_query_tasks(client, session_factory, project_id
     _active_prompt_setup(client, project_id)
     _seed_platforms(session_factory, disabled=_disabled_except("doubao", "qwen"))
     run = client.post(
-        "/api/geo-monitoring/runs", json={"project_id": project_id}
+        "/api/geo-monitoring/runs",
+        json={"project_id": project_id, "collection_source": "official"},
     ).json()["data"]
     query_tasks = client.get(
         f"/api/geo-monitoring/runs/{run['id']}/query-tasks"

@@ -691,7 +691,7 @@ curl -X POST "http://127.0.0.1:8000/api/geo-monitoring/projects" \
 
 `monitor_setup` 对象字段：同 [8.1 获取监测设置](#81-获取监测设置) 的 `data` 结构，包含 `brand`、`competitors`、`core_keywords`、`ai_questions`、`available_platforms`、`selected_platform_codes`、`draft_prompt_set_id`、`active_prompt_set_id`；各对象/数组元素字段见 8.1 下方明细。
 
-**常见错误：** 与 monitor-setup 保存一致，如 `40028` 品牌为空、`40025` 平台不可用；上述校验失败时不会创建项目记录。`run_after_create=true` 时额外要求：`activate_prompt_set=true`（否则 `40055`）、至少一个监测问题（否则 HTTP `409`、`40901`），且默认 `collection_source=official` 下所选平台须可创建运行（如 Aidso 端码会返回 `40031`）；不满足时在提交前回滚，不留半成品项目。
+**常见错误：** 与 monitor-setup 保存一致，如 `40028` 品牌为空、`40025` 平台不可用；上述校验失败时不会创建项目记录。`run_after_create=true` 时额外要求：`activate_prompt_set=true`（否则 `40055`）、至少一个监测问题（否则 HTTP `409`、`40901`），且默认 `collection_source=molizhishu` 下所选平台须为模力指数平台且运行时配置可用；不满足时在提交前回滚，不留半成品项目。
 
 **调用示例：**
 
@@ -1366,6 +1366,8 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/prompt-library" \
 | `ai_questions` | array | AI 问题，含 `prompt_type`、`core_keyword`、`from_library` 等 |
 | `available_platforms` | array | 可用平台摘要 |
 | `selected_platform_codes` | string[] | 已选默认平台 |
+| `deep_thinking_enabled_by_platform` | object | 各已选平台是否开启深度思考；键为 `platform_code`，值为 boolean；未显式配置的平台按平台默认能力回填 |
+| `search_enabled_by_platform` | object | 各已选平台是否开启联网搜索；键为 `platform_code`，值为 boolean；未显式配置的平台按平台默认能力回填 |
 | `draft_prompt_set_id` | integer/null | 草稿问题集 ID |
 | `active_prompt_set_id` | integer/null | 激活问题集 ID |
 
@@ -1436,11 +1438,13 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/prompt-library" \
 | `core_keywords` | array | 否 | 核心词：`keyword`、`description`、`sort_order`、`enabled` |
 | `ai_questions` | array | 否 | 问题：可填 `prompt_text` 或引用 `library_prompt_code` |
 | `selected_platform_codes` | string[] | 否 | 监测平台编码 |
+| `deep_thinking_enabled_by_platform` | object | 否 | 各平台深度思考开关；键须属于 `selected_platform_codes`；模力指数平台会校验与 `search_enabled_by_platform` 组合是否受支持 |
+| `search_enabled_by_platform` | object | 否 | 各平台联网搜索开关；键须属于 `selected_platform_codes` |
 | `activate_prompt_set` | boolean | 否 | 默认 `false`；为 `true` 时保存后激活草稿问题集 |
 
 **出参 `data`：** 同 [8.1 获取监测设置](#81-获取监测设置)
 
-**常见错误：** `40028` 缺少品牌；`40025` 平台不可用；`40026` 问题文本为空；`40027` 核心词不存在
+**常见错误：** `40028` 缺少品牌；`40025` 平台不可用；`40026` 问题文本为空；`40027` 核心词不存在；`40029` 平台开关配置了未选平台；`40056` 平台不支持当前深度思考/联网组合
 
 **调用示例：**
 
@@ -2369,7 +2373,7 @@ curl -G "http://127.0.0.1:8000/api/geo-monitoring/benchmarks" \
 | --- | --- | --- | --- |
 | `project_id` | integer | 是 | 项目 ID，≥ 1 |
 | `prompt_set_id` | integer/null | 否 | 指定提示词集；不传则用激活集 |
-| `collection_source` | string | 否 | 采集来源，默认 `official`；新建运行可选 `official` / `molizhishu`（`aidso` 已废弃，返回 `422`） |
+| `collection_source` | string | 否 | 采集来源，默认 `molizhishu`；新建运行可选 `molizhishu` / `official`（`aidso` 已废弃，返回 `422`） |
 | `provider_mode_by_platform` | object | 否 | 模力指数各平台采集模式；键须在 `MOLIZHISHU_PLATFORM_MAPPINGS` 且属于本次 `platform_codes`；值须为平台支持的 `standard` / `reasoning` / `search` / `reasoning_search` |
 | `provider_screenshot` | integer | 否 | 模力指数截图策略，默认 `0`；仅允许 `0` / `1` / `2` |
 | `region_code` | string/null | 否 | 模力指数区域编码；若提供则非空 |

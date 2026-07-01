@@ -76,7 +76,7 @@ def test_project_and_run_input_validation():
 
     assert project.project_name == "测试项目"
     assert run.platform_codes == ["qwen", "deepseek"]
-    assert run.collection_source == "official"
+    assert run.collection_source == "molizhishu"
     assert run.provider_mode_by_platform == {}
     assert run.provider_screenshot == 0
     assert run.region_code is None
@@ -220,13 +220,25 @@ def test_run_create_applies_molizhishu_default_screenshot_when_omitted(monkeypat
     assert payload.provider_screenshot == 2
 
 
-def test_run_create_keeps_zero_default_for_official_when_omitted():
+def test_run_create_keeps_zero_default_for_official_when_explicit():
     from app.geo_monitoring.schemas import RunCreate
 
-    payload = RunCreate(project_id=1)
+    payload = RunCreate(project_id=1, collection_source="official")
 
+    assert payload.collection_source == "official"
     assert payload.provider_screenshot == 0
     assert "provider_screenshot" not in payload.model_fields_set
+
+
+def test_run_create_defaults_to_molizhishu_when_omitted(monkeypatch):
+    from app.geo_monitoring.schemas import RunCreate
+
+    monkeypatch.setattr("app.core.config.settings.MOLIZHISHU_DEFAULT_SCREENSHOT", 2)
+
+    payload = RunCreate(project_id=1, platform_codes=["molizhishu_doubao_web"])
+
+    assert payload.collection_source == "molizhishu"
+    assert payload.provider_screenshot == 2
 
 
 def test_run_create_rejects_empty_region_code():

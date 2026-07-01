@@ -19,8 +19,10 @@ from app.worker.actors.analysis import analyze_run
 from tests.e2e.conftest import (
     MOCK_QWEN_KEY,
     configure_mock_collection_runtime,
+    configure_molizhishu_collection_runtime,
     drain_run_collection_sync,
     register_qwen_success_route,
+    seed_molizhishu_platform,
 )
 
 
@@ -41,7 +43,11 @@ def test_monitoring_mvp_mock_end_to_end(
 
     run = client.post(
         "/api/geo-monitoring/runs",
-        json={"project_id": e2e_project["project_id"], "platform_codes": ["qwen"]},
+        json={
+            "project_id": e2e_project["project_id"],
+            "platform_codes": ["qwen"],
+            "collection_source": "official",
+        },
     ).json()["data"]
     run_id = run["id"]
     assert run["status"] == "collecting"
@@ -101,7 +107,8 @@ def test_monitoring_mvp_mock_end_to_end(
 def test_schedule_fire_is_idempotent_without_duplicate_runs(
     client, session_factory, e2e_project, monkeypatch
 ):
-    configure_mock_collection_runtime(session_factory, monkeypatch)
+    configure_molizhishu_collection_runtime(session_factory, monkeypatch)
+    seed_molizhishu_platform(session_factory)
     with session_factory() as db:
         schedule = schedule_service.create_schedule(
             db,
@@ -151,7 +158,11 @@ def test_cancel_retry_and_analysis_rerun(
 
     run = client.post(
         "/api/geo-monitoring/runs",
-        json={"project_id": project_id, "platform_codes": ["qwen"]},
+        json={
+            "project_id": project_id,
+            "platform_codes": ["qwen"],
+            "collection_source": "official",
+        },
     ).json()["data"]
     run_id = run["id"]
 
@@ -179,7 +190,11 @@ def test_cancel_retry_and_analysis_rerun(
 
     run2 = client.post(
         "/api/geo-monitoring/runs",
-        json={"project_id": project_id, "platform_codes": ["qwen"]},
+        json={
+            "project_id": project_id,
+            "platform_codes": ["qwen"],
+            "collection_source": "official",
+        },
     ).json()["data"]
     run2_id = run2["id"]
 

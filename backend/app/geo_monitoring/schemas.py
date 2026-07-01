@@ -710,7 +710,7 @@ class RunCreate(BaseModel):
     project_id: int = Field(ge=1)
     prompt_set_id: int | None = Field(default=None, ge=1)
     platform_codes: list[str] | None = None
-    collection_source: RunCreateCollectionSource = RunCreateCollectionSource.OFFICIAL
+    collection_source: RunCreateCollectionSource = RunCreateCollectionSource.MOLIZHISHU
     provider_mode_by_platform: dict[str, str] = Field(default_factory=dict)
     provider_screenshot: StrictInt = 0
     region_code: str | None = None
@@ -849,7 +849,7 @@ class MonitorRunOut(BaseModel):
     collection_status: str
     analysis_status: str
     report_status: str
-    collection_source: str = "official"
+    collection_source: str = "molizhishu"
     aidso_thinking_enabled_by_platform: dict[str, bool] = Field(default_factory=dict)
     provider_mode_by_platform: dict[str, str] = Field(default_factory=dict)
     provider_screenshot: int = 0
@@ -1171,12 +1171,23 @@ class MonitorSetupSave(BaseModel):
     core_keywords: list[MonitorSetupCoreKeywordInput] = Field(default_factory=list)
     ai_questions: list[MonitorSetupQuestionInput] = Field(default_factory=list)
     selected_platform_codes: list[str] = Field(default_factory=list)
+    deep_thinking_enabled_by_platform: dict[str, bool] = Field(default_factory=dict)
+    search_enabled_by_platform: dict[str, bool] = Field(default_factory=dict)
     activate_prompt_set: bool = False
 
     @field_validator("selected_platform_codes")
     @classmethod
     def normalize_platform_codes(cls, value: list[str]) -> list[str]:
         return list(dict.fromkeys(code.strip() for code in value if code.strip()))
+
+    @field_validator(
+        "deep_thinking_enabled_by_platform", "search_enabled_by_platform"
+    )
+    @classmethod
+    def normalize_platform_toggle_maps(
+        cls, value: dict[str, bool]
+    ) -> dict[str, bool]:
+        return {code.strip(): bool(enabled) for code, enabled in value.items() if code.strip()}
 
 
 class ProjectSetupCreate(BaseModel):

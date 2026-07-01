@@ -72,7 +72,7 @@ def _active_prompt_setup(client, project_id: int, prompt_count: int = 2) -> dict
 
 
 def _create_run(client, project_id: int, *, platform_codes: list[str] | None = None) -> dict:
-    payload: dict = {"project_id": project_id}
+    payload: dict = {"project_id": project_id, "collection_source": "official"}
     if platform_codes is not None:
         payload["platform_codes"] = platform_codes
     return client.post("/api/geo-monitoring/runs", json=payload).json()["data"]

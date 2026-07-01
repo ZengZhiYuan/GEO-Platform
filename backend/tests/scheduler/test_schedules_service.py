@@ -71,6 +71,7 @@ def test_fire_schedule_creates_run_with_schedule_trigger(db, schedule_setup):
 
     assert run.trigger_type == "schedule"
     assert run.triggered_by == schedule.id
+    assert run.collection_source == "molizhishu"
     assert run.result_json["schedule_idempotency_key"].startswith(
         f"schedule:{schedule.id}:"
     )
