@@ -128,6 +128,71 @@ def test_build_credential_key_pool_registers_molizhishu_token_for_db_platform_co
     assert credential.platform_code == "molizhishu_custom_web"
 
 
+def test_build_credential_key_pool_skips_yuanbao_parse_when_disabled_with_invalid_json():
+    """模力指数-only 场景：YUANBAO 未启用时不应解析元宝凭证 JSON。"""
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        DATABASE_URL="sqlite+pysqlite:///:memory:",
+        REDIS_URL="redis://test-redis.invalid:6379/15",
+        DRAMATIQ_BROKER="stub",
+        NACOS_ENABLED=False,
+        YUANBAO_ENABLED=False,
+        YUANBAO_CREDENTIALS_JSON='["invalid-not-an-object"]',
+        MOLIZHISHU_ENABLED=True,
+        MOLIZHISHU_API_TOKEN="molizhishu-token",
+    )
+
+    pool = collection_service.build_credential_key_pool(settings, redis_client=None)
+
+    credential = asyncio.run(pool.acquire("molizhishu_doubao_web"))
+    assert credential.api_key == "molizhishu-token"
+
+
+def test_build_credential_key_pool_skips_official_api_keys_when_platform_disabled():
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        DATABASE_URL="sqlite+pysqlite:///:memory:",
+        REDIS_URL="redis://test-redis.invalid:6379/15",
+        DRAMATIQ_BROKER="stub",
+        NACOS_ENABLED=False,
+        DOUBAO_ENABLED=False,
+        DOUBAO_API_KEYS="leftover-key-should-not-register",
+        MOLIZHISHU_ENABLED=True,
+        MOLIZHISHU_API_TOKEN="molizhishu-token",
+    )
+
+    pool = collection_service.build_credential_key_pool(settings, redis_client=None)
+
+    with pytest.raises(NoAvailableCredentialError):
+        asyncio.run(pool.acquire("doubao"))
+    credential = asyncio.run(pool.acquire("molizhishu_doubao_web"))
+    assert credential.api_key == "molizhishu-token"
+
+
+def test_build_credential_key_pool_skips_aidso_when_disabled_even_with_token():
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        DATABASE_URL="sqlite+pysqlite:///:memory:",
+        REDIS_URL="redis://test-redis.invalid:6379/15",
+        DRAMATIQ_BROKER="stub",
+        NACOS_ENABLED=False,
+        AIDSO_ENABLED=False,
+        AIDSO_API_TOKEN="leftover-aidso-token",
+        MOLIZHISHU_ENABLED=True,
+        MOLIZHISHU_API_TOKEN="molizhishu-token",
+    )
+
+    pool = collection_service.build_credential_key_pool(settings, redis_client=None)
+
+    with pytest.raises(NoAvailableCredentialError):
+        asyncio.run(pool.acquire("aidso_doubao_web"))
+    credential = asyncio.run(pool.acquire("molizhishu_doubao_web"))
+    assert credential.api_key == "molizhishu-token"
+
+
 def test_build_credential_key_pool_skips_molizhishu_when_disabled_even_with_token():
     settings = Settings(
         _env_file=None,

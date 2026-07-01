@@ -157,11 +157,24 @@ cd backend
 .venv\Scripts\uvicorn.exe app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**终端 2 — Worker（采集 + 分析 + 报告）：**
+**终端 2 — Worker（本地简化：采集 + 分析 + 报告）：**
 
 ```powershell
 cd backend
 .venv\Scripts\dramatiq.exe app.worker.actors.collection app.worker.actors.analysis app.worker.actors.report -Q collection -Q analysis -Q report --processes 2 --threads 1
+```
+
+生产部署推荐拆分为三个独立 worker，避免 `collection` 积压时影响 `analysis` 或 `report`：
+
+```powershell
+# 采集 worker：外部平台调用、模力指数 ProviderBatch 提交与轮询
+.venv\Scripts\dramatiq.exe app.worker.actors.collection -Q collection --processes 4 --threads 2
+
+# 分析 worker：确定性指标与 Agent LLM 洞察
+.venv\Scripts\dramatiq.exe app.worker.actors.analysis -Q analysis --processes 1 --threads 1
+
+# 报告 worker：异步报告生成/清理任务
+.venv\Scripts\dramatiq.exe app.worker.actors.report -Q report --processes 1 --threads 1
 ```
 
 **终端 3 — Scheduler（可选，定时任务）：**
@@ -179,11 +192,12 @@ $env:SCHEDULER_ENABLED="true"
 docker compose build
 docker compose run --rm api python -m alembic -c backend/alembic.ini upgrade head
 
-# 启动 API、Worker、Scheduler
-docker compose up -d api worker scheduler
+# 启动 API、拆分 Worker、Scheduler
+docker compose up -d api worker-collection worker-analysis worker-report scheduler
 ```
 
 默认 API 端口：`8000`（可通过 `.env` 中 `BACKEND_PORT` 修改）。
+若当前 compose 文件仍保留 all-in-one `worker` 服务，可临时使用 `docker compose up -d api worker scheduler`；生产建议改为 `worker-collection`、`worker-analysis`、`worker-report` 三服务。
 
 ### 4.3 启动检查清单
 
@@ -773,7 +787,7 @@ pending → collecting → analyzing → reporting → completed
 
 | 可能原因 | 处理 |
 | --- | --- |
-| Worker 未启动 | 启动 Dramatiq worker（见第 4 节） |
+| Worker 未启动 | 启动对应 Dramatiq worker（采集看 `worker-collection`，分析看 `worker-analysis`，报告看 `worker-report`；见第 4 节） |
 | Redis 不可达 | 检查 `REDIS_URL` 与 `/api/ready` |
 | AI 平台密钥无效 | 查看任务 `error_message`；检查 `.env` |
 | 平台未启用 | `PUT /platforms/{code}` 设置 `enabled: true` |
@@ -796,7 +810,7 @@ pending → collecting → analyzing → reporting → completed
 
 - 确认分析已完成（`40920`）；
 - 检查 `REPORT_STORAGE_DIR` 目录可写；
-- 报告 Worker 队列 `report` 是否在运行。
+- 若报告已改为异步生成，检查报告 Worker 队列 `report` 是否由 `worker-report` 消费；当前同步报告生成路径优先检查 API 日志与 `REPORT_STORAGE_DIR`。
 
 ### 8.5 取消运行
 

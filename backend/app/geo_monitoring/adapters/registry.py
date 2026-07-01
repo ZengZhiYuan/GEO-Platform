@@ -268,6 +268,8 @@ def platform_credential_count(
     prefix = OFFICIAL_PLATFORM_ENV_PREFIX.get(platform_code)
     if prefix is None:
         return 0
+    if not _configured(runtime_settings, prefix):
+        return 0
     if prefix == "YUANBAO":
         return len(runtime_settings.parsed_yuanbao_credentials())
     return len(runtime_settings.parsed_api_keys(getattr(runtime_settings, f"{prefix}_API_KEYS", "")))

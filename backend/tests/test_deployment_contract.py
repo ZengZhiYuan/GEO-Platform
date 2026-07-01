@@ -22,10 +22,17 @@ def test_backend_dockerfile_builds_single_reusable_runtime_image():
 def test_compose_starts_api_worker_and_scheduler_from_same_backend_image():
     compose = read_root_file("docker-compose.yml")
 
-    for service_name in ("api:", "worker:", "scheduler:"):
+    for service_name in (
+        "api:",
+        "worker-collection:",
+        "worker-analysis:",
+        "worker-report:",
+        "scheduler:",
+    ):
         assert service_name in compose
 
-    assert compose.count("image: geo-platform-backend") == 3
+    assert "  worker:" not in compose
+    assert compose.count("image: geo-platform-backend") == 5
     assert "postgres:" not in compose
     assert "redis:" not in compose
     assert "env_file:" in compose
@@ -33,6 +40,17 @@ def test_compose_starts_api_worker_and_scheduler_from_same_backend_image():
     assert "alembic -c backend/alembic.ini upgrade head" in compose
     assert "uvicorn app.main:app" in compose
     assert "dramatiq app.worker.actors.collection" in compose
+    assert "dramatiq app.worker.actors.analysis" in compose
+    assert "dramatiq app.worker.actors.report" in compose
+    assert "-Q collection" in compose
+    assert "-Q analysis" in compose
+    assert "-Q report" in compose
+    assert "${COLLECTION_WORKER_PROCESSES:-4}" in compose
+    assert "${COLLECTION_WORKER_THREADS:-2}" in compose
+    assert "${ANALYSIS_WORKER_PROCESSES:-1}" in compose
+    assert "${ANALYSIS_WORKER_THREADS:-1}" in compose
+    assert "${REPORT_WORKER_PROCESSES:-1}" in compose
+    assert "${REPORT_WORKER_THREADS:-1}" in compose
     assert "python -m app.scheduler.main" in compose
     assert "REPORT_STORAGE_DIR=/app/backend/data/reports" in compose
     assert "reports_data:/app/backend/data/reports" in compose
@@ -71,7 +89,7 @@ def test_readme_documents_release_smoke_and_rollback_runbook():
         "后端部署、发布与回滚",
         "docker compose build",
         "alembic -c backend/alembic.ini upgrade head",
-        "启动 worker/scheduler，最后切换 API",
+        "启动拆分 worker/scheduler，最后切换 API",
         "config preflight",
         "run_production_smoke_test.py",
         "应用回滚优先回滚镜像，不自动 downgrade 数据库",

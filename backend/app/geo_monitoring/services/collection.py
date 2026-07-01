@@ -29,6 +29,8 @@ from app.geo_monitoring.adapters.key_pool import (
 )
 from app.geo_monitoring.adapters.registry import (
     AdapterRegistry,
+    _aidso_configured,
+    _configured,
     _molizhishu_configured,
     build_adapter_registry,
 )
@@ -64,6 +66,12 @@ logger = logging.getLogger(__name__)
 TERMINAL_TASK_STATUSES = frozenset({"success", "failed", "cancelled"})
 CLAIMABLE_TASK_STATUSES = frozenset({"pending", "queued", "running"})
 _KEY_POOL_REDIS_UNSET = object()
+_OFFICIAL_API_KEY_PLATFORM_PREFIXES: tuple[tuple[str, str], ...] = (
+    ("doubao", "DOUBAO"),
+    ("qwen", "QWEN"),
+    ("deepseek", "DEEPSEEK"),
+    ("kimi", "KIMI"),
+)
 
 
 @dataclass(frozen=True)
@@ -243,36 +251,37 @@ def build_credential_key_pool(
         resolved_redis,
         retry_base_seconds=runtime_settings.COLLECTION_RETRY_BASE_SECONDS,
     )
-    _register_api_keys(
-        pool, runtime_settings, "doubao", runtime_settings.DOUBAO_API_KEYS
-    )
-    _register_api_keys(pool, runtime_settings, "qwen", runtime_settings.QWEN_API_KEYS)
-    _register_api_keys(
-        pool, runtime_settings, "deepseek", runtime_settings.DEEPSEEK_API_KEYS
-    )
-    _register_api_keys(pool, runtime_settings, "kimi", runtime_settings.KIMI_API_KEYS)
-    yuanbao_credentials = runtime_settings.parsed_yuanbao_credentials()
-    if yuanbao_credentials:
-        pool.register_platform_credentials(
-            "yuanbao",
-            [
-                YuanbaoCredential(
-                    platform_code="yuanbao",
-                    secret_id=item.secret_id,
-                    secret_key=item.secret_key,
-                )
-                for item in yuanbao_credentials
-            ],
-        )
-    aidso_token = runtime_settings.AIDSO_API_TOKEN.strip()
-    if aidso_token:
+    for platform_code, prefix in _OFFICIAL_API_KEY_PLATFORM_PREFIXES:
+        if _configured(runtime_settings, prefix):
+            _register_api_keys(
+                pool,
+                runtime_settings,
+                platform_code,
+                getattr(runtime_settings, f"{prefix}_API_KEYS"),
+            )
+    if _configured(runtime_settings, "YUANBAO"):
+        yuanbao_credentials = runtime_settings.parsed_yuanbao_credentials()
+        if yuanbao_credentials:
+            pool.register_platform_credentials(
+                "yuanbao",
+                [
+                    YuanbaoCredential(
+                        platform_code="yuanbao",
+                        secret_id=item.secret_id,
+                        secret_key=item.secret_key,
+                    )
+                    for item in yuanbao_credentials
+                ],
+            )
+    if _aidso_configured(runtime_settings):
+        aidso_token = runtime_settings.AIDSO_API_TOKEN.strip()
         for platform_code in AIDSO_PLATFORM_MAPPINGS:
             pool.register_platform_credentials(
                 platform_code,
                 [ApiKeyCredential(platform_code=platform_code, api_key=aidso_token)],
             )
-    molizhishu_token = runtime_settings.MOLIZHISHU_API_TOKEN.strip()
-    if _molizhishu_configured(runtime_settings) and molizhishu_token:
+    if _molizhishu_configured(runtime_settings):
+        molizhishu_token = runtime_settings.MOLIZHISHU_API_TOKEN.strip()
         platform_codes = molizhishu_platform_codes or tuple(MOLIZHISHU_PLATFORM_MAPPINGS)
         for platform_code in platform_codes:
             pool.register_platform_credentials(

@@ -1,6 +1,6 @@
 # AI 应用监测后端进程编排
 #
-# 默认只编排后端 API、Dramatiq worker 和 APScheduler scheduler。
+# 默认只编排后端 API、拆分 Dramatiq worker 和 APScheduler scheduler。
 # PostgreSQL、Redis、Nacos 均使用根目录 .env 指向的服务器服务，不在本地
 # compose 中默认启动。
 
@@ -58,15 +58,35 @@ services:
       retries: 3
       start_period: 20s
 
-  worker:
+  worker-collection:
     <<: *backend-common
     image: geo-platform-backend:${APP_IMAGE_TAG:-local}
     build: *backend-build
     command: >
-      dramatiq app.worker.actors.collection app.worker.actors.analysis app.worker.actors.report
-      -Q collection -Q analysis -Q report
-      --processes ${WORKER_PROCESSES:-2}
-      --threads ${WORKER_THREADS:-1}
+      dramatiq app.worker.actors.collection
+      -Q collection
+      --processes ${COLLECTION_WORKER_PROCESSES:-4}
+      --threads ${COLLECTION_WORKER_THREADS:-2}
+
+  worker-analysis:
+    <<: *backend-common
+    image: geo-platform-backend:${APP_IMAGE_TAG:-local}
+    build: *backend-build
+    command: >
+      dramatiq app.worker.actors.analysis
+      -Q analysis
+      --processes ${ANALYSIS_WORKER_PROCESSES:-1}
+      --threads ${ANALYSIS_WORKER_THREADS:-1}
+
+  worker-report:
+    <<: *backend-common
+    image: geo-platform-backend:${APP_IMAGE_TAG:-local}
+    build: *backend-build
+    command: >
+      dramatiq app.worker.actors.report
+      -Q report
+      --processes ${REPORT_WORKER_PROCESSES:-1}
+      --threads ${REPORT_WORKER_THREADS:-1}
 
   scheduler:
     <<: *backend-common
