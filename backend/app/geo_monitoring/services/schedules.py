@@ -325,19 +325,37 @@ def _create_scheduled_run(
     idempotency_key: str,
     planned_fire_time: datetime,
 ) -> MonitorRun:
-    from app.geo_monitoring.services.runs import (
-        _enabled_prompts,
-        _new_run_no,
-        _resolve_platforms,
-        _resolve_prompt_set,
-        _start_collection,
+    from app.geo_monitoring.schemas import RunCreate, RunCreateCollectionSource
+    from app.geo_monitoring.services.provider_batches import (
+        create_provider_batches_for_run,
+        provider_batch_enabled,
     )
+    from app.geo_monitoring.services.runs import (
+        _collection_max_attempts,
+        _new_run_no,
+        _resolve_run_provider_modes,
+        _start_collection,
+        prepare_run_create,
+    )
+    from app.geo_monitoring.services.tenant_access import stamp_tenant_fields
 
     project = require_active_project(db, schedule.project_id)
-    prompt_set = _resolve_prompt_set(db, project.id, None)
-    prompts = _enabled_prompts(db, prompt_set.id)
-    platforms = _resolve_platforms(db, None)
-    platform_codes = [platform.platform_code for platform in platforms]
+    platform_codes = (
+        list(project.default_platform_codes)
+        if project.default_platform_codes
+        else None
+    )
+    payload = RunCreate(
+        project_id=project.id,
+        collection_source=RunCreateCollectionSource.MOLIZHISHU,
+        platform_codes=platform_codes,
+    )
+    project, prompt_set, prompts, platforms, resolved_platform_codes = prepare_run_create(
+        db, payload
+    )
+    provider_mode_by_platform = _resolve_run_provider_modes(
+        project, payload, resolved_platform_codes
+    )
     task_count = len(prompts) * len(platforms)
     run = MonitorRun(
         run_no=_new_run_no(),
@@ -350,7 +368,13 @@ def _create_scheduled_run(
         collection_status="pending",
         analysis_status="skipped",
         report_status="skipped",
-        platform_codes=platform_codes,
+        collection_source=payload.collection_source.value,
+        aidso_thinking_enabled_by_platform={},
+        provider_mode_by_platform=provider_mode_by_platform,
+        provider_screenshot=payload.provider_screenshot,
+        region_code=payload.region_code,
+        provider_callback_url=payload.provider_callback_url,
+        platform_codes=resolved_platform_codes,
         expected_query_count=task_count,
         total_tasks=task_count,
         result_json={
@@ -358,17 +382,18 @@ def _create_scheduled_run(
             "planned_fire_time": planned_fire_time.astimezone(timezone.utc).isoformat(),
         },
     )
+    stamp_tenant_fields(run)
     run_repo.add_run(db, run)
     db.flush()
-    from app.geo_monitoring.services.collection import get_runtime
-
     run_repo.build_query_tasks(
         db,
         run,
         prompts,
         platforms,
-        max_attempts=get_runtime().settings.COLLECTION_MAX_ATTEMPTS,
+        max_attempts=_collection_max_attempts(),
     )
+    if provider_batch_enabled(run.collection_source):
+        create_provider_batches_for_run(db, run)
     now = datetime.now(timezone.utc)
     # 更新调度上次/下次运行时间
     schedule.last_run_at = now

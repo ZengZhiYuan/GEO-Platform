@@ -183,7 +183,7 @@ def test_project_overview_returns_card_summary(client, session_factory):
     )
     assert sample_endpoint["platform_name"] == "豆包"
     assert sample_endpoint["base_platform"] == "doubao"
-    assert sample_endpoint["endpoint_type"] == "other"
+    assert sample_endpoint["endpoint_type"] == "web"
     assert sample_endpoint["endpoint_label"]
     assert sample_endpoint["enabled"] is True
 

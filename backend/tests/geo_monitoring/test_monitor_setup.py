@@ -10,6 +10,106 @@ def test_get_monitor_setup_empty(client, project_id):
     assert data["ai_questions"] == []
     assert "available_platforms" in data
     assert data["selected_platform_codes"] == []
+    assert data["deep_thinking_enabled_by_platform"] == {}
+    assert data["search_enabled_by_platform"] == {}
+
+
+def test_save_and_get_monitor_setup_with_platform_toggles(
+    client, project_id, session_factory
+):
+    from app.geo_monitoring.models import AIPlatform
+    from app.geo_monitoring.services.platforms import DEFAULT_PLATFORMS
+
+    with session_factory() as db:
+        db.add_all(AIPlatform(**platform) for platform in DEFAULT_PLATFORMS)
+        db.commit()
+
+    payload = {
+        "brand": {
+            "brand_name": "目标品牌",
+            "brand_words": ["目标"],
+        },
+        "competitors": [],
+        "core_keywords": [{"keyword": "文旅"}],
+        "ai_questions": [
+            {"core_keyword": "文旅", "prompt_text": "国内有哪些文旅演艺项目？"}
+        ],
+        "selected_platform_codes": ["molizhishu_doubao_web", "molizhishu_deepseek_web"],
+        "deep_thinking_enabled_by_platform": {
+            "molizhishu_doubao_web": False,
+            "molizhishu_deepseek_web": True,
+        },
+        "search_enabled_by_platform": {
+            "molizhishu_doubao_web": True,
+            "molizhishu_deepseek_web": True,
+        },
+        "activate_prompt_set": True,
+    }
+    saved = client.put(
+        f"/api/geo-monitoring/projects/{project_id}/monitor-setup",
+        json=payload,
+    ).json()
+    assert saved["code"] == 0
+    data = saved["data"]
+    assert data["deep_thinking_enabled_by_platform"] == {
+        "molizhishu_doubao_web": False,
+        "molizhishu_deepseek_web": True,
+    }
+    assert data["search_enabled_by_platform"] == {
+        "molizhishu_doubao_web": True,
+        "molizhishu_deepseek_web": True,
+    }
+
+    loaded = client.get(
+        f"/api/geo-monitoring/projects/{project_id}/monitor-setup"
+    ).json()["data"]
+    assert loaded["deep_thinking_enabled_by_platform"] == data["deep_thinking_enabled_by_platform"]
+    assert loaded["search_enabled_by_platform"] == data["search_enabled_by_platform"]
+
+
+def test_monitor_setup_rejects_platform_toggle_outside_selected(
+    client, project_id, session_factory
+):
+    from app.geo_monitoring.models import AIPlatform
+    from app.geo_monitoring.services.platforms import DEFAULT_PLATFORMS
+
+    with session_factory() as db:
+        db.add_all(AIPlatform(**platform) for platform in DEFAULT_PLATFORMS)
+        db.commit()
+
+    payload = {
+        "brand": {"brand_name": "目标品牌", "brand_words": ["目标"]},
+        "selected_platform_codes": ["qwen"],
+        "deep_thinking_enabled_by_platform": {"deepseek": True},
+    }
+    response = client.put(
+        f"/api/geo-monitoring/projects/{project_id}/monitor-setup",
+        json=payload,
+    ).json()
+    assert response["code"] == 40029
+
+
+def test_monitor_setup_rejects_unsupported_platform_toggle_combination(
+    client, project_id, session_factory
+):
+    from app.geo_monitoring.models import AIPlatform
+    from app.geo_monitoring.services.platforms import DEFAULT_PLATFORMS
+
+    with session_factory() as db:
+        db.add_all(AIPlatform(**platform) for platform in DEFAULT_PLATFORMS)
+        db.commit()
+
+    payload = {
+        "brand": {"brand_name": "目标品牌", "brand_words": ["目标"]},
+        "selected_platform_codes": ["molizhishu_doubao_web"],
+        "deep_thinking_enabled_by_platform": {"molizhishu_doubao_web": True},
+        "search_enabled_by_platform": {"molizhishu_doubao_web": False},
+    }
+    response = client.put(
+        f"/api/geo-monitoring/projects/{project_id}/monitor-setup",
+        json=payload,
+    ).json()
+    assert response["code"] == 40056
 
 
 def test_save_and_get_monitor_setup(client, project_id, session_factory):

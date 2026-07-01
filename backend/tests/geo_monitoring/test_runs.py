@@ -1,5 +1,3 @@
-import os
-
 import pytest
 from sqlalchemy import func, select
 
@@ -26,33 +24,6 @@ def _disabled_except(*enabled_codes: str) -> set[str]:
         for platform in DEFAULT_PLATFORMS
         if platform["platform_code"] not in enabled
     }
-
-
-@pytest.fixture
-def molizhishu_client(client, session_factory):
-    """启用模力指数运行时配置，供 molizhishu Run 创建成功路径测试。"""
-    from app.geo_monitoring.services import collection as collection_service
-
-    os.environ["MOLIZHISHU_ENABLED"] = "true"
-    os.environ["MOLIZHISHU_API_TOKEN"] = "test-molizhishu-token"
-    get_settings.cache_clear()
-    runtime_settings = get_settings()
-    collection_service.configure_runtime(
-        collection_service.build_default_runtime(
-            session_factory=session_factory,
-            runtime_settings=runtime_settings,
-        )
-    )
-    yield client
-    os.environ["MOLIZHISHU_ENABLED"] = "false"
-    os.environ["MOLIZHISHU_API_TOKEN"] = ""
-    get_settings.cache_clear()
-    collection_service.configure_runtime(
-        collection_service.build_default_runtime(
-            session_factory=session_factory,
-            runtime_settings=get_settings(),
-        )
-    )
 
 
 def _seed_platforms(session_factory, disabled: set[str] | None = None) -> None:
@@ -101,6 +72,7 @@ def test_create_run_builds_prompt_platform_cartesian_product(
         json={
             "project_id": project_id,
             "platform_codes": ["qwen", "deepseek", "kimi", "qwen"],
+            "collection_source": "official",
         },
     ).json()
     run = response["data"]
@@ -141,7 +113,11 @@ def test_create_run_uses_configured_collection_max_attempts(
 
     response = client.post(
         "/api/geo-monitoring/runs",
-        json={"project_id": project_id, "platform_codes": ["qwen"]},
+        json={
+            "project_id": project_id,
+            "platform_codes": ["qwen"],
+            "collection_source": "official",
+        },
     ).json()
 
     with session_factory() as db:
@@ -272,7 +248,11 @@ def test_official_run_rejected_when_platform_runtime_not_configured(
 
     response = client.post(
         "/api/geo-monitoring/runs",
-        json={"project_id": project_id, "platform_codes": ["qwen"]},
+        json={
+            "project_id": project_id,
+            "platform_codes": ["qwen"],
+            "collection_source": "official",
+        },
     ).json()
 
     assert response["code"] == 40908
@@ -413,14 +393,43 @@ def test_molizhishu_run_persists_provider_mode_for_default_platforms(
     assert run["provider_mode_by_platform"] == {"molizhishu_doubao_web": "search"}
 
 
-def test_run_defaults_to_active_prompt_set_and_enabled_platforms(
+def test_molizhishu_run_inherits_provider_mode_from_project_platform_toggles(
+    molizhishu_client, session_factory, project_id
+):
+    from app.geo_monitoring.models import MonitorProject
+
+    _active_prompt_setup(molizhishu_client, project_id, prompt_count=1)
+    _seed_platforms(session_factory)
+    with session_factory() as db:
+        project = db.get(MonitorProject, project_id)
+        project.default_platform_codes = ["molizhishu_doubao_web"]
+        project.deep_thinking_enabled_by_platform = {"molizhishu_doubao_web": False}
+        project.search_enabled_by_platform = {"molizhishu_doubao_web": True}
+        db.commit()
+
+    response = molizhishu_client.post(
+        "/api/geo-monitoring/runs",
+        json={
+            "project_id": project_id,
+            "collection_source": "molizhishu",
+        },
+    ).json()
+
+    run = response["data"]
+    assert response["code"] == 0
+    assert run["platform_codes"] == ["molizhishu_doubao_web"]
+    assert run["provider_mode_by_platform"] == {"molizhishu_doubao_web": "search"}
+
+
+def test_official_run_defaults_to_active_prompt_set_and_enabled_platforms(
     client, session_factory, project_id
 ):
     setup = _active_prompt_setup(client, project_id, prompt_count=1)
     _seed_platforms(session_factory, disabled=_disabled_except("doubao", "qwen"))
 
     created = client.post(
-        "/api/geo-monitoring/runs", json={"project_id": project_id}
+        "/api/geo-monitoring/runs",
+        json={"project_id": project_id, "collection_source": "official"},
     ).json()["data"]
     listed = client.get(
         "/api/geo-monitoring/runs", params={"project_id": project_id}
@@ -436,6 +445,28 @@ def test_run_defaults_to_active_prompt_set_and_enabled_platforms(
     assert detail["run_no"].startswith("RUN-")
 
 
+def test_molizhishu_run_defaults_to_enabled_molizhishu_platforms(
+    molizhishu_client, session_factory, project_id
+):
+    from app.geo_monitoring.services.platforms import MOLIZHISHU_PLATFORMS
+
+    setup = _active_prompt_setup(molizhishu_client, project_id, prompt_count=1)
+    _seed_platforms(session_factory)
+
+    created = molizhishu_client.post(
+        "/api/geo-monitoring/runs",
+        json={"project_id": project_id},
+    ).json()["data"]
+
+    molizhishu_codes = {
+        platform["platform_code"] for platform in MOLIZHISHU_PLATFORMS
+    }
+    assert created["collection_source"] == "molizhishu"
+    assert created["prompt_set_id"] == setup["prompt_set"]["id"]
+    assert set(created["platform_codes"]) == molizhishu_codes
+    assert created["expected_query_count"] == len(molizhishu_codes)
+
+
 def test_official_run_defaults_exclude_molizhishu_when_all_platforms_enabled(
     client, session_factory, project_id
 ):
@@ -443,7 +474,8 @@ def test_official_run_defaults_exclude_molizhishu_when_all_platforms_enabled(
     _seed_platforms(session_factory)
 
     created = client.post(
-        "/api/geo-monitoring/runs", json={"project_id": project_id}
+        "/api/geo-monitoring/runs",
+        json={"project_id": project_id, "collection_source": "official"},
     ).json()["data"]
 
     official_codes = {platform["platform_code"] for platform in OFFICIAL_PLATFORMS}
@@ -484,7 +516,7 @@ def test_run_rejects_cross_project_prompt_set_and_unavailable_platforms(
     assert unknown["code"] == 40031
 
 
-def test_official_run_rejects_aidso_platform(client, session_factory, project_id):
+def test_molizhishu_run_rejects_aidso_platform(client, session_factory, project_id):
     _active_prompt_setup(client, project_id, prompt_count=1)
     _seed_platforms(session_factory)
     with session_factory() as db:
@@ -517,6 +549,7 @@ def test_official_run_rejects_molizhishu_platform(client, session_factory, proje
         json={
             "project_id": project_id,
             "platform_codes": ["molizhishu_doubao_web"],
+            "collection_source": "official",
         },
     ).json()
 
@@ -536,7 +569,8 @@ def test_run_rejects_inactive_project_and_empty_enabled_prompts(
     )
 
     inactive = client.post(
-        "/api/geo-monitoring/runs", json={"project_id": project_id}
+        "/api/geo-monitoring/runs",
+        json={"project_id": project_id, "collection_source": "official"},
     ).json()
     client.put(
         f"/api/geo-monitoring/projects/{project_id}",
@@ -547,7 +581,8 @@ def test_run_rejects_inactive_project_and_empty_enabled_prompts(
         prompt.enabled = False
         db.commit()
     empty = client.post(
-        "/api/geo-monitoring/runs", json={"project_id": project_id}
+        "/api/geo-monitoring/runs",
+        json={"project_id": project_id, "collection_source": "official"},
     ).json()
 
     assert inactive["code"] == 40001
@@ -584,7 +619,10 @@ def test_run_creation_rolls_back_when_task_insert_fails(db, monkeypatch):
 
     monkeypatch.setattr(run_repo, "build_query_tasks", fail_after_run_flush)
     with pytest.raises(RuntimeError, match="forced fan-out failure"):
-        run_service.create_run(db, RunCreate(project_id=project.id))
+        run_service.create_run(
+            db,
+            RunCreate(project_id=project.id, collection_source="official"),
+        )
 
     after_runs = db.scalar(select(func.count()).select_from(MonitorRun))
     assert after_runs == before_runs

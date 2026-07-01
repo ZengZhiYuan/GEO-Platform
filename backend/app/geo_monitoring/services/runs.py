@@ -77,7 +77,7 @@ def _resolve_platforms(
     db: Session,
     platform_codes: list[str] | None,
     *,
-    collection_source: str = "official",
+    collection_source: str = "molizhishu",
 ):
     rows = platform_repo.list_candidates(db, platform_codes)
     by_code = {platform.platform_code: platform for platform in rows}
@@ -329,10 +329,33 @@ def _start_collection(db: Session, run_id: int) -> None:
     collection_service.enqueue_run_query_tasks(run_id, db=db)
 
 
+def _resolve_run_provider_modes(
+    project: MonitorProject,
+    payload: RunCreate,
+    resolved_platform_codes: list[str],
+) -> dict[str, str]:
+    if payload.provider_mode_by_platform:
+        return dict(payload.provider_mode_by_platform)
+    if payload.collection_source.value != "molizhishu":
+        return {}
+    from app.geo_monitoring.services.platform_collection_options import (
+        build_provider_mode_by_platform,
+    )
+
+    return build_provider_mode_by_platform(
+        resolved_platform_codes,
+        deep_thinking_by_platform=project.deep_thinking_enabled_by_platform or {},
+        search_enabled_by_platform=project.search_enabled_by_platform or {},
+    )
+
+
 # 创建监测运行、扇出 QueryTask 并启动采集
 def create_run(db: Session, payload: RunCreate) -> MonitorRun:
-    project, prompt_set, prompts, platforms, platform_codes = prepare_run_create(
+    project, prompt_set, prompts, platforms, resolved_platform_codes = prepare_run_create(
         db, payload
+    )
+    provider_mode_by_platform = _resolve_run_provider_modes(
+        project, payload, resolved_platform_codes
     )
     task_count = len(prompts) * len(platforms)
     run = MonitorRun(
@@ -347,11 +370,11 @@ def create_run(db: Session, payload: RunCreate) -> MonitorRun:
         report_status="skipped",
         collection_source=payload.collection_source.value,
         aidso_thinking_enabled_by_platform={},
-        provider_mode_by_platform=payload.provider_mode_by_platform,
+        provider_mode_by_platform=provider_mode_by_platform,
         provider_screenshot=payload.provider_screenshot,
         region_code=payload.region_code,
         provider_callback_url=payload.provider_callback_url,
-        platform_codes=platform_codes,
+        platform_codes=resolved_platform_codes,
         expected_query_count=task_count,
         total_tasks=task_count,
     )

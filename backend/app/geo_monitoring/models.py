@@ -56,6 +56,12 @@ class MonitorProject(BaseModel):
     default_platform_codes: Mapped[list[str]] = mapped_column(
         JSON_VALUE, default=list, server_default=text("'[]'"), nullable=False
     )
+    deep_thinking_enabled_by_platform: Mapped[dict] = mapped_column(
+        JSON_VALUE, default=dict, server_default=text("'{}'"), nullable=False
+    )
+    search_enabled_by_platform: Mapped[dict] = mapped_column(
+        JSON_VALUE, default=dict, server_default=text("'{}'"), nullable=False
+    )
     monitoring_paused: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false"), nullable=False
     )

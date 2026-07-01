@@ -125,16 +125,22 @@ def test_project_setup_rolls_back_on_monitor_setup_failure(client, session_facto
     assert after == before
 
 
-def test_project_setup_run_after_create(client, session_factory):
-    _seed_platforms(session_factory, enabled_codes=["qwen"])
+def test_project_setup_run_after_create(molizhishu_client, session_factory):
+    _seed_platforms(session_factory, enabled_codes=["molizhishu_doubao_web"])
 
-    payload = _setup_payload(project_name="创建并运行")
+    payload = _setup_payload(
+        project_name="创建并运行",
+        platform_codes=["molizhishu_doubao_web"],
+    )
     payload["run_after_create"] = True
-    response = client.post("/api/geo-monitoring/projects:setup", json=payload).json()
+    response = molizhishu_client.post(
+        "/api/geo-monitoring/projects:setup", json=payload
+    ).json()
     assert response["code"] == 0, response
     data = response["data"]
     assert data["run"] is not None
     assert data["run"]["project_id"] == data["project"]["id"]
+    assert data["run"]["collection_source"] == "molizhishu"
     assert data["run"]["status"] in {"pending", "collecting"}
 
 
@@ -168,7 +174,7 @@ def test_project_setup_run_after_create_requires_questions(client, session_facto
     assert after == before
 
 
-def test_project_setup_run_after_create_rejects_aidso_platform_with_official_run(
+def test_project_setup_run_after_create_rejects_aidso_platform_with_molizhishu_run(
     client, session_factory
 ):
     _seed_platforms(session_factory, enabled_codes=["aidso_doubao_web"])

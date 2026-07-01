@@ -6,7 +6,7 @@ GEO-Platform 是一个后端优先的 AI 应用监测平台。系统围绕监测
 
 - 当前业务 API 前缀：`/api/geo-monitoring`
 - 兼容业务 API 前缀：`/api/v1/geo-monitoring`
-- 当前 Alembic head：`geo_monitoring_0013`
+- 当前 Alembic head：`geo_monitoring_0014`
 - 默认配置文件：仓库根目录 `.env`
 - 报告默认目录：本地 `./data/reports`，容器内 `/app/backend/data/reports`
 
@@ -155,9 +155,10 @@ geo_monitoring_0001
   -> geo_monitoring_0011
   -> geo_monitoring_0012
   -> geo_monitoring_0013
+  -> geo_monitoring_0014
 ```
 
-空库可以通过 Alembic 初始化到最新版本。`docs/geo-platform_schema.sql` 已按 `geo_monitoring_0013` 生成，仅用于空库人工建表参考；已有数据的库不要重复执行全量建表 SQL。
+空库可以通过 Alembic 初始化到最新版本。`docs/geo-platform_schema.sql` 已按 `geo_monitoring_0014` 生成，仅用于空库人工建表参考；已有数据的库不要重复执行全量建表 SQL。
 
 ### 3. 启动 API
 

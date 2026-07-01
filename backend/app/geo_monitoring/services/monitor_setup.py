@@ -24,6 +24,10 @@ from app.geo_monitoring.repositories import prompts as prompt_repo
 from app.geo_monitoring.schemas import MonitorSetupSave
 from app.geo_monitoring.services import platforms as platform_service
 from app.geo_monitoring.services import prompt_library as prompt_library_service
+from app.geo_monitoring.services.platform_collection_options import (
+    normalize_platform_toggle_maps,
+    serialize_platform_toggles,
+)
 from app.geo_monitoring.services.brands import _ensure_target_available
 from app.geo_monitoring.services.prompt_type_inference import infer_prompt_type
 from app.geo_monitoring.services.prompts import activate_prompt_set
@@ -165,6 +169,14 @@ def get_monitor_setup(db: Session, project_id: int) -> dict:
     available, _ = platform_service.list_platforms(
         db, page=1, page_size=100, enabled=True
     )
+    selected_platform_codes = list(project.default_platform_codes or [])
+    deep_thinking_map = dict(project.deep_thinking_enabled_by_platform or {})
+    search_enabled_map = dict(project.search_enabled_by_platform or {})
+    resolved_deep, resolved_search = serialize_platform_toggles(
+        selected_platform_codes,
+        deep_thinking_by_platform=deep_thinking_map,
+        search_enabled_by_platform=search_enabled_map,
+    )
     return {
         "brand": _serialize_brand(db, target) if target else None,
         "competitors": [_serialize_competitor(db, item) for item in competitors],
@@ -187,7 +199,9 @@ def get_monitor_setup(db: Session, project_id: int) -> dict:
             }
             for item in available
         ],
-        "selected_platform_codes": list(project.default_platform_codes or []),
+        "selected_platform_codes": selected_platform_codes,
+        "deep_thinking_enabled_by_platform": resolved_deep,
+        "search_enabled_by_platform": resolved_search,
         "draft_prompt_set_id": draft_prompt_set.id if draft_prompt_set else None,
         "active_prompt_set_id": active_prompt_set.id if active_prompt_set else None,
     }
@@ -381,6 +395,11 @@ def persist_monitor_setup(
     selected_platform_codes = _validate_platform_codes(
         db, payload.selected_platform_codes
     )
+    stored_deep, stored_search = normalize_platform_toggle_maps(
+        selected_platform_codes,
+        deep_thinking_by_platform=payload.deep_thinking_enabled_by_platform,
+        search_enabled_by_platform=payload.search_enabled_by_platform,
+    )
     target = _upsert_target_brand(db, project.id, payload)
     _replace_competitors(db, project.id, payload)
     keywords = _replace_core_keywords(db, project.id, payload)
@@ -396,6 +415,8 @@ def persist_monitor_setup(
             keyword_by_name=keyword_by_name,
         )
     project.default_platform_codes = selected_platform_codes
+    project.deep_thinking_enabled_by_platform = stored_deep
+    project.search_enabled_by_platform = stored_search
     if payload.brand.official_domain:
         project.official_domain = payload.brand.official_domain
     return prompt_set

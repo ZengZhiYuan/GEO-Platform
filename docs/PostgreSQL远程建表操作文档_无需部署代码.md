@@ -1,6 +1,6 @@
 # PostgreSQL 远程建表操作文档（无需部署代码）
 
-适用范围：GEO-Platform 后端当前 Alembic 迁移链，目标版本 `geo_monitoring_0013`。
+适用范围：GEO-Platform 后端当前 Alembic 迁移链，目标版本 `geo_monitoring_0014`。
 
 本文档面向**尚未将项目代码部署到服务器、但已通过 Navicat 等工具连上远程 PostgreSQL** 的场景。你只需：
 
@@ -138,9 +138,9 @@ backend\.venv\Scripts\python.exe -m alembic -c backend\alembic.ini upgrade head 
 
 预期：
 
-- `heads` 输出 `geo_monitoring_0013 (head)`；
-- SQL 文件约 830 行，以 `BEGIN;` 开头、`COMMIT;` 结尾；
-- 含 `INSERT INTO geo_ai_platform` 与 `geo_monitoring_0013` 版本更新。
+- `heads` 输出 `geo_monitoring_0014 (head)`；
+- SQL 文件约 840 行，以 `BEGIN;` 开头、`COMMIT;` 结尾；
+- 含 `INSERT INTO geo_ai_platform` 与 `geo_monitoring_0014` 版本更新。
 
 ---
 
@@ -208,7 +208,7 @@ UPDATE geo_ai_platform SET platform_name = '文心一言'            WHERE platf
 SELECT version_num FROM alembic_version;
 ```
 
-预期：`geo_monitoring_0013`
+预期：`geo_monitoring_0014`
 
 ### 6.2 表数量
 
@@ -332,7 +332,7 @@ REDIS_URL=redis://:<redis-password>@<redis-host>:6379/0
 
 ## 11. 后续代码部署到服务器
 
-正式部署后，服务器上也可使用 `alembic upgrade head` 做增量迁移。若远程库已通过本文档建好且 `alembic_version = geo_monitoring_0013`，首次部署不会重复建表；后续新增迁移只会从当前版本向后执行。
+正式部署后，服务器上也可使用 `alembic upgrade head` 做增量迁移。若远程库已通过本文档建好且 `alembic_version = geo_monitoring_0014`，首次部署不会重复建表；后续新增迁移只会从当前版本向后执行。
 
 ---
 
@@ -361,7 +361,7 @@ REDIS_URL=redis://:<redis-password>@<redis-host>:6379/0
 
 | 字段 | 说明 |
 |------|------|
-| version_num | 当前 Alembic 迁移版本号，预期 `geo_monitoring_0013` |
+| version_num | 当前 Alembic 迁移版本号，预期 `geo_monitoring_0014` |
 
 #### geo_monitor_project — 监测项目
 
@@ -376,6 +376,8 @@ REDIS_URL=redis://:<redis-password>@<redis-host>:6379/0
 | report_title | 报告标题 |
 | report_subtitle | 报告副标题 |
 | default_platform_codes | 项目默认平台列表（JSONB，监测设置保存） |
+| deep_thinking_enabled_by_platform | 各平台深度思考开关（JSONB，键为 platform_code） |
+| search_enabled_by_platform | 各平台联网搜索开关（JSONB，键为 platform_code） |
 | monitoring_paused | 是否暂停监测，暂停后禁止创建新 Run |
 
 #### geo_brand — 品牌
@@ -715,7 +717,13 @@ REDIS_URL=redis://:<redis-password>@<redis-host>:6379/0
 
 ---
 
-### A.9 表关系概览
+### A.9 项目平台采集开关（迁移 geo_monitoring_0014）
+
+`geo_monitor_project` 新增 `deep_thinking_enabled_by_platform`、`search_enabled_by_platform` 两个 JSONB 字段，用于监测设置中按平台保存深度思考与联网搜索开关；创建 `collection_source=molizhishu` 的运行时会继承并转换为 `provider_mode_by_platform`。
+
+---
+
+### A.10 表关系概览
 
 ```text
 geo_monitor_project

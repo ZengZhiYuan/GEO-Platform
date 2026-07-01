@@ -1,13 +1,48 @@
 from app.geo_monitoring.models import AIPlatform
+from app.geo_monitoring.schemas import PlatformEndpointOut, PlatformEndpointType
 from app.geo_monitoring.services.platforms import DEFAULT_PLATFORMS
 
 import pytest
+from pydantic import ValidationError
 
 
 def _seed_platforms(session_factory) -> None:
     with session_factory() as db:
         db.add_all(AIPlatform(**platform) for platform in DEFAULT_PLATFORMS)
         db.commit()
+
+
+def test_platform_endpoint_out_rejects_other_endpoint_type():
+    with pytest.raises(ValidationError):
+        PlatformEndpointOut(
+            platform_code="legacy",
+            platform_name="Legacy",
+            base_platform="legacy",
+            base_platform_label="Legacy",
+            endpoint_type="other",
+            endpoint_label="Legacy",
+            enabled=True,
+            adapter_type="openai_compatible",
+            search_enabled=True,
+            citation_supported=False,
+        )
+
+
+@pytest.mark.parametrize("endpoint_type", [PlatformEndpointType.WEB, PlatformEndpointType.APP])
+def test_platform_endpoint_out_accepts_web_and_app(endpoint_type):
+    endpoint = PlatformEndpointOut(
+        platform_code="sample",
+        platform_name="Sample",
+        base_platform="sample",
+        base_platform_label="Sample",
+        endpoint_type=endpoint_type,
+        endpoint_label="Sample",
+        enabled=True,
+        adapter_type="openai_compatible",
+        search_enabled=True,
+        citation_supported=False,
+    )
+    assert endpoint.endpoint_type == endpoint_type
 
 
 def test_platform_endpoints_groups_official_and_molizhishu_codes(client, session_factory):
@@ -56,6 +91,30 @@ def test_platform_endpoints_labels_new_molizhishu_base_platforms(client, session
     assert groups["baiduai"]["base_platform_label"] == "百度 AI+"
     assert groups["weibo_zhisou"]["base_platform_label"] == "微博智搜"
     assert groups["wenxinyiyan"]["base_platform_label"] == "文心一言"
+
+
+def test_platform_endpoints_defaults_legacy_official_platform_to_web(
+    client, session_factory
+):
+    _seed_platforms(session_factory)
+
+    payload = client.get("/api/geo-monitoring/platform-endpoints").json()["data"]
+    groups = {group["base_platform"]: group for group in payload["groups"]}
+
+    legacy = next(
+        item
+        for item in groups["doubao"]["endpoints"]
+        if item["platform_code"] == "doubao"
+    )
+    assert legacy["endpoint_type"] == "web"
+    assert legacy["endpoint_label"] == "豆包 网页端"
+
+    endpoint_types = {
+        item["endpoint_type"]
+        for group in payload["groups"]
+        for item in group["endpoints"]
+    }
+    assert endpoint_types <= {"web", "app"}
 
 
 def test_platform_endpoints_respects_extra_config(client, session_factory):
