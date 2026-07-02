@@ -17,17 +17,17 @@ def _common_columns() -> list[sa.Column]:
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
         sa.Column(
             "created_at",
-            sa.DateTime(timezone=True),
+            sa.DateTime(),
             server_default=sa.func.now(),
             nullable=False,
         ),
         sa.Column(
             "updated_at",
-            sa.DateTime(timezone=True),
+            sa.DateTime(),
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("deleted_at", sa.DateTime(), nullable=True),
         sa.Column(
             "is_deleted",
             sa.Boolean(),
@@ -80,8 +80,8 @@ def upgrade() -> None:
         sa.Column("prompt_tokens", sa.Integer(), nullable=True),
         sa.Column("completion_tokens", sa.Integer(), nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
-        sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("started_at", sa.DateTime(), nullable=True),
+        sa.Column("finished_at", sa.DateTime(), nullable=True),
         sa.CheckConstraint(
             "status IN ('pending', 'running', 'success', 'failed', 'skipped')",
             name="ck_geo_agent_execution_status",
@@ -239,7 +239,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "snapshot_at",
-            sa.DateTime(timezone=True),
+            sa.DateTime(),
             server_default=sa.func.now(),
             nullable=False,
         ),

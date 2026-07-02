@@ -30,6 +30,9 @@ TENANT_INDEXES_NAME = (
 PROJECT_PLATFORM_TOGGLES_NAME = (
     "20260630_0014-geo_monitoring_0014_project_platform_toggles.py"
 )
+TIMESTAMP_WITHOUT_TZ_NAME = (
+    "20260701_0015-geo_monitoring_0015_timestamp_without_tz.py"
+)
 EXPECTED_MIGRATIONS = [
     BASELINE_NAME,
     COLLECTION_NAME,
@@ -45,6 +48,7 @@ EXPECTED_MIGRATIONS = [
     PROVIDER_BATCH_NAME,
     TENANT_INDEXES_NAME,
     PROJECT_PLATFORM_TOGGLES_NAME,
+    TIMESTAMP_WITHOUT_TZ_NAME,
 ]
 
 
@@ -119,3 +123,20 @@ def test_project_platform_toggles_migration_adds_project_columns():
     assert '"search_enabled_by_platform"' in migration
     assert 'op.drop_column("geo_monitor_project", "search_enabled_by_platform")' in migration
     assert 'op.drop_column("geo_monitor_project", "deep_thinking_enabled_by_platform")' in migration
+
+
+def test_migrations_do_not_create_timestamptz_columns():
+    for migration_name in EXPECTED_MIGRATIONS:
+        if migration_name == TIMESTAMP_WITHOUT_TZ_NAME:
+            continue
+        migration = (VERSIONS_DIR / migration_name).read_text(encoding="utf-8")
+        assert "DateTime(timezone=True)" not in migration
+
+
+def test_timestamp_without_tz_migration_converts_existing_columns():
+    migration = (VERSIONS_DIR / TIMESTAMP_WITHOUT_TZ_NAME).read_text(encoding="utf-8")
+
+    assert 'revision = "geo_monitoring_0015"' in migration
+    assert 'down_revision = "geo_monitoring_0014"' in migration
+    assert "alter_timestamptz_to_timestamp_sql" in migration
+    assert "list_timestamptz_columns" in migration
