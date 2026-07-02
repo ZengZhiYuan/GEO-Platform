@@ -174,7 +174,7 @@ class PromptSet(BaseModel):
     )
     checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
     activated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(), nullable=True
     )
 
 
@@ -419,13 +419,13 @@ class MonitorRun(BaseModel):
     )
     error_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(), nullable=True
     )
     completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(), nullable=True
     )
     finished_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(), nullable=True
     )
 
 
@@ -473,10 +473,10 @@ class ProviderBatch(BaseModel):
         Integer, default=0, server_default="0", nullable=False
     )
     submitted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(), nullable=True
     )
     completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(), nullable=True
     )
     raw_submit_json: Mapped[dict | None] = mapped_column(JSON_VALUE, nullable=True)
     raw_status_json: Mapped[dict | None] = mapped_column(JSON_VALUE, nullable=True)
@@ -542,7 +542,7 @@ class QueryTask(BaseModel):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     queued_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(), nullable=True
     )
     last_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     last_error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -563,13 +563,13 @@ class QueryTask(BaseModel):
         nullable=True,
     )
     started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(), nullable=True
     )
     completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(), nullable=True
     )
     finished_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(), nullable=True
     )
     provider_batch: Mapped["ProviderBatch | None"] = relationship(
         "ProviderBatch",
@@ -619,7 +619,7 @@ class Answer(BaseModel):
     )
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     collected_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        DateTime(),
         server_default=func.now(),
         nullable=False,
     )
@@ -728,10 +728,10 @@ class MonitorSchedule(BaseModel):
         Boolean, default=True, server_default=text("true"), nullable=False
     )
     next_run_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(), nullable=True
     )
     last_run_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(), nullable=True
     )
     misfire_policy: Mapped[str] = mapped_column(
         String(20), default="fire_once", server_default="fire_once", nullable=False

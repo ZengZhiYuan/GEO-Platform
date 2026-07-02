@@ -9,9 +9,9 @@ CREATE TABLE alembic_version (
 
 CREATE TABLE geo_monitor_project (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -32,9 +32,9 @@ CREATE INDEX ix_geo_monitor_project_status ON geo_monitor_project (status);
 
 CREATE TABLE geo_brand (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -58,9 +58,9 @@ CREATE UNIQUE INDEX uq_geo_brand_one_target_per_project ON geo_brand (project_id
 
 CREATE TABLE geo_brand_alias (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -83,9 +83,9 @@ CREATE INDEX ix_geo_brand_alias_name ON geo_brand_alias (alias_name);
 
 CREATE TABLE geo_prompt_set (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -96,7 +96,7 @@ CREATE TABLE geo_prompt_set (
     status VARCHAR(20) DEFAULT 'draft' NOT NULL, 
     prompt_count INTEGER DEFAULT '0' NOT NULL, 
     checksum VARCHAR(64), 
-    activated_at TIMESTAMP WITH TIME ZONE, 
+    activated_at TIMESTAMP, 
     PRIMARY KEY (id), 
     CONSTRAINT ck_geo_prompt_set_status CHECK (status IN ('draft', 'active', 'archived')), 
     CONSTRAINT uq_geo_prompt_set_version UNIQUE (project_id, version_no), 
@@ -109,9 +109,9 @@ CREATE UNIQUE INDEX uq_geo_prompt_set_one_active_per_project ON geo_prompt_set (
 
 CREATE TABLE geo_prompt (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -134,9 +134,9 @@ CREATE INDEX ix_geo_prompt_prompt_set_enabled ON geo_prompt (prompt_set_id, enab
 
 CREATE TABLE geo_ai_platform (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -162,9 +162,9 @@ CREATE UNIQUE INDEX ix_geo_ai_platform_platform_code ON geo_ai_platform (platfor
 
 CREATE TABLE geo_monitor_run (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -186,8 +186,8 @@ CREATE TABLE geo_monitor_run (
     data_completeness_rate NUMERIC(8, 4) DEFAULT '0' NOT NULL, 
     result_json JSONB, 
     error_message TEXT, 
-    started_at TIMESTAMP WITH TIME ZONE, 
-    finished_at TIMESTAMP WITH TIME ZONE, 
+    started_at TIMESTAMP, 
+    finished_at TIMESTAMP, 
     PRIMARY KEY (id), 
     CONSTRAINT ck_geo_monitor_run_trigger_type CHECK (trigger_type IN ('manual', 'schedule', 'retry')), 
     CONSTRAINT ck_geo_monitor_run_status CHECK (status IN ('pending', 'collecting', 'analyzing', 'reporting', 'completed', 'partial_success', 'failed', 'cancelled')), 
@@ -205,9 +205,9 @@ CREATE INDEX ix_geo_monitor_run_status ON geo_monitor_run (status, created_at);
 
 CREATE TABLE geo_query_task (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -224,8 +224,8 @@ CREATE TABLE geo_query_task (
     error_code VARCHAR(100), 
     error_message TEXT, 
     latency_ms INTEGER, 
-    started_at TIMESTAMP WITH TIME ZONE, 
-    finished_at TIMESTAMP WITH TIME ZONE, 
+    started_at TIMESTAMP, 
+    finished_at TIMESTAMP, 
     PRIMARY KEY (id), 
     CONSTRAINT ck_geo_query_task_status CHECK (status IN ('pending', 'queued', 'running', 'success', 'failed', 'cancelled')), 
     CONSTRAINT ck_geo_query_task_retry_count CHECK (retry_count >= 0), 
@@ -264,7 +264,7 @@ ALTER TABLE geo_monitor_run ADD COLUMN failed_tasks INTEGER DEFAULT '0' NOT NULL
 
 ALTER TABLE geo_monitor_run ADD COLUMN cancelled_tasks INTEGER DEFAULT '0' NOT NULL;
 
-ALTER TABLE geo_monitor_run ADD COLUMN completed_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE geo_monitor_run ADD COLUMN completed_at TIMESTAMP;
 
 ALTER TABLE geo_monitor_run ADD COLUMN error_summary TEXT;
 
@@ -274,9 +274,9 @@ ALTER TABLE geo_query_task ADD COLUMN attempt_count INTEGER DEFAULT '0' NOT NULL
 
 ALTER TABLE geo_query_task ADD COLUMN max_attempts INTEGER DEFAULT '3' NOT NULL;
 
-ALTER TABLE geo_query_task ADD COLUMN queued_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE geo_query_task ADD COLUMN queued_at TIMESTAMP;
 
-ALTER TABLE geo_query_task ADD COLUMN completed_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE geo_query_task ADD COLUMN completed_at TIMESTAMP;
 
 ALTER TABLE geo_query_task ADD COLUMN last_error_code VARCHAR(100);
 
@@ -288,9 +288,9 @@ CREATE INDEX ix_geo_query_task_status_queued ON geo_query_task (status, queued_a
 
 CREATE TABLE geo_answer (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -305,7 +305,7 @@ CREATE TABLE geo_answer (
     completion_tokens INTEGER DEFAULT '0' NOT NULL, 
     total_tokens INTEGER DEFAULT '0' NOT NULL, 
     latency_ms INTEGER, 
-    collected_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+    collected_at TIMESTAMP DEFAULT now() NOT NULL, 
     raw_response_json JSONB, 
     PRIMARY KEY (id), 
     CONSTRAINT uq_geo_answer_task UNIQUE (task_id), 
@@ -318,9 +318,9 @@ CREATE INDEX ix_geo_answer_platform_collected ON geo_answer (platform_code, coll
 
 CREATE TABLE geo_answer_citation (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -341,9 +341,9 @@ CREATE INDEX ix_geo_answer_citation_domain ON geo_answer_citation (domain);
 
 CREATE TABLE geo_answer_brand_result (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -369,9 +369,9 @@ UPDATE alembic_version SET version_num='geo_monitoring_0002' WHERE alembic_versi
 
 CREATE TABLE geo_agent_execution (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -389,8 +389,8 @@ CREATE TABLE geo_agent_execution (
     prompt_tokens INTEGER, 
     completion_tokens INTEGER, 
     error_message TEXT, 
-    started_at TIMESTAMP WITH TIME ZONE, 
-    finished_at TIMESTAMP WITH TIME ZONE, 
+    started_at TIMESTAMP, 
+    finished_at TIMESTAMP, 
     PRIMARY KEY (id), 
     CONSTRAINT ck_geo_agent_execution_status CHECK (status IN ('pending', 'running', 'success', 'failed', 'skipped')), 
     FOREIGN KEY(run_id) REFERENCES geo_monitor_run (id) ON DELETE CASCADE
@@ -402,9 +402,9 @@ CREATE INDEX ix_geo_agent_execution_run_platform_agent ON geo_agent_execution (r
 
 CREATE TABLE geo_platform_analysis (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -433,9 +433,9 @@ CREATE TABLE geo_platform_analysis (
 
 CREATE TABLE geo_metric_snapshot (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -449,7 +449,7 @@ CREATE TABLE geo_metric_snapshot (
     denominator NUMERIC(18, 4), 
     metric_value NUMERIC(18, 6), 
     metric_json JSONB, 
-    snapshot_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+    snapshot_at TIMESTAMP DEFAULT now() NOT NULL, 
     prompt_set_version VARCHAR(50) NOT NULL, 
     is_comparable BOOLEAN DEFAULT true NOT NULL, 
     completeness_rate NUMERIC(8, 4) DEFAULT '0' NOT NULL, 
@@ -465,9 +465,9 @@ CREATE INDEX ix_geo_metric_snapshot_trend ON geo_metric_snapshot (project_id, me
 
 CREATE TABLE geo_prompt_competitiveness (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -493,9 +493,9 @@ CREATE INDEX ix_geo_prompt_competitiveness_run_prompt ON geo_prompt_competitiven
 
 CREATE TABLE geo_source_stat (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -523,9 +523,9 @@ UPDATE alembic_version SET version_num='geo_monitoring_0003' WHERE alembic_versi
 
 CREATE TABLE geo_monitor_schedule (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -535,8 +535,8 @@ CREATE TABLE geo_monitor_schedule (
     cron_expr VARCHAR(100) NOT NULL, 
     timezone VARCHAR(64) DEFAULT 'Asia/Shanghai' NOT NULL, 
     enabled BOOLEAN DEFAULT true NOT NULL, 
-    next_run_at TIMESTAMP WITH TIME ZONE, 
-    last_run_at TIMESTAMP WITH TIME ZONE, 
+    next_run_at TIMESTAMP, 
+    last_run_at TIMESTAMP, 
     misfire_policy VARCHAR(20) DEFAULT 'fire_once' NOT NULL, 
     PRIMARY KEY (id), 
     CONSTRAINT ck_geo_monitor_schedule_misfire_policy CHECK (misfire_policy IN ('fire_once', 'ignore')), 
@@ -549,9 +549,9 @@ CREATE INDEX ix_geo_monitor_schedule_project_enabled ON geo_monitor_schedule (pr
 
 CREATE TABLE geo_report (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -565,7 +565,7 @@ CREATE TABLE geo_report (
     file_size BIGINT, 
     checksum VARCHAR(128), 
     error_message TEXT, 
-    completed_at TIMESTAMP WITH TIME ZONE, 
+    completed_at TIMESTAMP, 
     PRIMARY KEY (id), 
     CONSTRAINT ck_geo_report_status CHECK (status IN ('pending', 'generating', 'completed', 'failed')), 
     CONSTRAINT ck_geo_report_format CHECK (format IN ('md', 'html')), 
@@ -586,9 +586,9 @@ ALTER TABLE geo_monitor_project ADD COLUMN default_platform_codes JSON DEFAULT '
 
 CREATE TABLE geo_core_keyword (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -607,9 +607,9 @@ CREATE INDEX ix_geo_core_keyword_project_sort ON geo_core_keyword (project_id, s
 
 CREATE TABLE geo_prompt_library (
     id BIGSERIAL NOT NULL, 
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
-    deleted_at TIMESTAMP WITH TIME ZONE, 
+    created_at TIMESTAMP DEFAULT now() NOT NULL, 
+    updated_at TIMESTAMP DEFAULT now() NOT NULL, 
+    deleted_at TIMESTAMP, 
     is_deleted BOOLEAN DEFAULT false NOT NULL, 
     tenant_id BIGINT, 
     created_by BIGINT, 
@@ -797,8 +797,8 @@ CREATE TABLE geo_provider_batch (
     total_items INTEGER DEFAULT '0' NOT NULL, 
     completed_items INTEGER DEFAULT '0' NOT NULL, 
     failed_items INTEGER DEFAULT '0' NOT NULL, 
-    submitted_at TIMESTAMP WITH TIME ZONE, 
-    completed_at TIMESTAMP WITH TIME ZONE, 
+    submitted_at TIMESTAMP, 
+    completed_at TIMESTAMP, 
     raw_submit_json JSONB, 
     raw_status_json JSONB, 
     raw_result_json JSONB, 

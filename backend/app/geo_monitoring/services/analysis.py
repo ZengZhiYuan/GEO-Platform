@@ -94,10 +94,10 @@ class AgentExecution(BaseModel):
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(), nullable=True
     )
     finished_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(), nullable=True
     )
 
 
@@ -213,7 +213,7 @@ class MetricSnapshot(BaseModel):
     metric_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
     metric_json: Mapped[dict | None] = mapped_column(JSON_VALUE, nullable=True)
     snapshot_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        DateTime(),
         server_default=func.now(),
         nullable=False,
     )

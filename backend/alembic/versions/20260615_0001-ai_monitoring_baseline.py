@@ -17,17 +17,17 @@ def _common_columns() -> list[sa.Column]:
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
         sa.Column(
             "created_at",
-            sa.DateTime(timezone=True),
+            sa.DateTime(),
             server_default=sa.func.now(),
             nullable=False,
         ),
         sa.Column(
             "updated_at",
-            sa.DateTime(timezone=True),
+            sa.DateTime(),
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("deleted_at", sa.DateTime(), nullable=True),
         sa.Column(
             "is_deleted",
             sa.Boolean(),
@@ -177,7 +177,7 @@ def upgrade() -> None:
             "prompt_count", sa.Integer(), server_default="0", nullable=False
         ),
         sa.Column("checksum", sa.String(length=64), nullable=True),
-        sa.Column("activated_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("activated_at", sa.DateTime(), nullable=True),
         sa.CheckConstraint(
             "status IN ('draft', 'active', 'archived')",
             name="ck_geo_prompt_set_status",
@@ -369,8 +369,8 @@ def upgrade() -> None:
         ),
         sa.Column("result_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
-        sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("started_at", sa.DateTime(), nullable=True),
+        sa.Column("finished_at", sa.DateTime(), nullable=True),
         sa.CheckConstraint(
             "trigger_type IN ('manual', 'schedule', 'retry')",
             name="ck_geo_monitor_run_trigger_type",
@@ -437,8 +437,8 @@ def upgrade() -> None:
         sa.Column("error_code", sa.String(length=100), nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
         sa.Column("latency_ms", sa.Integer(), nullable=True),
-        sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("started_at", sa.DateTime(), nullable=True),
+        sa.Column("finished_at", sa.DateTime(), nullable=True),
         sa.CheckConstraint(
             "status IN ('pending', 'queued', 'running', 'success', 'failed', 'cancelled')",
             name="ck_geo_query_task_status",

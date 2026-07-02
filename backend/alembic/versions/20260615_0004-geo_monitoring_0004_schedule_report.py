@@ -16,17 +16,17 @@ def _common_columns() -> list[sa.Column]:
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
         sa.Column(
             "created_at",
-            sa.DateTime(timezone=True),
+            sa.DateTime(),
             server_default=sa.func.now(),
             nullable=False,
         ),
         sa.Column(
             "updated_at",
-            sa.DateTime(timezone=True),
+            sa.DateTime(),
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("deleted_at", sa.DateTime(), nullable=True),
         sa.Column(
             "is_deleted",
             sa.Boolean(),
@@ -63,8 +63,8 @@ def upgrade() -> None:
             server_default=sa.text("true"),
             nullable=False,
         ),
-        sa.Column("next_run_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("last_run_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("next_run_at", sa.DateTime(), nullable=True),
+        sa.Column("last_run_at", sa.DateTime(), nullable=True),
         sa.Column(
             "misfire_policy",
             sa.String(length=20),
@@ -115,7 +115,7 @@ def upgrade() -> None:
         sa.Column("file_size", sa.BigInteger(), nullable=True),
         sa.Column("checksum", sa.String(length=128), nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
-        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("completed_at", sa.DateTime(), nullable=True),
         sa.CheckConstraint(
             "status IN ('pending', 'generating', 'completed', 'failed')",
             name="ck_geo_report_status",
